@@ -45,3 +45,11 @@ next-env.d.ts
 /snapshot*.json
 /allocation*.json
 /signed-request*.json
+
+/deploy/vercel/app/generated/
+/deploy/vercel/public/
+/deploy/vercel/.next/
+/deploy/vercel/next-env.d.ts
+/deploy/vercel/migrations/
+
+!.env.example

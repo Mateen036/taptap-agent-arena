@@ -14,38 +14,44 @@
     "db:generate": "drizzle-kit generate",
     "test": "tsx --test test/*.test.ts",
     "contracts:build": "node scripts/compile-contracts.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "build:vercel": "node scripts/prepare-ui.mjs && node scripts/bundle-agent.mjs && node scripts/prepare-vercel.mjs && node scripts/vercel-runtime-check.mjs && next build deploy/vercel",
+    "db:migrate:postgres": "node scripts/migrate-postgres.mjs"
   },
   "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "next": "^16.3.4",
+    "pg": "^8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-server-dom-webpack": "19.2.6",
-    "vinext": "1.0.0-beta.5",
-    "drizzle-orm": "0.45.2",
-    "viem": "^2.38.0"
+    "viem": "^2.38.0",
+    "vinext": "1.0.0-beta.5"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electric-sql/pglite": "^0.5.12",
     "@openai/sites-vite-plugin": "0.2.0",
+    "@openzeppelin/contracts": "^5.4.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "ganache": "^7.9.2",
     "oxfmt": "0.61.0",
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
+    "solc": "^0.8.30",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.20.0",
     "typescript": "5.9.3",
     "vite": "8.0.13",
-    "wrangler": "4.92.0",
-    "drizzle-kit": "0.31.10",
-    "solc": "^0.8.30",
-    "@openzeppelin/contracts": "^5.4.0",
-    "tsx": "^4.20.0",
-    "ganache": "^7.9.2"
+    "wrangler": "4.92.0"
   },
   "type": "module"
 }

@@ -2,9 +2,9 @@ import {createPublicClient,http,fallback,parseAbi,isAddress,verifyTypedData,kecc
 import {bsc} from 'viem/chains';
 import {capacity,power,speed,energyAt,upgradeCost,parseCommand,tickPlan,missions,MAX_POINTS,canonical} from './game';
 import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
-type Env={DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string};
+type Env={DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string};
 class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
-const fail=(status:number,message:string):never=>{throw new HttpError(status,message)};
+function fail(status:number,message:string):never{throw new HttpError(status,message)}
 const uid=(r:Request)=>r.headers.get('oai-authenticated-user-id')||fail(401,'Sign in to manage your agent.');
 const json=(data:any,status=200)=>new Response(JSON.stringify(data,(_,v)=>typeof v==='bigint'?v.toString():v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
 const id=()=>crypto.randomUUID();
@@ -32,7 +32,7 @@ async function cas(e:Env,a:any,fields:Record<string,any>,kind:string,delta:numbe
 // Extra statements must independently test the agent's new version; D1 batch is transactional.
 const guard=(a:any)=>[a.wallet,a._event??=id()];
 async function snapshot(e:Env,a:any){const c=await active(e,a.wallet);const logs=await stmt(e,'SELECT kind,delta,detail,created_at FROM ledger WHERE wallet=? ORDER BY created_at DESC LIMIT 20',a.wallet).all();const commandRows=await stmt(e,'SELECT * FROM commands WHERE wallet=? ORDER BY created_at DESC LIMIT 10',a.wallet).all();const claimed=await stmt(e,'SELECT mission FROM mission_claims WHERE wallet=?',a.wallet).all<any>();return {wallet:a.wallet,name:a.name,points:a.points,earned:a.earned,taps:a.taps,runs:a.runs,power:power(a),capacity:capacity(a),speed:speed(a),energy:energyAt(a,Date.now(),!!c),levels:[a.power_level,a.tank_level,a.speed_level],connected:!!a.connected,updatedAt:a.updated_at,claimed:claimed.results.map((x:any)=>x.mission),upgrades:[0,1,2].map(i=>({cost:upgradeCost(a,i),level:a[['power_level','tank_level','speed_level'][i]]})),commands:commandRows.results,logs:logs.results,sessionOnline:!!await first(e,'SELECT id FROM sessions WHERE wallet=? AND revoked=0 AND expires_at>?',a.wallet,Date.now()),missions:missions.map((m,i)=>({...m,progress:Math.min(m.goal,a[m.key]),claimed:claimed.results.some((v:any)=>v.mission===i)}))};}
-export async function handle(request:Request,env:Env){
+export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
  if(!env.DB)fail(503,'Game storage is not available.');
@@ -71,7 +71,7 @@ export async function handle(request:Request,env:Env){
   }
   fail(404,'Operator endpoint not found.');
  }
- if(path==='/health'&&request.method==='GET'){await first(env,'SELECT 1');return json({ok:true,chainId:56,storage:'D1',time:now});}
+ if(path==='/health'&&request.method==='GET'){await first(env,'SELECT 1');return json({ok:true,chainId:56,storage:env.STORAGE_NAME||'D1',time:now});}
  if(path==='/bootstrap'&&request.method==='GET'){
  const user=request.headers.get('oai-authenticated-user-id');const a=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;
  const leaders=await stmt(env,'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all();
@@ -88,7 +88,7 @@ export async function handle(request:Request,env:Env){
  if(path==='/agent/challenge'&&request.method==='POST'){
  const b=await body(request),wallet=lower(b.wallet),key=lower(b.sessionKey);if(!/^[0-9a-f]{64}$/.test(b.pairingCode||''))fail(400,'Invalid pairing code.');const pairing=await first(env,'SELECT * FROM pairings WHERE code_hash=? AND used=0 AND expires_at>?',hash(b.pairingCode),now);if(!pairing)fail(403,'Pairing code is invalid or expired.');
  const cnt=await first(env,'SELECT COUNT(*) AS n FROM challenges WHERE pairing_hash=?',pairing.code_hash);if(cnt.n>=10)fail(429,'Too many challenges. Create a fresh pairing code.');
- const existing=await first(env,'SELECT user_id FROM agents WHERE wallet=?',wallet);if(existing&&existing.user_id!==pairing.user_id)fail(409,'This wallet is already paired to another account.');const current=await first(env,'SELECT wallet FROM agents WHERE user_id=?',pairing.user_id);if(current&&current.wallet!==wallet)fail(409,'This account is bound to a different wallet. Wallet replacement requires an account migration.');
+ const existing=await first(env,'SELECT user_id FROM agents WHERE wallet=?',wallet);if(existing&&existing.user_id!==pairing.user_id&&!env.ALLOW_WALLET_RELINK)fail(409,'This wallet is already paired to another account.');const current=await first(env,'SELECT wallet FROM agents WHERE user_id=?',pairing.user_id);if(current&&current.wallet!==wallet)fail(409,'This account is bound to a different wallet. Wallet replacement requires an account migration.');
  const c={id:id(),pairing_hash:pairing.code_hash,wallet,session_key:key,expires_at:now+3600000};
  await stmt(env,'INSERT INTO challenges(id,pairing_hash,wallet,session_key,expires_at) VALUES(?,?,?,?,?)',c.id,c.pairing_hash,wallet,key,c.expires_at).run();
  return json({challengeId:c.id,typedData:sessionData(url.origin,c),expiresAt:c.expires_at});
@@ -101,7 +101,7 @@ export async function handle(request:Request,env:Env){
  try{const results=await env.DB.batch([
  sessionInsert,
  stmt(env,'UPDATE sessions SET revoked=1 WHERE wallet=? AND id<>? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.wallet,sid,sid),
- stmt(env,`INSERT INTO agents(wallet,user_id,name,updated_at,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?) ON CONFLICT(wallet) DO UPDATE SET connected=1 WHERE agents.user_id=excluded.user_id`,c.wallet,pairing.user_id,'Agent '+c.wallet.slice(2,8),now,now,sid),
+ stmt(env,`INSERT INTO agents(wallet,user_id,name,updated_at,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?) ON CONFLICT(wallet) DO UPDATE SET connected=1${env.ALLOW_WALLET_RELINK?',user_id=excluded.user_id':' WHERE agents.user_id=excluded.user_id'}`,c.wallet,pairing.user_id,'Agent '+c.wallet.slice(2,8),now,now,sid),
  stmt(env,'UPDATE pairings SET used=1 WHERE code_hash=? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.pairing_hash,sid),
  stmt(env,'UPDATE challenges SET used=1 WHERE id=? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.id,sid)
  ]);if(!results[0].meta.changes)fail(409,'Pairing was already completed.');}catch(e){if(e instanceof HttpError)throw e;fail(409,'Account pairing conflict. Create a fresh pairing code.');}

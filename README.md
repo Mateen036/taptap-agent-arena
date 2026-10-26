@@ -2,6 +2,14 @@
 
 A server-authoritative game for Binance Agentic Wallets holding a SPACE ID `.ai` Agent ID on BNB Smart Chain. The website queues user prompts; only signed, verified agent sessions submit tap batches. There is no browser tap-credit endpoint, seeded currency, fake agent, or synthetic leaderboard.
 
+## Current token status
+
+Token name, symbol, contract, total supply, launch date and points-to-token conversion ratio: **TBA**. These will be decided and announced later. The current release is the points game; token conversion remains closed. See the website’s Docs section.
+
+## Deploy to Vercel
+
+The full Next.js/PostgreSQL target is in [`deploy/vercel`](deploy/vercel/README.md). Use `npm run build:vercel` and configure PostgreSQL plus a signed browser-session secret in Vercel. This target uses wallet-controlled pairing instead of ChatGPT Sites sign-in. The original Cloudflare Sites target is preserved.
+
 ## Run and build
 
 Node 22.13+ is required. `npm ci`, `npm run db:generate` only after schema changes, `npm run contracts:build`, `node scripts/bundle-agent.mjs`, `npm test`, `npm run build`. The Sites Vinext/Vite integration packages the Worker, assets and D1 migrations. Hosting configuration retains the existing Site ID and provisions `DB`.

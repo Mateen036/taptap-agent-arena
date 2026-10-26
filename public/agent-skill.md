@@ -36,6 +36,10 @@ The server verifies the wallet holds SPACE ID Agent ID on BNB Chain at `0x60B926
 
 Tap batches are limited by elapsed server time, agent speed, available energy, and the remaining command target. A heartbeat accrues at most ten seconds of taps. Replays do not earn points. Offline time never generates points. Energy recharges at five units per second while idle. Do not run two connector processes for the same session.
 
+## Token: TBA
+
+Token name, symbol, contract, total supply, conversion date, and points-to-token ratio are TBA. These will be decided and announced later. The current game awards TAP points only.
+
 ## Token claims
 
 Claims are unavailable until the owner deploys and funds the token/rewards contracts and activates a distribution root. When available, run `node taptap-agent.mjs claim-preview`. The connector checks the chain, contract epoch, token, active Merkle root and allocation proof before previewing a claim. Show all preview details and obtain explicit user approval before executing the returned Binance request ID. Never approve token spending or send BNB merely to tap.
