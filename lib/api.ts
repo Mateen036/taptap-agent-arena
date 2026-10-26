@@ -1,0 +1,159 @@
+import {createPublicClient,http,fallback,parseAbi,isAddress,verifyTypedData,keccak256,toHex,encodeAbiParameters,concat} from 'viem';
+import {bsc} from 'viem/chains';
+import {capacity,power,speed,energyAt,upgradeCost,parseCommand,tickPlan,missions,MAX_POINTS,canonical} from './game';
+import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
+type Env={DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string};
+class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
+const fail=(status:number,message:string):never=>{throw new HttpError(status,message)};
+const uid=(r:Request)=>r.headers.get('oai-authenticated-user-id')||fail(401,'Sign in to manage your agent.');
+const json=(data:any,status=200)=>new Response(JSON.stringify(data,(_,v)=>typeof v==='bigint'?v.toString():v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'}});
+const id=()=>crypto.randomUUID();
+const hash=(v:string)=>keccak256(toHex(v));
+const lower=(v:any)=>typeof v==='string'&&isAddress(v)?v.toLowerCase():fail(400,'A valid wallet address is required.');
+const publicClient=(e:Env)=>createPublicClient({chain:bsc,transport:e.BSC_RPC_URL?http(e.BSC_RPC_URL,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])});
+const gateAbi=parseAbi(['function balanceOf(address) view returns (uint256)']);
+export async function eligible(wallet:string,env:Env){
+ try{const client=publicClient(env);const chain=await client.getChainId();if(chain!==56)fail(503,'The identity RPC is on the wrong chain.');const balance=await client.readContract({address:AGENT_ID_REGISTRY,abi:gateAbi,functionName:'balanceOf',args:[wallet as `0x${string}`]});if(balance===0n)fail(403,'This wallet does not hold a Binance .ai Agent ID. Claim one in Binance Wallet first.');return true;}
+ catch(e){if(e instanceof HttpError)throw e;fail(503,'BNB Chain identity verification is temporarily unavailable. No points were awarded.');}
+}
+async function body(r:Request){if(!r.headers.get('content-type')?.includes('application/json'))fail(415,'Use application/json.');let size=0;const chunks:Uint8Array[]=[];const reader=r.body?.getReader()??fail(400,'JSON body is required.');if(!reader)fail(400,'JSON body is required.');while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>16384){await reader.cancel();fail(413,'Request is too large.');}chunks.push(value);}try{const all=new Uint8Array(size);let n=0;for(const chunk of chunks){all.set(chunk,n);n+=chunk.length;}const b=JSON.parse(new TextDecoder().decode(all));if(!b||typeof b!=='object'||Array.isArray(b))throw Error();return b;}catch{fail(400,'Invalid JSON object.');}}
+const stmt=(e:Env,q:string,...args:any[])=>e.DB.prepare(q).bind(...args);
+const first=(e:Env,q:string,...args:any[])=>stmt(e,q,...args).first<any>();
+async function own(e:Env,r:Request){const a=await first(e,'SELECT * FROM agents WHERE user_id=?',uid(r));if(!a||!a.connected)fail(409,'Pair a verified agent first.');return a;}
+async function active(e:Env,wallet:string){return first(e,"SELECT * FROM commands WHERE wallet=? AND status='running' ORDER BY created_at DESC LIMIT 1",wallet);}
+async function cas(e:Env,a:any,fields:Record<string,any>,kind:string,delta:number,detail:string,extra:D1PreparedStatement[]=[]){
+ const event=a._event||id(),now=Date.now();const entries=Object.entries(fields);const res=await e.DB.batch([
+ stmt(e,`UPDATE agents SET ${entries.map(([k])=>`${k}=?`).join(',')},version=version+1,last_event=? WHERE wallet=? AND version=?${['tap','start','upgrade','mission'].includes(kind)?" AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase' AND value='frozen')":''}`,...entries.map(([,v])=>v),event,a.wallet,a.version),
+ stmt(e,'INSERT INTO ledger(id,wallet,kind,delta,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',event,a.wallet,kind,delta,detail,now,a.wallet,event),
+ ...extra.map(s=>s)
+ ]);
+ if(!res[0].meta.changes)fail(409,'Your agent changed during this request. Refresh and retry.');return event;
+}
+// Extra statements must independently test the agent's new version; D1 batch is transactional.
+const guard=(a:any)=>[a.wallet,a._event??=id()];
+async function snapshot(e:Env,a:any){const c=await active(e,a.wallet);const logs=await stmt(e,'SELECT kind,delta,detail,created_at FROM ledger WHERE wallet=? ORDER BY created_at DESC LIMIT 20',a.wallet).all();const commandRows=await stmt(e,'SELECT * FROM commands WHERE wallet=? ORDER BY created_at DESC LIMIT 10',a.wallet).all();const claimed=await stmt(e,'SELECT mission FROM mission_claims WHERE wallet=?',a.wallet).all<any>();return {wallet:a.wallet,name:a.name,points:a.points,earned:a.earned,taps:a.taps,runs:a.runs,power:power(a),capacity:capacity(a),speed:speed(a),energy:energyAt(a,Date.now(),!!c),levels:[a.power_level,a.tank_level,a.speed_level],connected:!!a.connected,updatedAt:a.updated_at,claimed:claimed.results.map((x:any)=>x.mission),upgrades:[0,1,2].map(i=>({cost:upgradeCost(a,i),level:a[['power_level','tank_level','speed_level'][i]]})),commands:commandRows.results,logs:logs.results,sessionOnline:!!await first(e,'SELECT id FROM sessions WHERE wallet=? AND revoked=0 AND expires_at>?',a.wallet,Date.now()),missions:missions.map((m,i)=>({...m,progress:Math.min(m.goal,a[m.key]),claimed:claimed.results.some((v:any)=>v.mission===i)}))};}
+export async function handle(request:Request,env:Env){
+ try{
+ const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
+ if(!env.DB)fail(503,'Game storage is not available.');
+ if(request.method==='POST'){const origin=request.headers.get('origin');if(origin&&origin!==url.origin)fail(403,'Cross-origin writes are not allowed.');}
+ 
+ const frozen=await first(env,"SELECT value FROM game_settings WHERE key='season_phase'");
+ if(frozen?.value==='frozen'&&request.method==='POST'&&['/commands','/upgrades','/missions/claim'].includes(path))fail(409,'Season is frozen for token allocation.');
+ if(path.startsWith('/admin/')&&request.method==='POST'){
+  if(!env.ADMIN_WALLET||!isAddress(env.ADMIN_WALLET))fail(503,'Launch operator wallet has not been configured.');
+  const b=await body(request);if(!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.requestId!=='string'||b.requestId.length>80||!b.payload||typeof b.payload!=='object')fail(400,'Invalid operator request.');
+  const typed={domain:domain(url.origin),types:{AdminAction:[{name:'requestId',type:'string'},{name:'timestamp',type:'uint256'},{name:'action',type:'string'},{name:'payloadHash',type:'bytes32'}]},primaryType:'AdminAction',message:{requestId:b.requestId,timestamp:BigInt(b.timestamp),action:path,payloadHash:hash(canonical(b.payload))}};
+  let valid=false;try{valid=await verifyTypedData({address:env.ADMIN_WALLET,...typed,signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid operator signature.');
+  try{await stmt(env,'INSERT INTO admin_requests(id,created_at) VALUES(?,?)',b.requestId,now).run();}catch{fail(409,'Operator request already used.');}
+  if(path==='/admin/freeze'){
+   await stmt(env,"INSERT INTO game_settings(key,value) VALUES('season_phase','frozen') ON CONFLICT(key) DO UPDATE SET value='frozen'").run();
+   return json({ok:true,phase:'frozen'});
+  }
+  if(path==='/admin/snapshot'){
+   if(frozen?.value!=='frozen')fail(409,'Freeze the season before exporting allocation points.');
+   const rows=await stmt(env,'SELECT wallet,points,earned,taps FROM agents ORDER BY wallet ASC').all();return json({chainId:56,season:1,createdAt:now,agents:rows.results});
+  }
+  if(path==='/admin/publish-rewards'){
+   const p=b.payload;if(!Number.isSafeInteger(p.epoch)||p.epoch<1||!/^0x[0-9a-fA-F]{64}$/.test(p.root||'')||!isAddress(p.contract)||!isAddress(p.token)||!Array.isArray(p.allocations)||p.allocations.length<1||p.allocations.length>5)fail(400,'Invalid rewards batch. Maximum five allocations per request.');
+   if(frozen?.value!=='frozen')fail(409,'Freeze the season before publishing rewards.');
+   const client=publicClient(env),abi=parseAbi(['function root() view returns(bytes32)','function epoch() view returns(uint256)','function token() view returns(address)','function agentIdRegistry() view returns(address)','function owner() view returns(address)']);
+   const [chainId,root,epoch,token,registry,owner]=await Promise.all([client.getChainId(),client.readContract({address:p.contract,abi,functionName:'root'}),client.readContract({address:p.contract,abi,functionName:'epoch'}),client.readContract({address:p.contract,abi,functionName:'token'}),client.readContract({address:p.contract,abi,functionName:'agentIdRegistry'}),client.readContract({address:p.contract,abi,functionName:'owner'})]);
+   if(chainId!==56||root.toLowerCase()!==p.root.toLowerCase()||epoch!==BigInt(p.epoch)||token.toLowerCase()!==p.token.toLowerCase()||registry.toLowerCase()!==AGENT_ID_REGISTRY.toLowerCase()||owner.toLowerCase()!==env.ADMIN_WALLET!.toLowerCase())fail(409,'Rewards batch does not match the active on-chain contract.');
+   const existing=await first(env,'SELECT * FROM reward_epochs WHERE id=?',p.epoch);if(existing&&(existing.root!==p.root||existing.contract!==p.contract||existing.token!==p.token))fail(409,'Epoch metadata cannot be replaced.');
+   const statements:D1PreparedStatement[]=[];
+   for(const allocation of p.allocations){const wallet=lower(allocation.wallet);if(!/^\d+$/.test(allocation.amount||'')||BigInt(allocation.amount)>(1n<<256n)-1n||!Array.isArray(allocation.proof)||allocation.proof.length>64||allocation.proof.some((v:any)=>!/^0x[0-9a-fA-F]{64}$/.test(v)))fail(400,'Invalid allocation.');
+    let leaf=keccak256(keccak256(encodeAbiParameters([{type:'uint256'},{type:'address'},{type:'uint256'},{type:'address'},{type:'uint256'}],[56n,p.contract,BigInt(p.epoch),wallet as any,BigInt(allocation.amount)])));
+    for(const sibling of allocation.proof)leaf=keccak256(concat(BigInt(leaf)<BigInt(sibling)?[leaf,sibling]:[sibling,leaf]));if(leaf.toLowerCase()!==root.toLowerCase())fail(400,'Invalid Merkle allocation proof.');
+    statements.push(stmt(env,'INSERT INTO reward_proofs(id,wallet,epoch,amount,proof) VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING',p.epoch+':'+wallet,wallet,p.epoch,allocation.amount,JSON.stringify(allocation.proof)));
+   }
+   await env.DB.batch([stmt(env,'INSERT INTO reward_epochs(id,root,contract,token,chain_id,created_at) VALUES(?,?,?,?,56,?) ON CONFLICT(id) DO NOTHING',p.epoch,p.root,p.contract,p.token,now),...statements]);return json({ok:true,imported:statements.length});
+  }
+  fail(404,'Operator endpoint not found.');
+ }
+ if(path==='/health'&&request.method==='GET'){await first(env,'SELECT 1');return json({ok:true,chainId:56,storage:'D1',time:now});}
+ if(path==='/bootstrap'&&request.method==='GET'){
+ const user=request.headers.get('oai-authenticated-user-id');const a=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;
+ const leaders=await stmt(env,'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all();
+ const epoch=await first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1');
+ const proof=a&&epoch?await first(env,'SELECT amount,proof,epoch FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;
+ return json({authenticated:!!user,agent:a?await snapshot(env,a):null,leaderboard:leaders.results,season:{id:1,name:'Genesis',phase:frozen?.value||'open'},chainId:56,registry:AGENT_ID_REGISTRY,serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:{status:'awaiting_token_launch'}});
+ }
+ if(path==='/pair'&&request.method==='POST'){
+ const user=uid(request);await body(request);const count=await first(env,'SELECT COUNT(*) AS n FROM pairings WHERE user_id=? AND created_at>?',user,now-60000);if(count.n>=5)fail(429,'Wait a minute before creating another pairing.');
+ const code=crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','');
+ await env.DB.batch([stmt(env,'UPDATE pairings SET used=1 WHERE user_id=?',user),stmt(env,'INSERT INTO pairings(code_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)',hash(code),user,now+600000,now)]);
+ return json({pairingCode:code,expiresAt:now+600000,skillUrl:url.origin+'/agent-skill.md',agentScript:url.origin+'/taptap-agent.mjs'});
+ }
+ if(path==='/agent/challenge'&&request.method==='POST'){
+ const b=await body(request),wallet=lower(b.wallet),key=lower(b.sessionKey);if(!/^[0-9a-f]{64}$/.test(b.pairingCode||''))fail(400,'Invalid pairing code.');const pairing=await first(env,'SELECT * FROM pairings WHERE code_hash=? AND used=0 AND expires_at>?',hash(b.pairingCode),now);if(!pairing)fail(403,'Pairing code is invalid or expired.');
+ const cnt=await first(env,'SELECT COUNT(*) AS n FROM challenges WHERE pairing_hash=?',pairing.code_hash);if(cnt.n>=10)fail(429,'Too many challenges. Create a fresh pairing code.');
+ const existing=await first(env,'SELECT user_id FROM agents WHERE wallet=?',wallet);if(existing&&existing.user_id!==pairing.user_id)fail(409,'This wallet is already paired to another account.');const current=await first(env,'SELECT wallet FROM agents WHERE user_id=?',pairing.user_id);if(current&&current.wallet!==wallet)fail(409,'This account is bound to a different wallet. Wallet replacement requires an account migration.');
+ const c={id:id(),pairing_hash:pairing.code_hash,wallet,session_key:key,expires_at:now+3600000};
+ await stmt(env,'INSERT INTO challenges(id,pairing_hash,wallet,session_key,expires_at) VALUES(?,?,?,?,?)',c.id,c.pairing_hash,wallet,key,c.expires_at).run();
+ return json({challengeId:c.id,typedData:sessionData(url.origin,c),expiresAt:c.expires_at});
+ }
+ if(path==='/agent/session'&&request.method==='POST'){
+ const b=await body(request);const c=await first(env,'SELECT * FROM challenges WHERE id=? AND used=0 AND expires_at>?',String(b.challengeId),now);if(!c)fail(403,'Challenge is invalid or expired.');const pairing=await first(env,'SELECT * FROM pairings WHERE code_hash=? AND used=0 AND expires_at>?',c.pairing_hash,now);if(!pairing)fail(403,'Pairing code was used or expired.');
+ if(!/^0x[0-9a-fA-F]{130}$/.test(b.signature||''))fail(400,'A 65-byte EIP-712 signature is required.');
+ let valid=false;try{valid=await verifyTypedData({address:c.wallet,...sessionData(url.origin,c),signature:b.signature} as any);if(!valid){const client=publicClient(env);const code=await client.getCode({address:c.wallet});if(code&&code!=='0x')valid=await client.verifyTypedData({address:c.wallet,...sessionData(url.origin,c),signature:b.signature} as any);}}catch{fail(503,'Wallet signature verification is temporarily unavailable.');}if(!valid)fail(403,'The signature does not match the agent wallet.');await eligible(c.wallet,env);
+ const sid=id();const sessionInsert=stmt(env,`INSERT INTO sessions(id,wallet,session_key,expires_at,verified_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM pairings WHERE code_hash=? AND used=0 AND expires_at>?) AND EXISTS(SELECT 1 FROM challenges WHERE id=? AND used=0)`,sid,c.wallet,c.session_key,c.expires_at,now,c.pairing_hash,now,c.id);
+ try{const results=await env.DB.batch([
+ sessionInsert,
+ stmt(env,'UPDATE sessions SET revoked=1 WHERE wallet=? AND id<>? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.wallet,sid,sid),
+ stmt(env,`INSERT INTO agents(wallet,user_id,name,updated_at,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?) ON CONFLICT(wallet) DO UPDATE SET connected=1 WHERE agents.user_id=excluded.user_id`,c.wallet,pairing.user_id,'Agent '+c.wallet.slice(2,8),now,now,sid),
+ stmt(env,'UPDATE pairings SET used=1 WHERE code_hash=? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.pairing_hash,sid),
+ stmt(env,'UPDATE challenges SET used=1 WHERE id=? AND EXISTS(SELECT 1 FROM sessions WHERE id=?)',c.id,sid)
+ ]);if(!results[0].meta.changes)fail(409,'Pairing was already completed.');}catch(e){if(e instanceof HttpError)throw e;fail(409,'Account pairing conflict. Create a fresh pairing code.');}
+ return json({sessionId:sid,nonce:0,expiresAt:c.expires_at,wallet:c.wallet});
+ }
+ if(path==='/agent/action'&&request.method==='POST'){
+ const b=await body(request);if(!['state','start','tap','stop'].includes(b.action)||!Number.isSafeInteger(b.nonce)||b.nonce<0||!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.payload!=='object'||b.payload===null||Array.isArray(b.payload))fail(400,'Invalid action envelope or expired timestamp.');
+ const s=await first(env,'SELECT * FROM sessions WHERE id=? AND revoked=0 AND expires_at>?',String(b.sessionId),now);if(!s)fail(401,'Agent session expired or revoked. Pair your agent again.');
+ let valid=false;try{valid=await verifyTypedData({address:s.session_key,...actionData(url.origin,b),signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid agent command signature.');if(s.nonce!==b.nonce)return json({error:'Nonce mismatch. Resynchronize before sending another command.',nonce:s.nonce},409);
+ if(now-s.verified_at>300000){await eligible(s.wallet,env);await stmt(env,'UPDATE sessions SET verified_at=? WHERE id=?',now,s.id).run();}
+ const consumed=await stmt(env,'UPDATE sessions SET nonce=nonce+1 WHERE id=? AND nonce=? AND revoked=0 AND expires_at>?',s.id,b.nonce,now).run();if(!consumed.meta.changes)fail(409,'Replay rejected.');
+ const nextNonce=b.nonce+1;
+ try{let a=await first(env,'SELECT * FROM agents WHERE wallet=? AND connected=1',s.wallet);if(!a)fail(403,'Agent disconnected.');
+ if(b.action==='state'){const epoch=await first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1');const proof=epoch?await first(env,'SELECT amount,proof FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;return json({nonce:nextNonce,agent:await snapshot(env,a),serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:null});}
+ const command=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.payload.commandId),s.wallet);if(!command)fail(404,'Command not found.');
+ if(frozen?.value==='frozen'&&['start','tap'].includes(b.action))fail(409,'Season is frozen for token allocation.');
+ if(b.action==='start'){
+ if(!['queued','paused'].includes(command.status))fail(409,'This command cannot be started.');const other=await active(env,a.wallet);if(other)fail(409,'Stop the running command first.');const energy=energyAt(a,now);if(energy<1)fail(409,'Energy is empty. Wait for recharge.');
+ await cas(env,a,{energy,updated_at:now},'start',0,'Agent accepted command',[
+ stmt(env,"UPDATE commands SET status='running',started_at=COALESCE(started_at,?),last_tick=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,now,command.id,...guard(a))]);
+ }else if(b.action==='tap'){
+ const plan=tickPlan(a,command,b.payload.taps,now);const complete=plan.complete||plan.energy===0;
+ await cas(env,a,{points:a.points+plan.gain,earned:a.earned+plan.gain,taps:a.taps+plan.taps,energy:plan.energy,updated_at:now,runs:a.runs+(plan.complete?1:0)},'tap',plan.gain,`${plan.taps} verified agent taps`,[
+ stmt(env,'UPDATE commands SET done=done+?,earned=earned+?,last_tick=?,status=?,finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',plan.taps,plan.gain,plan.lastTick,plan.complete?'completed':complete?'paused':'running',complete?now:null,command.id,...guard(a))]);
+ }else if(b.action==='stop'){
+ if(command.status!=='running')fail(409,'Command is not running.');await cas(env,a,{updated_at:now},'pause',0,'Agent paused command',[
+ stmt(env,"UPDATE commands SET status='paused',finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,command.id,...guard(a))]);}
+ a=await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet);return json({nonce:nextNonce,agent:await snapshot(env,a),serverTime:now});
+ }catch(e){const status=e instanceof HttpError?e.status:409;return json({error:e instanceof Error?e.message:'Action failed',nonce:nextNonce},status);}
+ }
+ if(path==='/commands'&&request.method==='POST'){
+ const a=await own(env,request),b=await body(request);let target;try{target=parseCommand(b.prompt);}catch(e){fail(400,(e as Error).message);}
+ const recent=await first(env,'SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND created_at>?',a.wallet,now-60000);if(recent.n>=10)fail(429,'Maximum 10 commands per minute.');const pending=await first(env,"SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND status IN ('queued','running','paused')",a.wallet);if(pending.n>=10)fail(409,'Finish or cancel existing commands first.');
+ const commandId=id();await stmt(env,'INSERT INTO commands(id,wallet,prompt,target,created_at) VALUES(?,?,?,?,?)',commandId,a.wallet,b.prompt.trim(),target,now).run();return json({id:commandId,target,status:'queued'},201);
+ }
+ if(path==='/commands/cancel'&&request.method==='POST'){
+ const a=await own(env,request),b=await body(request),c=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.id),a.wallet);if(!c)fail(404,'Command not found.');if(!['queued','running','paused'].includes(c.status))fail(409,'Command is already finished.');
+ await cas(env,a,{updated_at:now,energy:energyAt(a,now,!!await active(env,a.wallet))},'cancel',0,'Command cancelled by owner',[
+ stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,c.id,...guard(a))]);return json({ok:true});
+ }
+ if(path==='/upgrades'&&request.method==='POST'){
+ const a=await own(env,request),b=await body(request);if(![0,1,2].includes(b.index))fail(400,'Invalid upgrade.');if(await active(env,a.wallet))fail(409,'Pause your agent before upgrading.');const key=['power_level','tank_level','speed_level'][b.index];if(a[key]>=20)fail(409,'Maximum upgrade level reached.');const price=upgradeCost(a,b.index);if(a.points<price)fail(409,'Not enough TAP points.');const energy=energyAt(a,now);await cas(env,a,{[key]:a[key]+1,points:a.points-price,energy:energy+(b.index===1?1000:0),updated_at:now},'upgrade',-price,['Multitap','Energy tank','Agent overclock'][b.index]+' upgraded');return json({ok:true});
+ }
+ if(path==='/missions/claim'&&request.method==='POST'){
+ const a=await own(env,request),b=await body(request);if(!Number.isInteger(b.index)||!missions[b.index])fail(400,'Invalid mission.');const m=missions[b.index];if(a[m.key]<m.goal)fail(409,'Complete this mission first.');if(await first(env,'SELECT id FROM mission_claims WHERE wallet=? AND mission=?',a.wallet,b.index))fail(409,'Reward already claimed.');if(a.points+m.reward>MAX_POINTS)fail(409,'Point limit reached.');
+ await cas(env,a,{points:a.points+m.reward,earned:a.earned+m.reward},'mission',m.reward,m.name,[stmt(env,'INSERT INTO mission_claims(id,wallet,mission,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id(),a.wallet,b.index,now,...guard(a))]);return json({ok:true});
+ }
+ if(path==='/disconnect'&&request.method==='POST'){
+ const a=await own(env,request);await body(request);await cas(env,a,{connected:0,updated_at:now},'disconnect',0,'Agent sessions revoked',[
+ stmt(env,'UPDATE sessions SET revoked=1 WHERE wallet=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',a.wallet,...guard(a)),
+ stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running','paused') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a))]);return json({ok:true});
+ }
+ fail(404,'Endpoint not found.');
+ }catch(e){if(e instanceof HttpError)return json({error:e.message},e.status);console.error('TapTap API error',e instanceof Error?e.name:'unknown');return json({error:'The request could not be completed. Please retry.'},500);}
+}
