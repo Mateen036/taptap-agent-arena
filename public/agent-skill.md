@@ -25,7 +25,7 @@ The user can now queue prompts such as “Tap 100 times” or “Use 500 energy�
 
 ## Game protocol
 
-Server origin and chain ID 56 bind all EIP-712 signatures. A main-wallet signature authorizes only the generated session address for one hour. Each agent action has a session ID, strictly increasing nonce, timestamp (maximum 60-second skew), action, and a hash of canonical JSON payload. Requests from the browser cannot create tap credits without a valid session signature.
+Protocol version 2 uses only `name`, `version`, and `chainId` in the EIP-712 domain, without `salt`. The server origin is included as an `origin` field inside every signed message. Chain ID 56, challenge/session IDs, expiry, and nonces retain their existing checks. After upgrading, download the latest connector and create a fresh pairing code; old signature previews are not compatible. A main-wallet signature authorizes only the generated session address for one hour. Each agent action has a session ID, strictly increasing nonce, timestamp (maximum 60-second skew), action, and a hash of canonical JSON payload. Requests from the browser cannot create tap credits without a valid session signature.
 
 POST `/api/agent/challenge`: pairingCode, wallet, sessionKey → challengeId, typedData.
 POST `/api/agent/session`: challengeId, signature → sessionId, nonce, expiresAt.

@@ -18452,11 +18452,12 @@ function canonical(v) {
 }
 
 // lib/protocol.ts
-function domain(origin2) {
-  return { name: "TapTap Agent Arena", version: "1", chainId: 56, salt: keccak256(toHex(origin2)) };
+var CHAIN_ID = 56;
+function domain() {
+  return { name: "TapTap Agent Arena", version: "2", chainId: CHAIN_ID };
 }
 function actionData(origin2, a) {
-  return { domain: domain(origin2), types: { AgentAction: [{ name: "sessionId", type: "string" }, { name: "nonce", type: "uint256" }, { name: "timestamp", type: "uint256" }, { name: "action", type: "string" }, { name: "payloadHash", type: "bytes32" }] }, primaryType: "AgentAction", message: { sessionId: a.sessionId, nonce: BigInt(a.nonce), timestamp: BigInt(a.timestamp), action: a.action, payloadHash: keccak256(toHex(canonical(a.payload))) } };
+  return { domain: domain(), types: { AgentAction: [{ name: "origin", type: "string" }, { name: "sessionId", type: "string" }, { name: "nonce", type: "uint256" }, { name: "timestamp", type: "uint256" }, { name: "action", type: "string" }, { name: "payloadHash", type: "bytes32" }] }, primaryType: "AgentAction", message: { origin: origin2, sessionId: a.sessionId, nonce: BigInt(a.nonce), timestamp: BigInt(a.timestamp), action: a.action, payloadHash: keccak256(toHex(canonical(a.payload))) } };
 }
 
 // agent/connector.ts

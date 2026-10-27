@@ -31,7 +31,7 @@ Wallet signatures and NFT ownership prove key control and eligibility; they do n
 
 ## Integrity rules
 
-D1 is the source of truth. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 sessions and actions are bound to the Site origin and chain. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
+D1 is the source of truth. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 protocol v2 uses the Binance-compatible domain fields `name`, `version`, and `chainId` without `salt`. Sessions and actions bind the Site origin in a signed message field. Fresh pairing and the latest agent connector are required after the v2 upgrade. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
 
 ## Token launch and conversion
 

@@ -43,7 +43,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(path.startsWith('/admin/')&&request.method==='POST'){
   if(!env.ADMIN_WALLET||!isAddress(env.ADMIN_WALLET))fail(503,'Launch operator wallet has not been configured.');
   const b=await body(request);if(!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.requestId!=='string'||b.requestId.length>80||!b.payload||typeof b.payload!=='object')fail(400,'Invalid operator request.');
-  const typed={domain:domain(url.origin),types:{AdminAction:[{name:'requestId',type:'string'},{name:'timestamp',type:'uint256'},{name:'action',type:'string'},{name:'payloadHash',type:'bytes32'}]},primaryType:'AdminAction',message:{requestId:b.requestId,timestamp:BigInt(b.timestamp),action:path,payloadHash:hash(canonical(b.payload))}};
+  const typed={domain:domain(),types:{AdminAction:[{name:'origin',type:'string'},{name:'requestId',type:'string'},{name:'timestamp',type:'uint256'},{name:'action',type:'string'},{name:'payloadHash',type:'bytes32'}]},primaryType:'AdminAction',message:{origin:url.origin,requestId:b.requestId,timestamp:BigInt(b.timestamp),action:path,payloadHash:hash(canonical(b.payload))}};
   let valid=false;try{valid=await verifyTypedData({address:env.ADMIN_WALLET,...typed,signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid operator signature.');
   try{await stmt(env,'INSERT INTO admin_requests(id,created_at) VALUES(?,?)',b.requestId,now).run();}catch{fail(409,'Operator request already used.');}
   if(path==='/admin/freeze'){
