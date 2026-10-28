@@ -10540,6 +10540,32 @@ init_isAddress();
 init_size();
 init_toHex();
 init_regex();
+init_stringify();
+function serializeTypedData(parameters) {
+  const { domain: domain_, message: message_, primaryType, types } = parameters;
+  const normalizeData = (struct, data_) => {
+    const data = { ...data_ };
+    for (const param of struct) {
+      const { name, type } = param;
+      if (type === "address")
+        data[name] = data[name].toLowerCase();
+    }
+    return data;
+  };
+  const domain2 = (() => {
+    if (!types.EIP712Domain)
+      return {};
+    if (!domain_)
+      return {};
+    return normalizeData(types.EIP712Domain, domain_);
+  })();
+  const message = (() => {
+    if (primaryType === "EIP712Domain")
+      return void 0;
+    return normalizeData(types[primaryType], message_);
+  })();
+  return stringify({ domain: domain2, message, primaryType, types });
+}
 function validateTypedData(parameters) {
   const { domain: domain2, message, primaryType, types } = parameters;
   const validateData = (struct, data) => {
@@ -18460,6 +18486,13 @@ function actionData(origin2, a) {
   return { domain: domain(), types: { AgentAction: [{ name: "origin", type: "string" }, { name: "sessionId", type: "string" }, { name: "nonce", type: "uint256" }, { name: "timestamp", type: "uint256" }, { name: "action", type: "string" }, { name: "payloadHash", type: "bytes32" }] }, primaryType: "AgentAction", message: { origin: origin2, sessionId: a.sessionId, nonce: BigInt(a.nonce), timestamp: BigInt(a.timestamp), action: a.action, payloadHash: keccak256(toHex(canonical(a.payload))) } };
 }
 
+// agent/signing-request.ts
+function sessionSigningRequest(wallet, data) {
+  const typedData = { ...data, types: { ...data.types, EIP712Domain: getTypesForEIP712Domain({ domain: data.domain }) } };
+  validateTypedData(typedData);
+  return JSON.stringify({ method: "eth_signTypedData_v4", params: [wallet, serializeTypedData(typedData)] });
+}
+
 // agent/connector.ts
 var args = process.argv.slice(2);
 var mode = args[0] || "help";
@@ -18545,7 +18578,7 @@ async function prepare() {
   const result = await request("agent/challenge", { pairingCode: process.env.TAPTAP_PAIRING_CODE || option("pair"), wallet, sessionKey: account.address });
   if (!result.ok) throw Error(result.data.error);
   const c = result.data;
-  const message = JSON.stringify({ method: "eth_signTypedData_v4", params: [wallet, JSON.stringify(c.typedData)] });
+  const message = sessionSigningRequest(wallet, c.typedData);
   const preview = baw(["sign-message", "preview", "--binanceChainId", "56", "--signType", "EIP712", "--message", message]);
   persist({ origin, wallet, sessionPrivateKey: key, challengeId: c.challengeId, expiresAt: c.expiresAt, requestId: preview.requestId });
   console.log(JSON.stringify({ wallet, agentId: identity.agentId, typedData: c.typedData, preview, scope: "Game commands only; no token approvals or transfers.", next: "Show the preview to the user. After explicit approval, run confirm --approve-session." }, null, 2));

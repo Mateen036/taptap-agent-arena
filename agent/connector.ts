@@ -4,6 +4,7 @@ import {createPublicClient,http,parseAbi,encodeFunctionData,keccak256,concat,hex
 import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';import path from 'node:path';import os from 'node:os';
 import {actionData} from '../lib/protocol';
+import {sessionSigningRequest} from './signing-request';
 const args=process.argv.slice(2),mode=args[0]||'help';const option=(key:string)=>{const i=args.indexOf('--'+key);return i<0?undefined:args[i+1]};
 const site=option('site')||process.env.TAPTAP_SITE;if(!site&&mode!=='help')throw Error('Set TAPTAP_SITE or --site.');
 const origin=site?new URL(site).origin:'';if(site&&new URL(site).protocol!=='https:'&&!['localhost','127.0.0.1'].includes(new URL(site).hostname))throw Error('Use an HTTPS Site URL.');
@@ -23,7 +24,7 @@ async function prepare(){
  const addresses=baw(['wallet','address']).addresses;const wallet=addresses.find((a:any)=>String(a.binanceChainId)==='56')?.address;if(!wallet)throw Error('No BNB Chain wallet address is available.');
  const key=generatePrivateKey(),account=privateKeyToAccount(key);
  const result=await request('agent/challenge',{pairingCode:process.env.TAPTAP_PAIRING_CODE||option('pair'),wallet,sessionKey:account.address});if(!result.ok)throw Error(result.data.error);
- const c=result.data;const message=JSON.stringify({method:'eth_signTypedData_v4',params:[wallet,JSON.stringify(c.typedData)]});
+ const c=result.data;const message=sessionSigningRequest(wallet,c.typedData);
  const preview=baw(['sign-message','preview','--binanceChainId','56','--signType','EIP712','--message',message]);
  persist({origin,wallet,sessionPrivateKey:key,challengeId:c.challengeId,expiresAt:c.expiresAt,requestId:preview.requestId});
  console.log(JSON.stringify({wallet,agentId:identity.agentId,typedData:c.typedData,preview,scope:'Game commands only; no token approvals or transfers.',next:'Show the preview to the user. After explicit approval, run confirm --approve-session.'},null,2));
