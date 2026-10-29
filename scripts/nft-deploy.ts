@@ -14,6 +14,11 @@ export function nftDeploymentPlan(owner:`0x${string}`){
  return {chainId:56 as const,owner,contracts:{renderer,vault,collection,market},payment:NFT_PAYMENT,router:NFT_ROUTER,registry:AGENT_ID_REGISTRY,supply:10000,perWalletLimit:10,firstFree:'one per wallet',paidMintPrice:'1 USDT',lpPolicy:'Primary mint proceeds go directly to an LP-only vault. Future token selection has a 2-day delay; LP tokens have no withdrawal path.',transaction:{chainId:56 as const,from:owner,to:NFT_MULTICALL,value:'0',data:encodeFunctionData({abi:deploymentAbi,functionName:'aggregate3',args:[calls]})},steps};
 }
 export function normalizeRuntime(code:`0x${string}`,a:any){const bytes=Buffer.from(code.slice(2),'hex');for(const refs of Object.values(a.immutableReferences||{}) as any[])for(const r of refs)bytes.fill(0,r.start,r.start+r.length);return '0x'+bytes.toString('hex');}
+export function nftDeploymentTransaction(plan:ReturnType<typeof nftDeploymentPlan>,names:string[]){
+ if(!names.length||new Set(names).size!==names.length||names.some(name=>!plan.steps.some(s=>s.name===name)))throw Error('Choose valid, unique deployment components.');
+ const steps=plan.steps.filter(s=>names.includes(s.name));
+ return {chainId:56 as const,from:plan.owner,to:steps.length===1?NFT_CREATE2:NFT_MULTICALL,value:'0',data:steps.length===1?steps[0].callData:encodeFunctionData({abi:deploymentAbi,functionName:'aggregate3',args:[steps.map(s=>({target:NFT_CREATE2,allowFailure:false,callData:s.callData}))]})};
+}
 const baw=(args:string[])=>{const r=spawnSync('baw',[...args,'--json'],{encoding:'utf8',maxBuffer:8*1024*1024});let d;try{d=JSON.parse(r.stdout)}catch{throw Error('Binance CLI returned no readable result.');}if(r.status||!d.success)throw Error(d.error?.message||r.stderr||'Binance operation failed.');return d.data;};
 function signer(){if(baw(['wallet','status']).status!=='CONNECTED')throw Error('Sign in to Binance Agentic Wallet first.');const s=baw(['wallet','settings']),raw=s.devMode?.expiresAt,n=Number(raw),expiry=typeof raw==='string'&&!/^\d+$/.test(raw)?Date.parse(raw):n<1e12?n*1000:n;if(!s.devMode?.enabled||!Number.isFinite(expiry)||expiry<=Date.now())throw Error('Enable Developer Mode before preparing a deployment preview.');const address=baw(['wallet','address']).addresses.find((a:any)=>String(a.binanceChainId)==='56')?.address;if(!address)throw Error('BNB Chain wallet unavailable.');return address as `0x${string}`;}
 async function run(){
@@ -24,7 +29,10 @@ async function run(){
   if(!process.argv.includes('--approve-deployment'))throw Error('Review the exact preview and obtain explicit user approval before --approve-deployment.');
   const saved=JSON.parse(fs.readFileSync(stateFile,'utf8'));if(saved.owner.toLowerCase()!==owner.toLowerCase()||saved.preview.expiresAt<Date.now())throw Error('Deployment preview expired or wallet changed. Run a fresh preview.');
   const rebuilt=nftDeploymentPlan(owner);if(keccak256(toHex(canonical(rebuilt)))!==saved.planDigest)throw Error('Deployment source changed. Review a fresh preview.');
+  if(canonical(nftDeploymentTransaction(rebuilt,saved.selectedSteps))!==canonical(saved.transaction))throw Error('Deployment stage changed. Review a fresh preview.');
   if(saved.execution)throw Error('Execution was already attempted. Verify its receipt before taking any further action.');
+  const chain=createPublicClient({chain:bsc,transport:http(process.env.BSC_RPC_URL||'https://bsc-dataseed.bnbchain.org')});if(await chain.getChainId()!==56)throw Error('RPC network mismatch.');
+  for(const step of rebuilt.steps.filter(s=>saved.selectedSteps.includes(s.name)))if(await chain.getCode({address:step.address}))throw Error('This component is already deployed. Verify it before proceeding.');
   saved.execution={startedAt:Date.now()};fs.writeFileSync(stateFile,JSON.stringify(saved),{mode:0o600});
   const result=baw(['contract-call','execute','--requestId',saved.preview.requestId]);saved.execution.result=result;fs.writeFileSync(stateFile,JSON.stringify(saved),{mode:0o600});console.log(JSON.stringify({status:result.status,transactionHash:result.txHash||result.transactionHash,orderId:result.orderId,next:'Verify the on-chain receipt and runtime code before configuring the website. Never execute an uncertain deployment twice.'},null,2));return;
  }
@@ -38,14 +46,20 @@ async function run(){
   console.log(JSON.stringify({verified:true,chainId:56,contracts:plan.contracts,owner},null,2));return;
  }
  const codeEntries=await Promise.all([NFT_CREATE2,NFT_MULTICALL,NFT_ROUTER,NFT_PAYMENT,AGENT_ID_REGISTRY].map(async address=>{const code=await c.getCode({address});if(!code||code==='0x')throw Error('Required on-chain dependency missing: '+address);return {address,codeHash:keccak256(code)};}));
- const existing=await Promise.all(plan.steps.map(async s=>!!(await c.getCode({address:s.address}))));if(existing.some(Boolean))throw Error('A predicted contract address is already deployed. Use verify and reconcile before creating a new deployment.');
- const [gas,gasPrice,balance]=await Promise.all([c.estimateGas({account:owner,to:plan.transaction.to,data:plan.transaction.data,value:0n}),c.getGasPrice(),c.getBalance({address:owner})]);
- const summary={collection:plan.contracts.collection,contracts:plan.contracts,owner,chainId:56,supply:10000,firstFree:'one per eligible wallet',maximumMintsPerWallet:10,paidPrice:'1 USDT',nativeTransferValue:'0 BNB',estimatedGas:gas.toString(),estimatedNetworkFeeBNB:formatEther(gas*gasPrice),walletBNBBalance:formatEther(balance),lpPolicy:plan.lpPolicy,dependencies:codeEntries};
- fs.mkdirSync('docs/nft',{recursive:true});const {walletBNBBalance:privateBalance,...publicSummary}=summary;fs.writeFileSync('docs/nft/deployment-plan.json',JSON.stringify({...publicSummary,transaction:plan.transaction,steps:plan.steps},null,2)+'\n');
+ const existing=await Promise.all(plan.steps.map(async s=>{const code=await c.getCode({address:s.address});if(!code||code==='0x')return false;if(normalizeRuntime(code,artifact(s.name))!==artifact(s.name).deployedBytecode)throw Error(s.name+' exists with unexpected runtime code.');return true;}));
+ const componentIndex=process.argv.indexOf('--component'),requested=componentIndex>=0?process.argv[componentIndex+1]:null;
+ const remaining=plan.steps.filter((_s,i)=>!existing[i]);if(!remaining.length){console.log('All four contracts are deployed. Run verify before activating the website.');return;}
+ let selectedSteps=requested?[requested]:remaining.map(s=>s.name);if(selectedSteps.some(n=>!remaining.some(s=>s.name===n)))throw Error('Selected component is invalid or already deployed.');
+ let transaction=nftDeploymentTransaction(plan,selectedSteps);
+ const [gas,gasPrice,balance]=await Promise.all([c.estimateGas({account:owner,to:transaction.to,data:transaction.data,value:0n}),c.getGasPrice(),c.getBalance({address:owner})]);
+ const summary={collection:plan.contracts.collection,contracts:plan.contracts,owner,chainId:56,supply:10000,firstFree:'one per eligible wallet',maximumMintsPerWallet:10,paidPrice:'1 USDT',nativeTransferValue:'0 BNB',estimatedGas:gas.toString(),estimatedNetworkFeeBNB:formatEther(gas*gasPrice),walletBNBBalance:formatEther(balance),lpPolicy:plan.lpPolicy,dependencies:codeEntries,deploymentStage:selectedSteps,alreadyDeployed:plan.steps.filter((_s,i)=>existing[i]).map(s=>s.name)};
+ if(mode==='plan'){fs.mkdirSync('docs/nft',{recursive:true});const {walletBNBBalance:privateBalance,...publicSummary}=summary;fs.writeFileSync('docs/nft/deployment-plan.json',JSON.stringify({...publicSummary,transaction,steps:plan.steps},null,2)+'\n');}
  if(mode==='preview'){
-  const p=baw(['contract-call','preview','--binanceChainId','56','--from',owner,'--to',plan.transaction.to,'--value','0','--inputData',plan.transaction.data]);if(!p.requestId)throw Error('Binance did not return a usable deployment preview.');const n=Number(p.expiresAt);p.expiresAt=Number.isFinite(n)?(n<1e12?n*1000:n):Date.now()+180000;
-  fs.mkdirSync(dir,{recursive:true,mode:0o700});fs.writeFileSync(stateFile,JSON.stringify({owner,planDigest:keccak256(toHex(canonical(plan))),summary,preview:p}),{mode:0o600});
-  fs.writeFileSync(path.join(dir,'nft-deployment-preview.json'),JSON.stringify({summary,preview:p},null,2)+'\n',{mode:0o600});
+  const preview=(tx:typeof transaction)=>baw(['contract-call','preview','--binanceChainId','56','--from',owner,'--to',tx.to,'--value','0','--inputData',tx.data]);let p:any;
+  try{p=preview(transaction);}catch(error){if(selectedSteps.length===1||requested)throw error;console.error('Binance rejected the bundle preview. Trying only the first undeployed component with normal gas estimation.');selectedSteps=[remaining[0].name];transaction=nftDeploymentTransaction(plan,selectedSteps);const stagedGas=await c.estimateGas({account:owner,to:transaction.to,data:transaction.data,value:0n});summary.deploymentStage=selectedSteps;summary.estimatedGas=stagedGas.toString();summary.estimatedNetworkFeeBNB=formatEther(stagedGas*gasPrice);p=preview(transaction);}
+  if(!p.requestId)throw Error('Binance did not return a usable deployment preview.');const n=Number(p.expiresAt);p.expiresAt=Number.isFinite(n)?(n<1e12?n*1000:n):Date.now()+180000;
+  fs.mkdirSync(dir,{recursive:true,mode:0o700});fs.writeFileSync(stateFile,JSON.stringify({owner,planDigest:keccak256(toHex(canonical(plan))),selectedSteps,transaction,summary,preview:p}),{mode:0o600});
+  fs.writeFileSync(path.join(dir,'nft-deployment-preview.json'),JSON.stringify({summary,transaction,preview:p},null,2)+'\n',{mode:0o600});
   console.log(JSON.stringify({summary,preview:{requestId:p.requestId,expiresAt:p.expiresAt,risks:p.risks,authorityChanges:p.authorityChanges,requireConfirmation:p.requireConfirmation},fullPreview:path.join(dir,'nft-deployment-preview.json'),next:'Show the full parsed operation and risks. Execute only after explicit approval of this exact mainnet deployment.'},null,2));
  }else console.log(JSON.stringify({summary,plan:'docs/nft/deployment-plan.json',next:'No transactions sent. The atomic CREATE2 bundle deploys all four contracts. Obtain a Binance preview and explicit approval before execution.'},null,2));
 }

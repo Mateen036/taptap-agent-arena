@@ -49,6 +49,14 @@ Show the owner the exact deploy operation, parsed Binance preview, all risks/aut
 npx tsx scripts/nft-deploy.ts execute --approve-deployment
 ```
 
+If Binance rejects the aggregate preview while BNB RPC simulation succeeds, the script falls back to the first undeployed component without setting a custom gas cap. You can also request an explicit stage:
+
+```sh
+npx tsx scripts/nft-deploy.ts preview --owner YOUR_PUBLIC_WALLET --component NibRenderer
+```
+
+After that transaction is approved, mined and verified, run `preview` again. Already deployed components must match reviewed runtime bytecode and are excluded from the next stage. Each new stage has its own exact parsed preview, fee estimate and approval. No funds move when a preview fails. The first live Binance renderer preview succeeded after the full-bundle preview was rejected; the fallback is implemented and tested.
+
 The script journals before calling Binance and will not automatically repeat an attempted deployment. If Binance requests app confirmation, the owner must complete it. Recover the transaction hash from Binance and inspect its receipt before proceeding. Never re-execute an uncertain deployment. Execution spends BNB network gas; native transfer value is zero, and deployment does not mint NFTs, grant USDT allowances or deploy the future token.
 
 After successful chain confirmation:
