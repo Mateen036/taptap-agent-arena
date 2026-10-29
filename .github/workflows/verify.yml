@@ -1,7 +1,7 @@
 name: Verify TapTap
 on:
   push:
-    branches: [main]
+    branches: [main, nft-testnet-review]
   pull_request:
 permissions:
   contents: read
@@ -22,3 +22,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run build:vercel
+      - run: npm run build:testnet
+      - run: npm run test:browser:testnet

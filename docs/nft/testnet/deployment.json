@@ -1,0 +1,43 @@
+{
+  "chainId": 97,
+  "network": "BNB Smart Chain testnet",
+  "testOnly": true,
+  "binanceWalletSupported": false,
+  "registryMode": "test substitute, not a real Binance Agent ID",
+  "contracts": {
+    "registry": "0x4f2610fa980e112b8bfc3350038222be6dc6faa7",
+    "payment": "0x74e304ef21f225f85fe49ebaaeadb70540b307a3",
+    "futureToken": "0x06aeb2f0a3ca2884c1a75e4710e4746507f03a07",
+    "renderer": "0x17a0ef7d1008606ca0d6633f442aa05cfa97d424",
+    "vault": "0x17f92908125b0a1754556e65963fdc81da46bc19",
+    "collection": "0xbfa92af7c057d83ac4df6554112b7f1027b0321f",
+    "market": "0x1bd7d96768bece41545dbe683ddd94111e9dd897",
+    "router": "0xD99D1c33F9fC3444f8101754aBC46c52416550D1"
+  },
+  "wallets": {
+    "deployer": "0xec79109F601A8850A21CC6e01E1C0cCab2313dc2",
+    "alpha": "0xaDA2F016171fabBB2ACc2e9Ef06CDa4144241918",
+    "beta": "0xfe12C43198C137C3cfc28DbbE0d4f6144e1fD0Fb"
+  },
+  "lpTokenReadyAt": "2026-10-31T17:11:31.000Z",
+  "transactions": {
+    "deploy:registry": "0x774c450d98842e96933b21590e98270d34466d236716f11ca1809e8ea6d4126d",
+    "deploy:payment": "0xc2919eb271fdc2c3d8d2b309813aa985e653e7bbea9c08f98a8ae1356d768cd8",
+    "deploy:futureToken": "0xbb97e68b2c25548bbc9ab15cfc2695cca27820726e6f6dffc147608cac319c5a",
+    "deploy:renderer": "0x7c9ed2099c640fd8d513f115b911d4c9c201521daddaf13d4d63d35849be39c2",
+    "deploy:vault": "0x9385d528a9c6b83b4837ee95ad70fb6e7927aa697aa4429fba4157e5ed011193",
+    "deploy:collection": "0x03f9ea682b1126b6d1fbaf741b23f86462c582ef9ca77903fb8a3f556e60974a",
+    "deploy:market": "0x61dcb8a104deeead88a9557ffaf09d3966a4c1c8b020926ad85060093253874f",
+    "eligible:deployer": "0xc686032b57a4349d11ca54e95d56555a9b3117f90e0f12ebdc74964c06a518ad",
+    "payment:deployer": "0x855696a815583b1c3c9a1e178f6ea87f3e0e281e763f0e3b7d604e7f6ab4cdef",
+    "eligible:alpha": "0x7faa3771c8001000cc58735dfa3c76fc244e3b7c05899c4b25cc85bbe44d4676",
+    "payment:alpha": "0x43422b482b1a93fe852112f1fce45b7212d5060ad7ec616670a2b81e8b77ce6b",
+    "gas:alpha": "0xe291ab0b54790a4ed37c7ef5562319fdd0aa3ed6353155ffabd27dcce48487cf",
+    "eligible:beta": "0xa4ca006f0fb9cafc6651e145ac762568bb18edd397269731db5d4a19826b9693",
+    "payment:beta": "0x2286059b1f0daa4535a0198cf8294766448a83455201d202d69917ab7e01afa2",
+    "gas:beta": "0x426653cc95f2a3d97aeb67894f80349759b6cee8e674775af52c55ab10ebfe94",
+    "token-to-vault": "0xb4943dab1681783f8ca64c9eb89c1fa316c94e6d72ae661155be6673c7b025ae",
+    "token-proposal": "0x6e179a18411eb8e0c9d19ddd79485d2160bee82190e99a37eda1835b0071e506"
+  },
+  "createdAt": "2026-10-29T17:11:36.347Z"
+}

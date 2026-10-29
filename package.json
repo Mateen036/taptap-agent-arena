@@ -19,7 +19,9 @@
     "db:migrate:postgres": "node scripts/migrate-postgres.mjs",
     "test:browser": "playwright test",
     "test:load": "tsx scripts/load-test.ts",
-    "precheck": "node scripts/prepare-ui.mjs && node scripts/prepare-vercel.mjs"
+    "precheck": "node scripts/prepare-ui.mjs && node scripts/prepare-vercel.mjs && node scripts/prepare-testnet.mjs",
+    "build:testnet": "node scripts/prepare-testnet.mjs && next build deploy/testnet",
+    "test:browser:testnet": "playwright test --config playwright.testnet.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
