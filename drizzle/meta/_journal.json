@@ -43,6 +43,13 @@
       "when": 1793281267140,
       "tag": "0005_verified_nft_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793297664849,
+      "tag": "0006_nft_exact_points",
+      "breakpoints": true
     }
   ]
 }

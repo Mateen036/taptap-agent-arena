@@ -13,7 +13,7 @@ Live target: https://taptap-agent-arena.vercel.app · Public source: https://git
 - Pairing progress, runner heartbeats, task cancellation, session recovery guidance and bounded aggregate funnel diagnostics.
 - Original Nib mascot, responsive desktop/mobile UI, self-hosted fonts and a [launch kit](docs/launch/README.md). No posts or outreach have been sent.
 
-`npm run check`, `npm test`, `npm run test:browser`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
+`npm run check`, `npm test`, `npm run test:browser`, `npm run test:browser:utility`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
 
 ## Nib Foundry NFTs
 
@@ -52,7 +52,7 @@ Wallet signatures and NFT ownership prove key control and eligibility; they do n
 
 ## Integrity rules
 
-PostgreSQL is the production source of truth; the original Sites target uses D1. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 protocol v2 uses the Binance-compatible domain fields `name`, `version`, and `chainId` without `salt`. Sessions and actions bind the Site origin in a signed message field. Fresh pairing and the latest agent connector are required after the v2 upgrade. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
+PostgreSQL is the production source of truth; the original Sites target uses D1. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 protocol v2 uses the Binance-compatible domain fields `name`, `version`, and `chainId` without `salt`. Sessions and actions bind the Site origin in a signed message field. Fresh pairing and the latest agent connector are required after the v2 upgrade. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes for legacy sessions and at the same current block as NFT holdings for every utility-gated game action. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
 
 ## Token launch and conversion
 
@@ -77,3 +77,9 @@ The token contracts are tested, not independently audited. The operator controls
 - Deployment host only: `DEPLOYER_PRIVATE_KEY`, injected by an operator-controlled secret manager; never provided to the website or requested in chat.
 
 Tests cover signed enrollment, replay rejection, cross-account access, points and mission accounting, command cancellation, session revocation, time/energy limits, signature domain/payload binding, and local-EVM token eligibility, root delays, pause, proof validation and cumulative claims. Chromium browser checks cover mobile/desktop navigation, pairing, signed points, profiles, rounds, challenges and real PNG generation. Binance app approval remains an external dependency.
+
+## NFT access and exponential TAP
+
+The utility release requires a current Binance Agent ID and at least one Nib in the paired wallet. New earned TAP (including mission rewards) uses **base TAP × 2^owned**, with no added multiplier cap within the 10,000-piece supply. Purchases/transfers count; the ten-NFT mint allocation does not limit holdings. Competitive scores use base gains. Existing balances remain unchanged; exact decimal accounting supports the whole collection. Mint/Market/pairing remain available without an NFT.
+
+Utility stays visibly labeled “at launch” until verified mainnet contracts and persistent activation are ready. See [release procedure](docs/nft/utility-release.md) for migration, in-flight request draining and permanent legacy-runtime freeze. Tests cover real local-chain ownership/identity changes, 61 NFTs held, 3,011-digit totals, exact upgrade spending, replay rejection and NFT-less onboarding on SQLite/Postgres plus desktop/mobile Chromium.

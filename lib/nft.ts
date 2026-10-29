@@ -32,6 +32,11 @@ async function chain(e:NftEnv){
  }
  return {c,config};
 }
+// Ownership is read at one current block for each access/earning check; it is not session-cached.
+export async function nftGameHolding(e:NftEnv,wallet:string):Promise<{owned:number;block:string;identityEligible:boolean}>{
+ const {c,config}=await chain(e);
+ try{const block=await c.getBlockNumber({cacheTime:0});const [held,identity]=await Promise.all([c.readContract({address:config.collection as `0x${string}`,abi:nftAbi,functionName:'balanceOf',args:[wallet as `0x${string}`],blockNumber:block}),c.readContract({address:AGENT_ID_REGISTRY,abi:identityAbi,functionName:'balanceOf',args:[wallet as `0x${string}`],blockNumber:block})]);if(held>10000n)fail(503,'Collection holdings exceed the verified supply.');return {owned:Number(held),block:block.toString(),identityEligible:identity>0n};}catch(error){if(error instanceof NftError)throw error;return fail(503,'NFT ownership verification is unavailable. No points were awarded.');}
+}
 const asset=(id:number)=>({id,name:'Nib Foundry #'+String(id).padStart(5,'0'),image:'/api/nft/art/'+id+'.svg',traits:nftTraits(id)});
 const serializeIntent=(v:any)=>({...v,payload:JSON.parse(v.payload),transaction:JSON.parse(v.transaction),summary:JSON.parse(v.summary),preview:v.preview?JSON.parse(v.preview):null,txDigest:digest(JSON.parse(v.transaction))});
 export async function nftIntents(e:NftEnv,wallet:string,now:number){

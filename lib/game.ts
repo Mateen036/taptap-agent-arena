@@ -10,17 +10,17 @@ export function parseCommand(prompt:string){
  const n=prompt.match(/\d[\d,]*/);const count=n?Number(n[0].replaceAll(',','')):100;
  if(!Number.isSafeInteger(count)||count<1||count>10000)throw new Error('Choose between 1 and 10,000 taps per command.');return count;
 }
-export function tickPlan(agent:any,command:any,requested:number,now:number){
+export function tickPlan(agent:any,command:any,requested:number,now:number,multiplier?:bigint){
  if(!Number.isInteger(requested)||requested<1||requested>100)throw new Error('A batch must contain 1–100 taps.');
  if(command.status!=='running')throw new Error('This command is not running.');
  const elapsed=Math.max(0,Math.min(10000,now-command.last_tick));
  const available=Math.floor(elapsed*speed(agent)/1000);
  const taps=Math.min(requested,available,command.target-command.done,agent.energy);
  if(taps<1)throw new Error(agent.energy<1?'ENERGY_EMPTY':'RATE_LIMITED');
- const gain=taps*power(agent);if(agent.points+gain>MAX_POINTS)throw new Error('Point limit reached.');
+ const baseGain=taps*power(agent),gain=multiplier===undefined?baseGain:BigInt(baseGain)*multiplier;if(multiplier===undefined&&agent.points+baseGain>MAX_POINTS)throw new Error('Point limit reached.');
  // Preserve sub-tap time, discard periods longer than the heartbeat cap.
  const lastTick=now-Math.max(0,elapsed-Math.ceil(taps*1000/speed(agent)));
- return {taps,gain,lastTick,energy:agent.energy-taps,complete:command.done+taps>=command.target};
+ return {taps,gain,baseGain,lastTick,energy:agent.energy-taps,complete:command.done+taps>=command.target};
 }
 export const missions=[{name:'First command',desc:'Complete one agent run.',goal:1,reward:500,key:'runs'},{name:'A thousand tiny taps',desc:'Let your agent complete 1,000 taps.',goal:1000,reward:2500,key:'taps'},{name:'Power moves',desc:'Upgrade Multitap to level 5.',goal:5,reward:1500,key:'power_level'}];
 export function canonical(v:any):string{if(v===null||typeof v!=='object')return JSON.stringify(v);if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';}
