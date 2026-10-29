@@ -68,6 +68,18 @@ The server verifies the wallet holds SPACE ID Agent ID on BNB Chain at `0x60B926
 
 Tap batches are limited by elapsed server time, agent speed, available energy, and the remaining command target. A heartbeat accrues at most ten seconds of taps. Replays do not earn points. Offline time never generates points. Energy recharges at five units per second while idle. Do not run two connector processes for the same session.
 
+## Nib Foundry minting and marketplace
+
+Read `/nft-guide.md` before handling NFT actions. The game-only session can coordinate requests; it cannot move wallet funds. The latest `watch` runner separately prepares Binance main-wallet calls only for queued NFT tasks, then waits for the user to review the exact transaction and explicitly approve it in TapTap's transaction desk. Never treat game-session approval as NFT transaction approval.
+
+`GET /api/nft` returns on-chain collection, market and wallet state. Browser `POST /api/nft/intents` queues one of `mint`, `mint-approval`, `nft-approval`, `list`, `buy-approval`, `buy`, `cancel`. The signed actions are `nft-state`, `nft-claim`, `nft-preview`, `nft-execute`, `nft-broadcast`, `nft-confirm`, `nft-fail`. Only the owner browser can approve a preview, binding both its Binance request ID and exact transaction digest. The agent consumes that approval once before executing.
+
+The runner independently checks chain56, paired-wallet identity, allowed contract/function, exact allowance, quantity, token ID, price/seller/version and deadline. It also checks Developer Mode before preview/execution. No unlimited USDT approval or collection-wide NFT approval is requested. Each approval/mint/list/buy has its own preview and BNB network fee.
+
+Execution intent is journaled before the Binance call. If the call's outcome is uncertain, do not execute it again. Recover its transaction hash from Binance and verify the exact sender, destination, calldata, success and three confirmations through the site's receipt verifier. Pending Binance app confirmations may be found in wallet transaction history. Users can also paste the hash into the transaction desk. A restart must preserve the connector state file, including its preview/execution journal, without printing or uploading the game key.
+
+Do not run an older connector alongside the new one. Stop `watch`, download the latest reviewed connector, then restart it using the existing valid session or create a fresh session after expiry. There is no automatic mainnet deployment, token launch, LP funding, or wallet spending merely from starting `watch`.
+
 ## Token: TBA
 
 Token name, symbol, contract, total supply, conversion date, and points-to-token ratio are TBA. These will be decided and announced later. The current game awards TAP points only.

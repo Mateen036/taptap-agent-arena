@@ -15,6 +15,14 @@ Live target: https://taptap-agent-arena.vercel.app · Public source: https://git
 
 `npm run check`, `npm test`, `npm run test:browser`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
 
+## Nib Foundry NFTs
+
+10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The zero-fee, noncustodial marketplace settles USDT and NFT delivery atomically. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
+
+The browser queues agent requests. The connector validates each exact call, gets a Binance preview, waits for explicit approval in the transaction desk, submits once, and verifies the chain receipt. Game-only session keys never gain wallet spending authority. Unknown submissions require receipt recovery, not an automatic retry.
+
+Read [collection rules](public/nft-guide.md), [art provenance](docs/nft/ART.md), [deployment instructions](docs/nft/README.md) and [verification evidence](docs/nft/VERIFICATION.md). Mainnet minting/trading stays disabled until contracts are deployed and configured. BNB network gas applies even to free mints. The contracts are tested but have not received an independent security audit.
+
 ## Current token status
 
 Token name, symbol, contract, total supply, launch date and points-to-token conversion ratio: **TBA**. These will be decided and announced later. The current release is the points game; token conversion remains closed. See the website’s Docs section.

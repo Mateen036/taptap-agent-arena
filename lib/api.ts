@@ -2,8 +2,9 @@ import {createPublicClient,http,fallback,parseAbi,isAddress,verifyTypedData,kecc
 import {bsc} from 'viem/chains';
 import {capacity,power,speed,energyAt,upgradeCost,parseCommand,tickPlan,missions,MAX_POINTS,canonical} from './game';
 import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
+import {NftError,nftRoute,nftAction,NFT_ACTIONS,nftIntents,nftArtResponse,type NftEnv} from './nft';
 import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,track} from './season';
-type Env={DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string};
+type Env=NftEnv&{DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string};
 class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
 function fail(status:number,message:string):never{throw new HttpError(status,message)}
 const uid=(r:Request)=>r.headers.get('oai-authenticated-user-id')||fail(401,'Sign in to manage your agent.');
@@ -36,6 +37,7 @@ async function snapshot(e:Env,a:any){const c=await active(e,a.wallet);const sess
 export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
+ if(request.method==='GET'&&/^\/nft\/art\/[^/]+$/.test(path))return nftArtResponse(path.split('/').pop()!);
  if(!env.DB)fail(503,'Game storage is not available.');
  if(request.method==='POST'){const origin=request.headers.get('origin');if(origin&&origin!==url.origin)fail(403,'Cross-origin writes are not allowed.');}
  
@@ -91,6 +93,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  const b=await body(request);if(!/^[0-9a-f]{64}$/.test(b.pairingCode||'')||!['wallet_check','identity_check','preview','approval','failed'].includes(b.stage))fail(400,'Invalid pairing update.');const code=['351509','351802','351803','351804','identity','unconnected','unknown'].includes(String(b.code))?String(b.code):null;
  await stmt(env,'UPDATE pairings SET stage=?,error_code=?,reports=reports+1 WHERE code_hash=? AND used=0 AND expires_at>? AND reports<20',b.stage,code,hash(b.pairingCode),now).run();return json({ok:true});
  }
+ if(path.startsWith('/nft')){const user=request.headers.get('oai-authenticated-user-id');const a=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;const result=await nftRoute(request,env,a,()=>body(request),now);if(result)return result;}
  if(path==='/season'||path.startsWith('/public/')||['/profile','/jobs','/jobs/cancel','/analytics'].includes(path)){
  const user=request.headers.get('oai-authenticated-user-id')||undefined;
  const owner=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;
@@ -127,14 +130,15 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  return json({sessionId:sid,nonce:0,expiresAt:c.expires_at,wallet:c.wallet});
  }
  if(path==='/agent/action'&&request.method==='POST'){
- const b=await body(request);if(!['state','start','tap','stop',...SEASON_ACTIONS].includes(b.action)||!Number.isSafeInteger(b.nonce)||b.nonce<0||!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.payload!=='object'||b.payload===null||Array.isArray(b.payload))fail(400,'Invalid action envelope or expired timestamp.');
+ const b=await body(request);if(!['state','start','tap','stop',...SEASON_ACTIONS,...NFT_ACTIONS].includes(b.action)||!Number.isSafeInteger(b.nonce)||b.nonce<0||!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.payload!=='object'||b.payload===null||Array.isArray(b.payload))fail(400,'Invalid action envelope or expired timestamp.');
  const s=await first(env,'SELECT * FROM sessions WHERE id=? AND revoked=0 AND expires_at>?',String(b.sessionId),now);if(!s)fail(401,'Agent session expired or revoked. Pair your agent again.');
  let valid=false;try{valid=await verifyTypedData({address:s.session_key,...actionData(url.origin,b),signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid agent command signature.');if(s.nonce!==b.nonce)return json({error:'Nonce mismatch. Resynchronize before sending another command.',nonce:s.nonce},409);
  if(now-s.verified_at>300000){await eligible(s.wallet,env);await stmt(env,'UPDATE sessions SET verified_at=? WHERE id=?',now,s.id).run();}
  const consumed=await stmt(env,'UPDATE sessions SET nonce=nonce+1,last_seen_at=? WHERE id=? AND nonce=? AND revoked=0 AND expires_at>?',now,s.id,b.nonce,now).run();if(!consumed.meta.changes)fail(409,'Replay rejected.');
  const nextNonce=b.nonce+1;
  try{let a=await first(env,'SELECT * FROM agents WHERE wallet=? AND connected=1',s.wallet);if(!a)fail(403,'Agent disconnected.');
- if(b.action==='state'){const epoch=await first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1');const proof=epoch?await first(env,'SELECT amount,proof FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;return json({nonce:nextNonce,agent:await snapshot(env,a),competition:await seasonSnapshot(env,a,now),serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:null});}
+ if(b.action==='state'){const epoch=await first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1');const proof=epoch?await first(env,'SELECT amount,proof FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;return json({nonce:nextNonce,agent:await snapshot(env,a),competition:await seasonSnapshot(env,a,now),nft:{intents:await nftIntents(env,a.wallet,now)},serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:null});}
+ if(NFT_ACTIONS.includes(b.action)){const result=await nftAction(env,a,b.action,b.payload,now);return json({nonce:nextNonce,...result,serverTime:now});}
  if(SEASON_ACTIONS.includes(b.action)){const result=await seasonAction(env,a,b.action,b.payload,now);return json({nonce:nextNonce,...result,serverTime:now});}
  const command=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.payload.commandId),s.wallet);if(!command)fail(404,'Command not found.');
  if(frozen?.value==='frozen'&&['start','tap'].includes(b.action))fail(409,'Season is frozen for token allocation.');
@@ -152,7 +156,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(command.status!=='running')fail(409,'Command is not running.');await cas(env,a,{updated_at:now},'pause',0,'Agent paused command',[
  stmt(env,"UPDATE commands SET status='paused',finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,command.id,...guard(a))]);}
  a=await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet);return json({nonce:nextNonce,agent:await snapshot(env,a),serverTime:now});
- }catch(e){const status=e instanceof HttpError||e instanceof SeasonError?e.status:409;return json({error:e instanceof Error?e.message:'Action failed',nonce:nextNonce},status);}
+ }catch(e){const status=e instanceof HttpError||e instanceof SeasonError||e instanceof NftError?e.status:409;return json({error:e instanceof Error?e.message:'Action failed',nonce:nextNonce},status);}
  }
  if(path==='/commands'&&request.method==='POST'){
  const a=await own(env,request),b=await body(request);let target;try{target=parseCommand(b.prompt);}catch(e){fail(400,(e as Error).message);}
@@ -174,10 +178,11 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(path==='/disconnect'&&request.method==='POST'){
  const a=await own(env,request);await body(request);await cas(env,a,{connected:0,updated_at:now},'disconnect',0,'Agent sessions revoked',[
  stmt(env,'UPDATE sessions SET revoked=1 WHERE wallet=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',a.wallet,...guard(a)),
+ stmt(env,"UPDATE nft_intents SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','awaiting_approval','approved') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a)),
  stmt(env,"UPDATE agent_jobs SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a)),
  stmt(env,"UPDATE arena_matches SET status='cancelled',version=version+1 WHERE creator=? AND status='open' AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",a.wallet,...guard(a)),
  stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running','paused') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a))]);return json({ok:true});
  }
  fail(404,'Endpoint not found.');
- }catch(e){if(e instanceof HttpError||e instanceof SeasonError)return json({error:e.message},e.status);console.error('TapTap API error',e instanceof Error?e.name:'unknown');return json({error:'The request could not be completed. Please retry.'},500);}
+ }catch(e){if(e instanceof HttpError||e instanceof SeasonError||e instanceof NftError)return json({error:e.message},e.status);console.error('TapTap API error',e instanceof Error?e.name:'unknown');return json({error:'The request could not be completed. Please retry.'},500);}
 }

@@ -6,6 +6,7 @@ import fs from 'node:fs';import path from 'node:path';import os from 'node:os';
 import {actionData} from '../lib/protocol';
 import {sessionSigningRequest} from './signing-request';
 import {strategyDecision} from '../lib/arena';
+import {processNftIntent} from './nft-runner';
 const args=process.argv.slice(2),mode=args[0]||'help';const option=(key:string)=>{const i=args.indexOf('--'+key);return i<0?undefined:args[i+1]};
 const site=option('site')||process.env.TAPTAP_SITE;if(!site&&mode!=='help')throw Error('Set TAPTAP_SITE or --site.');
 const origin=site?new URL(site).origin:'';if(site&&new URL(site).protocol!=='https:'&&!['localhost','127.0.0.1'].includes(new URL(site).hostname))throw Error('Use an HTTPS Site URL.');
@@ -45,6 +46,7 @@ async function watch(){
  while(!stopped&&Date.now()<s.expiresAt){
   try{
    const r=await action(s,'state'),competition=r.competition;
+   if(await processNftIntent(s,r.nft?.intents||[],{action,baw,persist}))continue;
    const job=competition?.jobs.filter((j:any)=>['queued','running'].includes(j.status)).sort((a:any,b:any)=>a.created_at-b.created_at)[0];
    if(job){
     try{

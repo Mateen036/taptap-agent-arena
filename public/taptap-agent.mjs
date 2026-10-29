@@ -18459,6 +18459,7 @@ function http(url, config = {}) {
 }
 
 // node_modules/viem/_esm/index.js
+init_decodeFunctionData();
 init_encodeFunctionData();
 init_concat();
 init_toHex();
@@ -18518,6 +18519,199 @@ function strategyDecision(e, now) {
     if (level < (kind === "power" ? 5 : 3) && e.score >= arenaCost(e, kind)) return { action: "arena-upgrade", payload: { entryId: e.id, kind } };
   }
   return { action: "arena-tap", payload: { entryId: e.id, taps: Math.min(100, arenaSpeed(e) * 5, energy) } };
+}
+
+// lib/nft-protocol.ts
+var NFT_PAYMENT = "0x55d398326f99059fF775485246999027B3197955";
+var nftAbi = parseAbi([
+  "function MAX_SUPPLY() view returns(uint256)",
+  "function WALLET_LIMIT() view returns(uint256)",
+  "function minted() view returns(uint256)",
+  "function mintedBy(address) view returns(uint256)",
+  "function mintPrice() view returns(uint256)",
+  "function paymentToken() view returns(address)",
+  "function lpVault() view returns(address)",
+  "function renderer() view returns(address)",
+  "function agentIdRegistry() view returns(address)",
+  "function mintOpen() view returns(bool)",
+  "function paused() view returns(bool)",
+  "function balanceOf(address) view returns(uint256)",
+  "function tokenOfOwnerByIndex(address,uint256) view returns(uint256)",
+  "function ownerOf(uint256) view returns(address)",
+  "function getApproved(uint256) view returns(address)",
+  "function approve(address,uint256)",
+  "function mint(uint256,uint256,uint256,bytes32)",
+  "function tokenURI(uint256) view returns(string)"
+]);
+var nftMarketAbi = parseAbi([
+  "function collection() view returns(address)",
+  "function paymentToken() view returns(address)",
+  "function agentIdRegistry() view returns(address)",
+  "function activeCount() view returns(uint256)",
+  "function activeAt(uint256) view returns(uint256)",
+  "function listings(uint256) view returns(uint256 id,address seller,uint256 price,uint256 expiresAt)",
+  "function available(uint256) view returns(bool)",
+  "function completedSales() view returns(uint256)",
+  "function volume() view returns(uint256)",
+  "function list(uint256,uint256,uint256)",
+  "function cancel(uint256,uint256)",
+  "function buy(uint256,uint256,uint256,address,uint256)"
+]);
+var nftPaymentAbi = parseAbi(["function balanceOf(address) view returns(uint256)", "function allowance(address,address) view returns(uint256)", "function approve(address,uint256)", "function decimals() view returns(uint8)", "function symbol() view returns(string)"]);
+var nftVaultAbi = parseAbi(["function paymentToken() view returns(address)", "function liquidityToken() view returns(address)", "function pendingToken() view returns(address)", "function tokenReadyAt() view returns(uint256)", "function paymentAdded() view returns(uint256)", "function lpTokensLocked() view returns(uint256)", "function router() view returns(address)"]);
+var nftConfigAbi = parseAbi(["function owner() view returns(address)"]);
+
+// agent/nft-runner.ts
+var txDigest = (t) => keccak256(toHex(canonical(t)));
+var same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+function validateNftTransaction(intent, contracts, wallet) {
+  const tx = intent.transaction, p = intent.payload;
+  if (tx.chainId !== 56 || !same(tx.from, wallet) || tx.value !== "0" || !/^0x[0-9a-f]+$/i.test(tx.data)) throw Error("NFT transaction envelope does not match this wallet.");
+  const approval = ["mint-approval", "buy-approval"].includes(intent.kind);
+  const abi2 = approval ? nftPaymentAbi : ["nft-approval", "mint"].includes(intent.kind) ? nftAbi : nftMarketAbi;
+  const destination = approval ? NFT_PAYMENT : ["nft-approval", "mint"].includes(intent.kind) ? contracts.collection : contracts.market;
+  if (!same(tx.to, destination)) throw Error("NFT transaction targets an unexpected contract.");
+  const decoded = decodeFunctionData({ abi: abi2, data: tx.data }), args2 = decoded.args || [], name = decoded.functionName;
+  const expected = { "mint-approval": "approve", "buy-approval": "approve", "nft-approval": "approve", mint: "mint", list: "list", cancel: "cancel", buy: "buy" };
+  if (name !== expected[intent.kind]) throw Error("NFT transaction function does not match the requested action.");
+  if (approval) {
+    if (!same(args2[0], intent.kind === "mint-approval" ? contracts.collection : contracts.market) || String(args2[1]) !== String(p.costRaw || p.priceRaw)) throw Error("USDT approval exceeds or differs from the exact request.");
+  } else if (intent.kind === "nft-approval") {
+    if (!same(args2[0], contracts.market) || Number(args2[1]) !== p.tokenId) throw Error("Unexpected NFT approval.");
+  } else if (intent.kind === "mint") {
+    if (Number(args2[0]) !== p.quantity || String(args2[1]) !== p.costRaw || Number(args2[2]) !== Math.floor(intent.expires_at / 1e3) || args2[3] !== keccak256(toHex(intent.id))) throw Error("Mint quote or operation ID changed.");
+  } else {
+    if (Number(args2[0]) !== p.tokenId) throw Error("Unexpected NFT token ID.");
+    if (intent.kind === "list" && (String(args2[1]) !== p.priceRaw || Number(args2[2]) !== Math.floor(intent.created_at / 1e3) + p.days * 86400)) throw Error("Listing terms changed.");
+    if (intent.kind === "cancel" && String(args2[1]) !== p.listingId) throw Error("Cancellation listing changed.");
+    if (intent.kind === "buy" && (String(args2[1]) !== p.listingId || String(args2[2]) !== p.priceRaw || !same(args2[3], p.seller) || Number(args2[4]) !== Math.floor(intent.expires_at / 1e3))) throw Error("Purchase price, seller, or expiry changed.");
+  }
+  return true;
+}
+function developerMode(baw2) {
+  const status = baw2(["wallet", "status"]);
+  if (status.status !== "CONNECTED") throw Error("Sign in to Binance before an NFT transaction.");
+  const settings = baw2(["wallet", "settings"]), raw = settings.devMode?.expiresAt, n = Number(raw), expiry = typeof raw === "string" && !/^\d+$/.test(raw) ? Date.parse(raw) : n < 1e12 ? n * 1e3 : n;
+  if (!settings.devMode?.enabled || !Number.isFinite(expiry) || expiry < Date.now()) throw Error("Enable Developer Mode in Binance Agentic Wallet settings.");
+  const addresses = baw2(["wallet", "address"]).addresses;
+  return addresses.find((a) => String(a.binanceChainId) === "56")?.address;
+}
+function findOrderHash(value, order, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 7) return null;
+  if (value.orderId === order || value.id === order) {
+    for (const key of ["txHash", "transactionHash", "hash"]) if (/^0x[0-9a-f]{64}$/i.test(value[key] || "")) return value[key];
+  }
+  for (const v of Object.values(value)) {
+    if (v && typeof v === "object") {
+      const hash3 = findOrderHash(v, order, depth + 1);
+      if (hash3) return hash3;
+    }
+  }
+  return null;
+}
+async function processNftIntent(s, intents, bridge) {
+  const { action: action2, baw: baw2, persist: persist2 } = bridge;
+  const work = intents.filter((i) => ["queued", "preparing", "approved", "executing", "broadcast", "app_confirmation"].includes(i.status)).sort((a, b) => (a.status === "approved" ? -1 : 0) - (b.status === "approved" ? -1 : 0) || a.created_at - b.created_at);
+  s.nftPreviews ??= {};
+  s.nftExecutions ??= {};
+  for (const intent of work) {
+    const id = intent.id, journal = s.nftExecutions[id];
+    if (intent.status === "broadcast" && intent.transaction_hash) {
+      try {
+        const r = await action2(s, "nft-confirm", { intentId: id, transactionHash: intent.transaction_hash });
+        console.log(JSON.stringify({ nftTask: id, status: r.status }));
+      } catch (error) {
+        if (error.status !== 409) console.error("NFT receipt: " + error.message);
+      }
+      continue;
+    }
+    if (intent.status === "app_confirmation") {
+      if ((s.nftHistoryCheckedAt || 0) > Date.now() - 15e3) continue;
+      s.nftHistoryCheckedAt = Date.now();
+      persist2(s);
+      try {
+        const history = baw2(["wallet", "tx-history", "--binanceChainId", "56", "--size", "20"]);
+        const hash3 = findOrderHash(history, intent.order_id);
+        if (hash3) {
+          await action2(s, "nft-broadcast", { intentId: id, orderId: intent.order_id, transactionHash: hash3 });
+          return true;
+        }
+      } catch {
+      }
+      continue;
+    }
+    if (intent.status === "executing") {
+      if (journal?.response) {
+        const r = journal.response;
+        if (r.txHash || r.transactionHash || r.orderId) {
+          await action2(s, "nft-broadcast", { intentId: id, transactionHash: r.txHash || r.transactionHash, orderId: r.orderId });
+          return true;
+        }
+      }
+      await action2(s, "nft-fail", { intentId: id, uncertain: true });
+      console.error("NFT submission needs recovery. Never retry an uncertain execution automatically.");
+      return true;
+    }
+    if (intent.status === "queued" || intent.status === "preparing") {
+      try {
+        const claimed = await action2(s, "nft-claim", { intentId: id }), i = claimed.intent;
+        validateNftTransaction(i, claimed.contracts, s.wallet);
+        if (!same(developerMode(baw2), s.wallet)) throw Error("The connected Binance wallet differs from the paired game wallet.");
+        const tx = i.transaction;
+        const preview = baw2(["contract-call", "preview", "--binanceChainId", "56", "--from", s.wallet, "--to", tx.to, "--value", "0", "--inputData", tx.data]);
+        if (!preview.requestId) throw Error("Binance did not return a usable preview.");
+        const n = Number(preview.expiresAt), expiresAt = Number.isFinite(n) ? n < 1e12 ? n * 1e3 : n : Date.now() + 18e4;
+        s.nftPreviews[id] = { requestId: preview.requestId, txDigest: txDigest(tx), expiresAt };
+        persist2(s);
+        await action2(s, "nft-preview", { intentId: id, transaction: tx, preview: { ...preview, expiresAt } });
+        console.log(JSON.stringify({ nftTask: id, status: "awaiting_approval", summary: i.summary, transaction: tx, preview, instruction: "Review this exact transaction in TapTap and explicitly approve it. This is not authorized by your game-only session." }));
+        return true;
+      } catch (error) {
+        if (error.status === 401) throw error;
+        try {
+          await action2(s, "nft-fail", { intentId: id, code: "wallet" });
+        } catch {
+        }
+        console.error("NFT preview failed: " + error.message);
+        return true;
+      }
+    }
+    if (intent.status === "approved") {
+      const local = s.nftPreviews[id];
+      if (!local || local.requestId !== intent.preview_request_id || local.txDigest !== txDigest(intent.transaction) || local.expiresAt <= Date.now() || journal) {
+        await action2(s, "nft-fail", { intentId: id, code: "expired" });
+        console.error("NFT approval has no matching local preview. Queue a new request.");
+        return true;
+      }
+      try {
+        if (!same(developerMode(baw2), s.wallet)) throw Error("Connected Binance wallet changed.");
+      } catch (error) {
+        await action2(s, "nft-fail", { intentId: id, code: "wallet" });
+        console.error(error.message);
+        return true;
+      }
+      const claimed = await action2(s, "nft-execute", { intentId: id, requestId: local.requestId });
+      validateNftTransaction(claimed.intent, claimed.contracts, s.wallet);
+      s.nftExecutions[id] = { requestId: local.requestId, startedAt: Date.now() };
+      persist2(s);
+      try {
+        const response = baw2(["contract-call", "execute", "--requestId", local.requestId]);
+        s.nftExecutions[id].response = response;
+        persist2(s);
+        if (!response.txHash && !response.transactionHash && !response.orderId) throw Error("Binance returned no transaction hash or confirmation order.");
+        await action2(s, "nft-broadcast", { intentId: id, transactionHash: response.txHash || response.transactionHash, orderId: response.orderId });
+        console.log(JSON.stringify({ nftTask: id, status: response.status, transactionHash: response.txHash || response.transactionHash, appConfirmation: response.status === "PENDING_CONFIRMATION" }));
+      } catch (error) {
+        try {
+          await action2(s, "nft-fail", { intentId: id, uncertain: true });
+        } catch {
+        }
+        console.error("NFT execution needs receipt recovery: " + error.message);
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // agent/connector.ts
@@ -18653,6 +18847,7 @@ async function watch() {
   while (!stopped && Date.now() < s.expiresAt) {
     try {
       const r = await action(s, "state"), competition = r.competition;
+      if (await processNftIntent(s, r.nft?.intents || [], { action, baw, persist })) continue;
       const job = competition?.jobs.filter((j) => ["queued", "running"].includes(j.status)).sort((a2, b) => a2.created_at - b.created_at)[0];
       if (job) {
         try {

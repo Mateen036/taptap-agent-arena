@@ -3,9 +3,9 @@
   "backend": "sqlite",
   "concurrency": 100,
   "requests": 400,
-  "p50ms": 346,
-  "p95ms": 379,
-  "elapsedMs": 1525,
+  "p50ms": 466,
+  "p95ms": 588,
+  "elapsedMs": 2211,
   "totals": {
     "wallets": 100,
     "points": 2500,

@@ -2,6 +2,7 @@
 import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';
 import {handle} from '../lib/api';import {SQLiteDatabase} from '../test/helpers/database';import {browserSession} from '../deploy/vercel/lib/browser-session';
 import {generatePrivateKey,privateKeyToAccount} from 'viem/accounts';import {actionData} from '../lib/protocol';import {createPublicCard} from '../lib/share-card';
+import {nftChain} from '../test/helpers/nft-chain';
 if(process.env.TAPTAP_BROWSER_FIXTURE!=='1'||process.env.NODE_ENV==='production')throw Error('This fixture must only run explicitly in local test mode.');
 process.env.AUTH_SECRET=crypto.randomBytes(32).toString('hex');
 const db=new SQLiteDatabase(),nativeNow=Date.now;let offset=0;Date.now=()=>nativeNow()+offset;
@@ -10,8 +11,9 @@ const rpc=http.createServer(async(req,res)=>{let text='';for await(const c of re
 await new Promise<void>(resolve=>rpc.listen(0,'127.0.0.1',resolve));
 const env:any={DB:db,BSC_RPC_URL:'http://127.0.0.1:'+(rpc.address() as any).port,ALLOW_WALLET_RELINK:true,STORAGE_NAME:'SQLite test fixture'};
 const sessions=new Map<string,any>();
+let nftFixture:Awaited<ReturnType<typeof nftChain>>|undefined,nftPlayer=1;
 async function request(endpoint:string,body:any){const r=await handle(new Request(origin+'/api/'+endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),env);return {status:r.status,body:await r.json() as any};}
-async function paired(code:string){const wallet=privateKeyToAccount(generatePrivateKey()),key=privateKeyToAccount(generatePrivateKey());const c=await request('agent/challenge',{pairingCode:code,wallet:wallet.address,sessionKey:key.address});if(c.status!==200)throw Error(c.body.error);const s=await request('agent/session',{challengeId:c.body.challengeId,signature:await wallet.signTypedData(c.body.typedData)});if(s.status!==200)throw Error(s.body.error);sessions.set(wallet.address.toLowerCase(),{...s.body,key});return {wallet:wallet.address.toLowerCase()};}
+async function paired(code:string){const wallet=nftFixture?nftFixture.accounts[nftPlayer++]:privateKeyToAccount(generatePrivateKey()),key=privateKeyToAccount(generatePrivateKey());const c=await request('agent/challenge',{pairingCode:code,wallet:wallet.address,sessionKey:key.address});if(c.status!==200)throw Error(c.body.error);const s=await request('agent/session',{challengeId:c.body.challengeId,signature:await wallet.signTypedData(c.body.typedData)});if(s.status!==200)throw Error(s.body.error);sessions.set(wallet.address.toLowerCase(),{...s.body,key});return {wallet:wallet.address.toLowerCase()};}
 async function act(wallet:string,action:string,payload:any={}){const s=sessions.get(wallet);if(!s)throw Error('Test session missing');const envelope={sessionId:s.sessionId,nonce:s.nonce,timestamp:Date.now(),action,payload};const signature=await s.key.signTypedData(actionData(origin,envelope) as any);const r=await request('agent/action',{...envelope,signature});if(r.body.nonce!==undefined)s.nonce=r.body.nonce;return r;}
 const mime:Record<string,string>={'.js':'text/javascript','.css':'text/css','.md':'text/markdown','.woff2':'font/woff2','.ttf':'font/ttf','.svg':'image/svg+xml','.png':'image/png'};
 const server=http.createServer(async(req,res)=>{
@@ -23,6 +25,17 @@ const server=http.createServer(async(req,res)=>{
   if(url.pathname==='/__test/pair')result=await paired(b.code);
   else if(url.pathname==='/__test/act')result=await act(b.wallet,b.action,b.payload||{});
   else if(url.pathname==='/__test/time'){offset+=Number(b.ms)||0;result={serverTime:Date.now()};}
+  else if(url.pathname==='/__test/nft/start'){
+   if(!nftFixture)nftFixture=await nftChain();env.NFT_RPC_URL=nftFixture.rpc;env.NFT_COLLECTION=nftFixture.collection;env.NFT_MARKETPLACE=nftFixture.market;env.NFT_LP_VAULT=nftFixture.vault;result={ready:true};
+  }
+  else if(url.pathname==='/__test/nft/preview'){
+   const c=await act(b.wallet,'nft-claim',{intentId:b.intentId});if(c.status!==200)throw Error(c.body.error);const i=c.body.intent;
+   result=await act(b.wallet,'nft-preview',{intentId:i.id,transaction:i.transaction,preview:{requestId:'fixture-'+crypto.randomUUID(),expiresAt:Date.now()+180000,parsedTransaction:{title:i.summary.title},risks:{riskDetails:[],addresses:{},riskBehaviors:[]},requireConfirmation:false}});
+  }
+  else if(url.pathname==='/__test/nft/execute'){
+   if(!nftFixture)throw Error('NFT fixture not started');const state=await act(b.wallet,'nft-state'),i=state.body.intents.find((i:any)=>i.id===b.intentId);if(!i)throw Error('Intent missing');const c=await act(b.wallet,'nft-execute',{intentId:i.id,requestId:i.preview_request_id});if(c.status!==200)throw Error(c.body.error);
+   const who=nftFixture.accounts.findIndex(a=>a.address.toLowerCase()===b.wallet);const tx=i.transaction;const hash=await nftFixture.wallets[who].sendTransaction({account:nftFixture.accounts[who],chain:nftFixture.wallets[who].chain,to:tx.to,data:tx.data,value:0n});await nftFixture.client.waitForTransactionReceipt({hash});await nftFixture.provider.request({method:'evm_mine',params:[]});await nftFixture.provider.request({method:'evm_mine',params:[]});await act(b.wallet,'nft-broadcast',{intentId:i.id,transactionHash:hash});result=await act(b.wallet,'nft-confirm',{intentId:i.id,transactionHash:hash});
+  }
   else if(url.pathname==='/__test/reset'){await db.prepare("DELETE FROM arena_entries").run();await db.prepare("DELETE FROM arena_matches").run();}
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
  }
@@ -41,10 +54,10 @@ const server=http.createServer(async(req,res)=>{
   const forwarded=new Request(raw,{headers});const result=await handle(forwarded,env);if(session?.cookie)result.headers.append('Set-Cookie',session.cookie);
   res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;
  }
- if(url.pathname==='/'||/^\/(agents|matches|runs|rounds)\/[^/]+$/.test(url.pathname)){res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('ui/index.html'));return;}
+ if(url.pathname==='/'||/^\/(agents|matches|runs|rounds)\/[^/]+$/.test(url.pathname)){res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('ui/index.html','utf8').replace('<!-- NFT_VIEWS -->',fs.readFileSync('ui/nft.html','utf8')));return;}
  const filename=path.resolve('public','.'+decodeURIComponent(url.pathname));if(!filename.startsWith(path.resolve('public')+path.sep)||!fs.existsSync(filename)||!fs.statSync(filename).isFile()){res.writeHead(404).end();return;}
  res.setHeader('Content-Type',mime[path.extname(filename)]||'application/octet-stream');res.end(fs.readFileSync(filename));
  }catch(error){console.error('Browser fixture error',error instanceof Error?error.message:'unknown');if(res.headersSent){res.end();return;}res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error instanceof Error?error.message:'Fixture unavailable'}));}
 });
 await new Promise<void>(resolve=>server.listen(port,'127.0.0.1',resolve));console.log('TapTap local browser fixture: '+origin);
-const stop=()=>{server.close();rpc.close();db.close().finally(()=>process.exit());};process.on('SIGINT',stop);process.on('SIGTERM',stop);
+const stop=()=>{server.close();rpc.close();Promise.all([db.close(),nftFixture?.close()]).finally(()=>process.exit());};process.on('SIGINT',stop);process.on('SIGTERM',stop);

@@ -29,6 +29,20 @@
       "when": 1793217237876,
       "tag": "0003_arena_job_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793280291764,
+      "tag": "0004_nft_agent_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793281267140,
+      "tag": "0005_verified_nft_receipts",
+      "breakpoints": true
     }
   ]
 }

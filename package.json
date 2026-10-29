@@ -36,7 +36,7 @@
     "@cloudflare/workers-types": "4.20260515.1",
     "@electric-sql/pglite": "^0.5.12",
     "@openai/sites-vite-plugin": "0.2.0",
-    "@openzeppelin/contracts": "^5.4.0",
+    "@openzeppelin/contracts": "5.4.0",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",

@@ -1,6 +1,9 @@
 import fs from 'node:fs';import solc from 'solc';
-const sources=Object.fromEntries(['TapToken','TapRewards'].map(n=>[n+'.sol',{content:fs.readFileSync('contracts/'+n+'.sol','utf8')}]));
-const output=JSON.parse(solc.compile(JSON.stringify({language:'Solidity',sources,settings:{optimizer:{enabled:true,runs:200},evmVersion:'paris',outputSelection:{'*':{'*':['abi','evm.bytecode.object','evm.deployedBytecode.object']}}}}),{import:p=>{try{return {contents:fs.readFileSync('node_modules/'+p,'utf8')}}catch{return {error:'Missing '+p}}}}));
+const names=fs.readdirSync('contracts').filter(n=>n.endsWith('.sol')).map(n=>n.slice(0,-4));
+const sources=Object.fromEntries(names.map(n=>[n+'.sol',{content:fs.readFileSync('contracts/'+n+'.sol','utf8')}]));
+const input={language:'Solidity',sources,settings:{optimizer:{enabled:true,runs:200},viaIR:true,evmVersion:'paris',outputSelection:{'*':{'*':['abi','evm.bytecode.object','evm.deployedBytecode.object','evm.deployedBytecode.immutableReferences','storageLayout']}}}};
+const output=JSON.parse(solc.compile(JSON.stringify(input),{import:p=>{try{const content=fs.readFileSync('node_modules/'+p,'utf8');sources[p]={content};return {contents:content}}catch{return {error:'Missing '+p}}}}));
 if(output.errors?.some(e=>e.severity==='error'))throw Error(output.errors.map(e=>e.formattedMessage).join('\n'));
-fs.mkdirSync('artifacts',{recursive:true});for(const n of ['TapToken','TapRewards']){const c=output.contracts[n+'.sol'][n];fs.writeFileSync('artifacts/'+n+'.json',JSON.stringify({contractName:n,abi:c.abi,bytecode:'0x'+c.evm.bytecode.object,deployedBytecode:'0x'+c.evm.deployedBytecode.object,compiler:solc.version()},null,2));}
-console.log('Compiled fixed-supply token and cumulative agent-gated rewards contracts.');
+fs.mkdirSync('artifacts',{recursive:true});for(const n of names){const c=output.contracts[n+'.sol'][n];fs.writeFileSync('artifacts/'+n+'.json',JSON.stringify({contractName:n,abi:c.abi,bytecode:'0x'+c.evm.bytecode.object,deployedBytecode:'0x'+c.evm.deployedBytecode.object,compiler:solc.version(),immutableReferences:c.evm.deployedBytecode.immutableReferences,storageLayout:c.storageLayout},null,2));}
+fs.writeFileSync('artifacts/nft-standard-input.json',JSON.stringify(input,null,2)+'\n');
+console.log('Compiled '+names.join(', ')+'.');
