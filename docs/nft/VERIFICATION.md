@@ -21,3 +21,11 @@
 Mainnet deployment is pending an exact Binance transaction preview and owner approval. The site must keep mint/trade controls disabled until successful chain receipt, runtime verification and production configuration. No NFT deployment, mint payment or gas spending is authorized merely by this report. The previous production TapTap signing and 100-tap test are separate evidence for game integration.
 
 The contracts have meaningful automated coverage and a bounded read-only review, **not an independent security audit**. Registry eligibility does not establish AI authorship. LP-token economic quality remains an owner decision, and the future token remains TBA.
+
+## Production website smoke
+
+The GitHub release `16b82b5277eb0acdd8bace9e70eee8c812fcc753` is deployed READY on the existing Vercel project (`dpl_EGG9tk4qDaMafyK3oGhF4TEKNFJA`). [Live smoke report](production-smoke.json) · [Production desktop](production-desktop.png) · [Production mobile](production-mobile.png).
+
+The public Foundry/Market views, design inspection, six traits, SVG/metadata boundaries and downloads pass. IDs 1 and 10,000 render; ID 10,001 returns 404. Mobile 390px and desktop 1440px have no horizontal overflow or page errors. The existing wallet retains 200 TAP, 200 taps and two completed runs. NFT transactions remain blocked before contract deployment; no mainnet NFT transaction or mint payment was submitted in these checks. Current runtime diagnostics show no application error groups; the existing PostgreSQL SSL-mode deprecation warning remains.
+
+[GitHub release CI](https://github.com/Mateen036/taptap-agent-arena/actions/runs/40887399361) runs compilation, type checks, 27 automated tests, the local 100-agent accounting workload, 4 browser tests and the Vercel production build.

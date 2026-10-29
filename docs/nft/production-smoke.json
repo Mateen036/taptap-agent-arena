@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-10-29T14:03:31.707Z",
+  "site": "https://taptap-agent-arena.vercel.app",
+  "source": "16b82b5277eb0acdd8bace9e70eee8c812fcc753",
+  "deployment": "dpl_EGG9tk4qDaMafyK3oGhF4TEKNFJA",
+  "deploymentState": "READY",
+  "historyPreserved": {
+    "points": 200,
+    "taps": 200,
+    "runs": 2
+  },
+  "NFT": {
+    "supply": 10000,
+    "configured": false,
+    "status": "awaiting_deployment",
+    "previewDesigns": 12,
+    "artBoundaries": "PASS",
+    "invalidArtId404": true,
+    "metadata": true,
+    "paidMintBlockedBeforeDeployment": true
+  },
+  "liveBrowser": {
+    "desktop": 1440,
+    "mobile": 390,
+    "traits": 6,
+    "market": true,
+    "noHorizontalOverflow": true,
+    "pageErrors": []
+  },
+  "mainnetNFTTransactionsExecuted": false,
+  "token": "TBA"
+}
