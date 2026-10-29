@@ -40,6 +40,7 @@
   $('#nft-market-page').textContent=`Listing page ${marketPage+1}`;$('#nft-market-prev').disabled=marketPage===0;$('#nft-market-next').disabled=(marketPage+1)*12>=(d.marketSlots||0);
   $('#nft-market-stats').innerHTML=[['Collection minted',fmt(d.minted)+' / 10,000'],['Confirmed sales',fmt(d.market?.completedSales||0)],['Resale volume',money(d.market?.volume||0)+' USDT']].map(([title,value])=>`<article class="stat-card"><div class="stat-label">${title}</div><strong>${value}</strong></article>`).join('');
   const intents=d.intents||[];$('#nft-intents').innerHTML=intents.length?intents.map(intentCard).join(''):empty('No NFT requests yet. Your agent’s transaction previews and receipts appear here.');
+  window.dispatchEvent(new CustomEvent('taptap:nft-rendered'));
  }
  function intentCard(i){
   const approve=i.status==='awaiting_approval',pending=['queued','preparing','awaiting_approval','approved'].includes(i.status),expired=approve&&i.preview_expires_at<=Date.now(),recovery=['app_confirmation','needs_receipt','broadcast'].includes(i.status);
