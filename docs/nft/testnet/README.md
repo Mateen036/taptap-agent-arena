@@ -28,15 +28,16 @@ Server-only variables:
 - `TESTNET_WALLETS`: chain 97 disposable keystore; never add to Git or browser bundles
 - `TESTNET_REVIEW_SECRET`: at least 32 random characters, server-only
 
-While contracts are pending, only mode and the public manifest are needed. The page shows the actual deployer balance and disables transaction controls. The public manifest contains addresses and hashes only.
+The chain 97 contracts are deployed; `deployment.json` records their addresses and confirmed deployment hashes. The public manifest contains addresses and hashes only. The page can also display an honest pending-funding state for a fresh deployment.
 
 `NODE_USE_ENV_PROXY=1 npx tsx scripts/nft-testnet-deploy.ts` compiles the test helpers and checks network/funding without broadcasting. Add `--broadcast` only for the authorized testnet deployment. The script loads the local disposable keystore, persists a private transaction journal before each broadcast, deploys the same core NFT/market/vault/renderer artifacts plus test-only support contracts, funds Alpha/Beta with test gas, allocates 100 tUSDT per agent and proposes the test LP token. All network checks must report97. The public manifest updates after successful initialization.
 
-Current funding target: **0.1 tBNB on chain 97** at `0xec79109F601A8850A21CC6e01E1C0cCab2313dc2`. Use a free testnet faucet or existing test BNB. No real BNB is needed.
+Deployment was funded with 0.3 faucet tBNB. Alpha and Beta each received 0.02 tBNB and 100 tUSDT. The test LP token was proposed on October 29; activation becomes available **October 31, 2026 at 22:11:31 PKT** (17:11:31 UTC). The temporary mainnet faucet-eligibility balance was returned to the user’s agent wallet; the deployer has no mainnet BNB.
 
 ## Verification
 
 ```
+NODE_USE_ENV_PROXY=1 npx tsx scripts/nft-testnet-verify.ts
 npm run check
 npm test
 npm run build:testnet
