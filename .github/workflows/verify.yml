@@ -16,5 +16,9 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run contracts:build
+      - run: npm run check
       - run: npm test
+      - run: npm run test:load
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
       - run: npm run build:vercel

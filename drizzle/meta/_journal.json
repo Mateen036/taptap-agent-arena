@@ -15,6 +15,20 @@
       "when": 1793055185890,
       "tag": "0001_flaky_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793216888952,
+      "tag": "0002_season_zero",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793217237876,
+      "tag": "0003_arena_job_claims",
+      "breakpoints": true
     }
   ]
 }

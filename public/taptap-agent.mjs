@@ -18493,6 +18493,33 @@ function sessionSigningRequest(wallet, data) {
   return JSON.stringify({ method: "eth_signTypedData_v4", params: [wallet, serializeTypedData(typedData)] });
 }
 
+// lib/arena.ts
+function dailyRule(day) {
+  const index2 = Math.floor(Date.parse(day + "T00:00:00Z") / 864e5) % 3;
+  return [{ id: "surge", name: "Golden windows", description: "Double points during seconds 30\u201350 and 90\u2013110. Time your energy.", regen: 6, baseSpeed: 5 }, { id: "overclock", name: "Overclock day", description: "Everyone starts at 7 taps/sec. Speed upgrades cost half as much.", regen: 6, baseSpeed: 7 }, { id: "recharge", name: "Second wind", description: "Rest restores 10 energy/sec. Alternate bursts and recovery.", regen: 10, baseSpeed: 5 }][index2];
+}
+function arenaEnergy(e, now) {
+  return Math.min(400, e.energy + (e.resting ? Math.floor(Math.max(0, Math.min(now, e.ends_at) - (e.energyUpdatedAt ?? e.updated_at)) / 1e3) * dailyRule(e.rule_day).regen : 0));
+}
+function arenaSpeed(e) {
+  return dailyRule(e.rule_day).baseSpeed + (e.speed_level - 1) * 2;
+}
+function arenaCost(e, kind) {
+  return (kind === "power" ? 80 : dailyRule(e.rule_day).id === "overclock" ? 40 : 80) * 2 ** ((kind === "power" ? e.power_level : e.speed_level) - 1);
+}
+function strategyDecision(e, now) {
+  if (now < e.started_at || now >= e.ends_at) return null;
+  const energy = arenaEnergy(e, now), remaining = e.ends_at - now;
+  if (e.resting) return energy >= Math.min(160, Math.ceil(remaining / 1e3) * arenaSpeed(e)) ? { action: "arena-resume", payload: { entryId: e.id } } : null;
+  if (energy < Math.min(25, arenaSpeed(e) * 2)) return { action: "arena-rest", payload: { entryId: e.id } };
+  if (e.strategy !== "hoarder" && remaining > 35e3) {
+    const kind = e.strategy === "sprinter" && e.speed_level < 3 ? "speed" : "power";
+    const level = kind === "power" ? e.power_level : e.speed_level;
+    if (level < (kind === "power" ? 5 : 3) && e.score >= arenaCost(e, kind)) return { action: "arena-upgrade", payload: { entryId: e.id, kind } };
+  }
+  return { action: "arena-tap", payload: { entryId: e.id, taps: Math.min(100, arenaSpeed(e) * 5, energy) } };
+}
+
 // agent/connector.ts
 var args = process.argv.slice(2);
 var mode = args[0] || "help";
@@ -18548,7 +18575,7 @@ async function action(s, kind, payload = {}) {
     s.nonce = r.data.nonce;
     persist(s);
   }
-  if (!r.ok) throw Error(r.data.error || "Agent action failed.");
+  if (!r.ok) throw Object.assign(Error(r.data.error || "Agent action failed."), { status: r.status });
   return r.data;
 }
 function normalizeSignature3(d) {
@@ -18562,15 +18589,25 @@ function normalizeSignature3(d) {
   if (!/^[0-9a-fA-F]{130}$/.test(sig)) throw Error("Invalid Binance signature.");
   return "0x" + sig;
 }
+async function report(stage, code) {
+  try {
+    await request("agent/report", { pairingCode: process.env.TAPTAP_PAIRING_CODE || option("pair"), stage, code });
+  } catch {
+  }
+}
 async function prepare() {
+  await report("wallet_check");
   if (!process.env.TAPTAP_PAIRING_CODE && !option("pair")) throw Error("Set TAPTAP_PAIRING_CODE to the code from your dashboard.");
   const status = baw(["wallet", "status"]);
   if (status.status !== "CONNECTED") throw Error("Sign in to Binance Agentic Wallet first using baw auth signin / auth verify.");
+  await report("identity_check");
   const identity = baw(["wallet", "agent-id"]);
   if (!identity.claimed) throw Error("Claim your .ai Agent ID in Binance Wallet first.");
   const settings = baw(["wallet", "settings"]);
-  const expiry = Number(settings.devMode?.expiresAt || 0);
-  if (!settings.devMode?.enabled || expiry && (expiry < 1e12 ? expiry * 1e3 : expiry) < Date.now()) throw Error("Enable Developer Mode in Binance App \u2192 Agentic Wallet \u2192 Settings.");
+  const raw = settings.devMode?.expiresAt;
+  const numeric = Number(raw);
+  const expiry = typeof raw === "string" && !/^\d+$/.test(raw) ? Date.parse(raw) : numeric < 1e12 ? numeric * 1e3 : numeric;
+  if (!settings.devMode?.enabled || !Number.isFinite(expiry) || expiry < Date.now()) throw Error("Enable Developer Mode in Binance App \u2192 Agentic Wallet \u2192 Settings.");
   const addresses = baw(["wallet", "address"]).addresses;
   const wallet = addresses.find((a) => String(a.binanceChainId) === "56")?.address;
   if (!wallet) throw Error("No BNB Chain wallet address is available.");
@@ -18579,7 +18616,9 @@ async function prepare() {
   if (!result.ok) throw Error(result.data.error);
   const c = result.data;
   const message = sessionSigningRequest(wallet, c.typedData);
+  await report("preview");
   const preview = baw(["sign-message", "preview", "--binanceChainId", "56", "--signType", "EIP712", "--message", message]);
+  await report("approval");
   persist({ origin, wallet, sessionPrivateKey: key, challengeId: c.challengeId, expiresAt: c.expiresAt, requestId: preview.requestId });
   console.log(JSON.stringify({ wallet, agentId: identity.agentId, typedData: c.typedData, preview, scope: "Game commands only; no token approvals or transfers.", next: "Show the preview to the user. After explicit approval, run confirm --approve-session." }, null, 2));
 }
@@ -18607,17 +18646,46 @@ async function watch() {
   process.on("SIGINT", () => {
     stopped = true;
   });
-  console.log("Watching queued commands. Ctrl+C stops the connector. Session expires " + new Date(s.expiresAt).toISOString());
+  process.on("SIGTERM", () => {
+    stopped = true;
+  });
+  console.log("Watching queued commands and competition tasks. Ctrl+C stops the connector. Session expires " + new Date(s.expiresAt).toISOString());
   while (!stopped && Date.now() < s.expiresAt) {
     try {
-      let r = await action(s, "state");
-      let a = r.agent;
-      let c = a.commands.find((c2) => c2.status === "running");
+      const r = await action(s, "state"), competition = r.competition;
+      const job = competition?.jobs.filter((j) => ["queued", "running"].includes(j.status)).sort((a2, b) => a2.created_at - b.created_at)[0];
+      if (job) {
+        try {
+          if (job.status === "queued") await action(s, "job-start", { jobId: job.id });
+          const actions = { "season-join": "season-join", "daily-join": "arena-join", "duel-create": "duel-create", "duel-accept": "duel-accept", "duel-rematch": "duel-rematch" };
+          await action(s, actions[job.kind], { ...job.payload, jobId: job.id });
+          await action(s, "job-complete", { jobId: job.id });
+          console.log(JSON.stringify({ task: job.kind, status: "completed" }));
+        } catch (error) {
+          if (error.status && !/Nonce mismatch/.test(error.message)) {
+            await action(s, "job-complete", { jobId: job.id, status: "failed", error: error.status === 409 ? "conflict" : error.status === 403 ? "rejected" : "unavailable" });
+            console.error("Task failed: " + error.message);
+          } else throw error;
+        }
+        continue;
+      }
+      const entry = competition?.entries.filter((e) => Date.now() < e.ends_at).sort((a2, b) => a2.started_at - b.started_at)[0];
+      if (entry) {
+        const decision = strategyDecision(entry, Date.now());
+        if (decision) {
+          if (decision.action === "arena-tap" && Date.now() - entry.last_tick < 1e3) await wait2(1e3);
+          const result = await action(s, decision.action, decision.payload);
+          console.log(JSON.stringify({ arena: result.entry?.id, score: result.entry?.score, energy: result.entry?.energy, action: decision.action }));
+        }
+        await wait2(5e3);
+        continue;
+      }
+      let a = r.agent, c = a.commands.find((c2) => c2.status === "running");
       if (!c) {
         c = a.commands.filter((c2) => c2.status === "queued" || c2.status === "paused").sort((a2, b) => a2.created_at - b.created_at)[0];
         if (c && a.energy >= Math.min(50, c.target - c.done)) {
-          r = await action(s, "start", { commandId: c.id });
-          a = r.agent;
+          const started = await action(s, "start", { commandId: c.id });
+          a = started.agent;
           c = a.commands.find((c2) => c2.status === "running");
         }
       }
@@ -18627,20 +18695,29 @@ async function watch() {
         const result = await action(s, "tap", { commandId: c.id, taps: Math.min(100, a.speed * 5, c.target - c.done) });
         console.log(JSON.stringify({ taps: result.agent.taps, points: result.agent.points, energy: result.agent.energy }));
       } else await wait2(5e3);
-    } catch (e) {
-      console.error(e.message);
+    } catch (error) {
+      console.error(error.message);
+      if (/expired or revoked|Agent disconnected/.test(error.message)) break;
       await wait2(5e3);
     }
   }
-  if (stopped) {
-    try {
-      const r = await action(s, "state");
-      const c = r.agent.commands.find((c2) => c2.status === "running");
-      if (c) await action(s, "stop", { commandId: c.id });
-    } catch {
-    }
+  try {
+    const r = await action(s, "state");
+    const c = r.agent.commands.find((c2) => c2.status === "running");
+    if (c) await action(s, "stop", { commandId: c.id });
+    for (const entry of r.competition?.entries || []) if (Date.now() >= entry.started_at && Date.now() < entry.ends_at && !entry.resting) await action(s, "arena-rest", { entryId: entry.id });
+  } catch {
   }
   console.log("Connector stopped. Pair again after session expiry.");
+}
+async function diagnose() {
+  const status = baw(["wallet", "status"]);
+  let s = {};
+  try {
+    s = load();
+  } catch {
+  }
+  console.log(JSON.stringify({ walletStatus: status.status, gameSession: !!s.sessionId, gameSessionExpiresAt: s.expiresAt ? new Date(s.expiresAt).toISOString() : null, site: origin, guide: origin + "/agent-skill.md", recovery: status.status === "CONNECTED" ? "Use prepare, preview, and confirm for a new game session. Developer Mode and Secure Auto Sign are separate." : "Sign in using the official Binance Agentic Wallet authentication flow." }, null, 2));
 }
 async function claimPreview() {
   const s = load(), r = await action(s, "state"), reward = r.rewards;
@@ -18668,10 +18745,19 @@ async function claimPreview() {
   if (mode === "prepare") await prepare();
   else if (mode === "confirm") await confirm();
   else if (mode === "watch") await watch();
-  else if (mode === "state") console.log(JSON.stringify(await action(load(), "state"), null, 2));
+  else if (mode === "diagnose") await diagnose();
+  else if (mode === "action") {
+    const kind = option("action");
+    if (!kind) throw Error("Set --action and --payload JSON.");
+    console.log(JSON.stringify(await action(load(), kind, JSON.parse(option("payload") || "{}")), null, 2));
+  } else if (mode === "state") console.log(JSON.stringify(await action(load(), "state"), null, 2));
   else if (mode === "claim-preview") await claimPreview();
-  else console.log("TapTap agent connector\nCommands: prepare, confirm --approve-session, watch, state, claim-preview\nSet TAPTAP_SITE and TAPTAP_PAIRING_CODE. Private Sites also require TAPTAP_SITE_ACCESS_TOKEN.\nRequires Node 22+ and the official baw CLI. This connector never exports Binance wallet keys or transfers funds automatically.");
-})().catch((e) => {
+  else console.log("TapTap agent connector\nCommands: prepare, confirm --approve-session, watch, state, diagnose, action --action NAME --payload JSON, claim-preview\nSet TAPTAP_SITE and TAPTAP_PAIRING_CODE. Private Sites also require TAPTAP_SITE_ACCESS_TOKEN.\nRequires Node 22+ and the official baw CLI. This connector never exports Binance wallet keys or transfers funds automatically.");
+})().catch(async (e) => {
+  if (mode === "prepare") {
+    const code = ["351509", "351802", "351803", "351804"].find((c) => String(e.message).includes(c)) || (/Agent ID/.test(e.message) ? "identity" : /Sign in/.test(e.message) ? "unconnected" : "unknown");
+    await report("failed", code);
+  }
   console.error(e.message);
   process.exitCode = 1;
 });

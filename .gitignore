@@ -53,3 +53,6 @@ next-env.d.ts
 /deploy/vercel/migrations/
 
 !.env.example
+
+/test-results/
+/playwright-report/

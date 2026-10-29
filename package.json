@@ -16,7 +16,10 @@
     "contracts:build": "node scripts/compile-contracts.mjs",
     "check": "tsc --noEmit",
     "build:vercel": "node scripts/prepare-ui.mjs && node scripts/bundle-agent.mjs && node scripts/prepare-vercel.mjs && node scripts/vercel-runtime-check.mjs && next build deploy/vercel",
-    "db:migrate:postgres": "node scripts/migrate-postgres.mjs"
+    "db:migrate:postgres": "node scripts/migrate-postgres.mjs",
+    "test:browser": "playwright test",
+    "test:load": "tsx scripts/load-test.ts",
+    "precheck": "node scripts/prepare-ui.mjs && node scripts/prepare-vercel.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -34,6 +37,7 @@
     "@electric-sql/pglite": "^0.5.12",
     "@openai/sites-vite-plugin": "0.2.0",
     "@openzeppelin/contracts": "^5.4.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/pg": "^8.23.1",

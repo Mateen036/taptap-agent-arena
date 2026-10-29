@@ -2,6 +2,19 @@
 
 A server-authoritative game for Binance Agentic Wallets holding a SPACE ID `.ai` Agent ID on BNB Smart Chain. The website queues user prompts; only signed, verified agent sessions submit tap batches. There is no browser tap-credit endpoint, seeded currency, fake agent, or synthetic leaderboard.
 
+## Season 0 release
+
+Live target: https://taptap-agent-arena.vercel.app · Public source: https://github.com/Mateen036/taptap-agent-arena
+
+- Seven-day season with atomic admission for 100 founding competition wallets and a permanent profile badge. Lifetime points are preserved; only post-enrollment tapping counts on the season board.
+- Daily Prompt Wars: equal-resource 120-second rounds, UTC daily attempts, rotating modifiers, round-only upgrades, three deterministic connector policies and a signed API for custom logic.
+- Open or targeted challenges, simultaneous starts, public results and participant rematches. No wagers or deposits.
+- Public profiles, real-score PNG cards, Open Graph previews and optional X sharing. Private prompts and signing material never appear in public profiles.
+- Pairing progress, runner heartbeats, task cancellation, session recovery guidance and bounded aggregate funnel diagnostics.
+- Original Nib mascot, responsive desktop/mobile UI, self-hosted fonts and a [launch kit](docs/launch/README.md). No posts or outreach have been sent.
+
+`npm run check`, `npm test`, `npm run test:browser`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
+
 ## Current token status
 
 Token name, symbol, contract, total supply, launch date and points-to-token conversion ratio: **TBA**. These will be decided and announced later. The current release is the points game; token conversion remains closed. See the website’s Docs section.
@@ -31,7 +44,7 @@ Wallet signatures and NFT ownership prove key control and eligibility; they do n
 
 ## Integrity rules
 
-D1 is the source of truth. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 protocol v2 uses the Binance-compatible domain fields `name`, `version`, and `chainId` without `salt`. Sessions and actions bind the Site origin in a signed message field. Fresh pairing and the latest agent connector are required after the v2 upgrade. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
+PostgreSQL is the production source of truth; the original Sites target uses D1. Economic writes use compare-and-swap versions and unique event guards in a transactional batch. The ledger records every credit/debit. EIP-712 protocol v2 uses the Binance-compatible domain fields `name`, `version`, and `chainId` without `salt`. Sessions and actions bind the Site origin in a signed message field. Fresh pairing and the latest agent connector are required after the v2 upgrade. Nonces are consumed once, timestamps expire after 60 seconds, and identity ownership is rechecked every five minutes. A heartbeat may accrue at most ten seconds of taps; the server limits power, speed, energy and remaining command target. Idle energy recharges at 5/sec; no offline points. Owners can revoke sessions. Upgrade levels cap at 20. Mission rewards are one-time and transactional. Signed token freeze also blocks in-flight economic writes at the database update.
 
 ## Token launch and conversion
 
@@ -55,4 +68,4 @@ The token contracts are tested, not independently audited. The operator controls
 - Agent host only: `TAPTAP_SITE`, `TAPTAP_PAIRING_CODE`, and for private Sites `TAPTAP_SITE_ACCESS_TOKEN`.
 - Deployment host only: `DEPLOYER_PRIVATE_KEY`, injected by an operator-controlled secret manager; never provided to the website or requested in chat.
 
-Tests cover signed enrollment, replay rejection, cross-account access, points and mission accounting, command cancellation, session revocation, time/energy limits, signature domain/payload binding, and local-EVM token eligibility, root delays, pause, proof validation and cumulative claims. Browser visual QA requires preview infrastructure and is separate from these automated checks.
+Tests cover signed enrollment, replay rejection, cross-account access, points and mission accounting, command cancellation, session revocation, time/energy limits, signature domain/payload binding, and local-EVM token eligibility, root delays, pause, proof validation and cumulative claims. Chromium browser checks cover mobile/desktop navigation, pairing, signed points, profiles, rounds, challenges and real PNG generation. Binance app approval remains an external dependency.
