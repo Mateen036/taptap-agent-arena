@@ -132,6 +132,14 @@ export async function nftRoute(request:Request,e:NftEnv,a:any,body:()=>Promise<a
  return null;
 }
 export const NFT_ACTIONS=['nft-state','nft-claim','nft-preview','nft-execute','nft-broadcast','nft-fail','nft-confirm'];
+export function nftPreviewForReview(preview:any){return {
+ requestId:preview.requestId,expiresAt:preview.expiresAt,
+ parsedTransaction:preview.parsedTransaction||preview.parsedTx||preview.transaction||null,
+ risks:preview.risks||{},simulationResult:preview.simulationResult||null,
+ authorityChanges:{reported:preview.authorityChanges??null,simulation:preview.simulationResult?.authorityChanges??null},
+ allowanceChanges:{reported:preview.allowanceChanges??null,simulation:preview.simulationResult?.allowanceChanges??null},
+ gasLimit:preview.gasLimit??null,requireConfirmation:preview.requireConfirmation===true
+};}
 export async function nftAction(e:NftEnv,a:any,action:string,p:any,now:number){
  if(action!=='nft-state')snapshotCache.clear();
  if(action==='nft-state')return {intents:await nftIntents(e,a.wallet,now)};
@@ -149,7 +157,7 @@ export async function nftAction(e:NftEnv,a:any,action:string,p:any,now:number){
  if(action==='nft-preview'){
   if(i.status!=='preparing'||i.expires_at<=now)fail(409,'Request is no longer being prepared.');const preview=p.preview;
   if(!preview||typeof preview.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(preview.requestId)||!Number.isSafeInteger(preview.expiresAt)||preview.expiresAt<=now||preview.expiresAt>now+10*60000||canonical(p.transaction)!==i.transaction||JSON.stringify(preview).length>10000)fail(400,'Invalid or mismatched transaction preview.');
-  const safe={requestId:preview.requestId,expiresAt:preview.expiresAt,parsedTransaction:preview.parsedTransaction||preview.transaction||null,risks:preview.risks||{},authorityChanges:preview.authorityChanges||null,requireConfirmation:preview.requireConfirmation===true};
+  const safe=nftPreviewForReview(preview);
   await q(e,"UPDATE nft_intents SET status='awaiting_approval',preview=?,preview_request_id=?,preview_expires_at=? WHERE id=? AND wallet=? AND status='preparing'",canonical(safe),preview.requestId,Math.min(preview.expiresAt,i.expires_at),id,a.wallet).run();return {ok:true};
  }
  if(action==='nft-execute'){

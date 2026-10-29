@@ -30,7 +30,7 @@ const server=http.createServer(async(req,res)=>{
   }
   else if(url.pathname==='/__test/nft/preview'){
    const c=await act(b.wallet,'nft-claim',{intentId:b.intentId});if(c.status!==200)throw Error(c.body.error);const i=c.body.intent;
-   result=await act(b.wallet,'nft-preview',{intentId:i.id,transaction:i.transaction,preview:{requestId:'fixture-'+crypto.randomUUID(),expiresAt:Date.now()+180000,parsedTransaction:{title:i.summary.title},risks:{riskDetails:[],addresses:{},riskBehaviors:[]},requireConfirmation:false}});
+   result=await act(b.wallet,'nft-preview',{intentId:i.id,transaction:i.transaction,preview:{requestId:'fixture-'+crypto.randomUUID(),expiresAt:Date.now()+180000,parsedTx:{title:i.summary.title},simulationResult:{authorityChanges:i.kind==='nft-approval'?[{operation:'approveNFT',tokenId:i.payload.tokenId,spender:env.NFT_MARKETPLACE}]:[],allowanceChanges:[]},risks:{riskDetails:[],addresses:{},riskBehaviors:[]},requireConfirmation:false}});
   }
   else if(url.pathname==='/__test/nft/execute'){
    if(!nftFixture)throw Error('NFT fixture not started');const state=await act(b.wallet,'nft-state'),i=state.body.intents.find((i:any)=>i.id===b.intentId);if(!i)throw Error('Intent missing');const c=await act(b.wallet,'nft-execute',{intentId:i.id,requestId:i.preview_request_id});if(c.status!==200)throw Error(c.body.error);
