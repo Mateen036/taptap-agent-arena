@@ -56,3 +56,8 @@ next-env.d.ts
 
 /test-results/
 /playwright-report/
+
+/deploy/testnet/app/generated/
+/deploy/testnet/public/
+/deploy/testnet/.next/
+/deploy/testnet/next-env.d.ts

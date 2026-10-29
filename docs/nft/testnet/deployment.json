@@ -1,0 +1,13 @@
+{
+  "chainId": 97,
+  "testOnly": true,
+  "status": "awaiting-testnet-gas",
+  "binanceWalletSupported": false,
+  "registryMode": "Test identity substitute, not real Binance Agent IDs",
+  "contracts": {},
+  "wallets": {
+    "deployer": "0xec79109F601A8850A21CC6e01E1C0cCab2313dc2",
+    "alpha": "0xaDA2F016171fabBB2ACc2e9Ef06CDa4144241918",
+    "beta": "0xfe12C43198C137C3cfc28DbbE0d4f6144e1fD0Fb"
+  }
+}
