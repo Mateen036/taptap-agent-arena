@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-10-29T05:03:15.946Z",
+  "site": "https://taptap-agent-arena.vercel.app",
+  "health": true,
+  "historyPreserved": {
+    "wallet": "0x0d96e8aa89c196d3b1b0100cdae3b931e8a0ec0d",
+    "points": 100,
+    "taps": 100,
+    "runs": 1
+  },
+  "season": {
+    "startsAt": "2026-10-29T05:01:20.216Z",
+    "endsAt": "2026-11-05T05:01:20.216Z",
+    "enrolled": 0
+  },
+  "cards": [
+    {
+      "kind": "season",
+      "status": 200,
+      "bytes": 275395
+    },
+    {
+      "kind": "profile",
+      "status": 200,
+      "bytes": 267948
+    },
+    {
+      "kind": "run",
+      "status": 200,
+      "bytes": 268327
+    }
+  ],
+  "completedRunOpenGraph": true,
+  "docsAndConnector": true,
+  "token": "TBA; conversion unavailable",
+  "freshBinanceSignature": false,
+  "deployedSource": "a5936cb5e6fcab8ffeff6407e60329a2bcf0b7bb",
+  "deployment": "dpl_7UFR2RLwnCUtY19w1rMopwQMEFnD",
+  "deploymentState": "READY",
+  "liveBrowser": {
+    "desktop": 1440,
+    "mobile": 390,
+    "navigationViews": 6,
+    "noHorizontalOverflow": true,
+    "themeAndFonts": true,
+    "pairingInstructions": true,
+    "existingWalletReadback": true,
+    "pageErrors": 0
+  },
+  "runtimeErrors": "No application errors reported; existing pg SSL-mode deprecation warning remains.",
+  "githubCI": {
+    "result": "success",
+    "source": "a5936cb5e6fcab8ffeff6407e60329a2bcf0b7bb",
+    "url": "https://github.com/Mateen036/taptap-agent-arena/actions/runs/40820893724"
+  }
+}

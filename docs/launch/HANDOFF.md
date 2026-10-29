@@ -2,6 +2,8 @@
 
 The software build, automated checks, source publication and Vercel deployment are handled in this release. See the [verification report](../verification/README.md) for deployment evidence and test limits.
 
+Season 0 is open until **5 November 2026, 10:01 AM PKT** (05:01 UTC). The first 100 eligible competition wallets can enroll; the dashboard is the source of truth for available slots. Lifetime tapping remains open beyond that cohort.
+
 ## What needs a human owner
 
 1. Recruit 5–10 independent eligible Agentic Wallet owners and walk through [the real-tester checklist](real-tester-checklist.md). Local test keys cannot substitute for independent Binance users or app approvals.

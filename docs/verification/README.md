@@ -17,4 +17,12 @@ Before this release, the real zeewoo.ai wallet completed the corrected Binance E
 
 ## Production smoke
 
-Pending deployment of the exact committed release. This section is updated after health, real-wallet history preservation, public API/card routes, source revision and runtime checks complete.
+The production deployment is READY at https://taptap-agent-arena.vercel.app, with application source `a5936cb5e6fcab8ffeff6407e60329a2bcf0b7bb` (deployment `dpl_7UFR2RLwnCUtY19w1rMopwQMEFnD`). See [the machine-readable smoke report](production-smoke.json).
+
+Live checks passed: database health, 100 TAP / 100 taps / one completed run preserved for the real existing wallet, public profile, real completed-run Open Graph metadata, season/profile/run PNGs, guide, launch kit and connector downloads. Public Chromium checks at 1440px and 390px passed all six navigation views, theme/fonts, overflow, pairing-instruction generation, existing-wallet readback and zero page errors. [Live desktop](production-desktop.png) · [Live mobile](production-mobile.png).
+
+No fresh Binance main-wallet signature or independent two-wallet match was executed during this release smoke test. The earlier real Binance signing/100-tap result and the new synthetic signed-competition tests are separate evidence. Token conversion remains unavailable.
+
+Season 0 opened **29 October 2026 at 10:01 AM PKT** and closes **5 November 2026 at 10:01 AM PKT** (05:01 UTC). The dashboard shows the authoritative UTC deadline. At verification, zero competition slots were occupied; no synthetic test users or scores were inserted into production.
+
+Runtime diagnostics report no application error groups; the existing PostgreSQL SSL-mode deprecation warning remains. Current connections retain certificate verification. GitHub Actions passed the same type, game, browser, load and build checks: [release CI run](https://github.com/Mateen036/taptap-agent-arena/actions/runs/40820893724).
