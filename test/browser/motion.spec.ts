@@ -55,3 +55,22 @@ test("reduced-motion users can read and navigate every view with decorative anim
   }
   await expect(page.locator("#motion-toggle")).toBeDisabled();
 });
+
+test("Connect waits for the initial session instead of redirecting to an unrelated sign-in page", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/bootstrap", async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto("/");
+  await page.locator(".connect-button").click();
+  expect(page.url()).not.toContain("signin-with-chatgpt");
+  release();
+  await expect(page.locator("#begin-pair")).toBeVisible();
+  await expect(page.locator("#modal")).toBeVisible();
+});

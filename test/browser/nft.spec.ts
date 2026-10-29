@@ -6,7 +6,7 @@ test('Foundry gallery and marketplace are responsive and label undeployed contra
  for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
   await page.setViewportSize(viewport);await page.goto('/?viewport='+viewport.width+'#collection');await expect(page.locator('#nft-gallery .nft-card')).toHaveCount(12);await expect(page.locator('#nft-mint')).toBeDisabled();await expect(page.locator('#nft-launch-status')).toContainText('deployment');
   await page.locator('[data-nft-inspect="1"]').first().click();await expect(page.locator('#modal-title')).toContainText('Nib Foundry');await expect(page.locator('.nft-traits>div')).toHaveCount(6);await page.locator('#close-modal').click();
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await page.waitForFunction(()=>scrollY===0);await page.screenshot({path:'docs/nft/'+(viewport.width<700?'mobile':'desktop')+'-foundry.png',fullPage:true});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await page.waitForFunction(()=>scrollY===0);await page.screenshot({path:'docs/nft/'+(viewport.width<700?'mobile':'desktop')+'-foundry.png',fullPage:true,animations:'disabled'});
   await page.locator('#nft-next').click();await expect(page.locator('#nft-page')).toContainText('Page 2');await page.locator('.nav-item[data-view="marketplace"]').click();await expect(page.locator('#nft-listings')).toContainText('Trading opens');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
  }
  expect(errors).toEqual([]);

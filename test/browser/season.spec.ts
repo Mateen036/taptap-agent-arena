@@ -6,7 +6,7 @@ test('mobile and desktop spectator pages have functional navigation and no horiz
  for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
   await page.setViewportSize(viewport);await page.goto('/');await expect(page.locator('#service-error')).toBeHidden();await expect(page.locator('body')).toHaveCSS('background-color','rgb(16, 17, 15)');await page.evaluate(()=>document.fonts.ready);await expect(page.locator('body')).toHaveCSS('font-family',/DM Sans/);await expect(page.locator('#rule-title')).not.toHaveText('A fresh challenge, every day.');
   for(const view of ['wars','challenges','leaderboard','profile','docs','arena']){await page.locator('.nav-item[data-view="'+view+'"]').click();await expect(page.locator('#'+view+'-view')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();}
-  await page.screenshot({path:'docs/verification/'+(viewport.width<700?'mobile':'desktop')+'-season-0.png',fullPage:true});
+  await page.screenshot({path:'docs/verification/'+(viewport.width<700?'mobile':'desktop')+'-season-0.png',fullPage:true,animations:'disabled'});
  }
  expect(errors).toEqual([]);
 });
