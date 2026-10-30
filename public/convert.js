@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- let status=null,loading=false,busy=false,last=0,timer=null,amount='';
+ let status=null,loading=false,busy=false,bonusBusy=false,last=0,timer=null,amount='';
  const active=()=>viewName==='convert';
  const nib=wei=>{try{const v=BigInt(wei||0),whole=v/10n**18n,frac=(v%10n**18n).toString().padStart(18,'0').slice(0,4).replace(/0+$/,'');return whole.toLocaleString('en-US')+(frac?'.'+frac:'');}catch{return '0';}};
  const link=(a,label)=>`<a class="text-button" href="https://bscscan.com/address/${encodeURIComponent(a)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`;
@@ -33,11 +33,33 @@
   else if(open&&u.canConvert){
    html+=`<form id="convert-form" class="convert-form"><label for="convert-amount">TAP to convert</label><div class="convert-row"><input id="convert-amount" inputmode="numeric" autocomplete="off" placeholder="${esc(fmt(u.convertible))}" value="${esc(amount)}" aria-describedby="convert-estimate"><button type="button" class="button secondary" id="convert-max">Max</button></div><p id="convert-estimate" class="tiny muted"></p><button class="button primary full" id="convert-submit" ${busy?'disabled':''}>Get claim voucher</button></form>`;
   }
+  html+=bonusBlock(status.nftBonus);
   html+=`<p class="tiny muted">Contracts: ${link(status.airdrop,'Airdrop '+short(status.airdrop))} · ${link(status.token,'NIB '+short(status.token))}. TAP is deducted when the voucher is issued and returned if it expires or the pool runs short.</p>`;
   if(u.history?.length)html+=`<h3>Recent conversions</h3><div class="table">${u.history.map(h=>`<div class="row"><span>Season ${esc(h.season)}</span><span>${esc(fmt(h.points))} TAP</span><span>${esc(h.status)}${h.status==='settled'&&h.refundPoints&&h.refundPoints!=='0'?' · '+esc(fmt(h.refundPoints))+' TAP refunded':''}${h.status==='released'?' · TAP returned':''}</span></div>`).join('')}</div>`;
   root.innerHTML=html;
   estimate();
   if(pending)$('#convert-copy-prompt').onclick=()=>copy(agentPrompt(pending),'Instruction copied. Paste it to your agent.');
+ }
+
+ function bonusBlock(b){
+  if(!b||b.error===undefined&&!b.pointsPerNft)return '';
+  if(b.error)return '';
+  const mine=b.user,per=nib(b.nibPerNft)+' NIB';
+  let body='<p class="tiny muted">'+esc(b.message)+'</p>';
+  if(mine){
+   const owned=mine.owned.length,claimed=mine.owned.filter(x=>x.claimed).length;
+   body+=`<p>${owned?`You hold <b>${owned}</b> Nib NFT${owned===1?'':'s'}: <b>${claimed}</b> already claimed, <b>${mine.unclaimedCount}</b> unclaimed.`:'You do not hold a Nib NFT in your agent wallet.'}${mine.truncated?' Showing the first 200 only.':''}</p>`;
+   if(owned)body+='<p class="tiny muted">'+mine.owned.map(x=>`#${esc(x.tokenId)} ${x.claimed?'claimed':'unclaimed'}`).join(' · ')+'</p>';
+   const can=b.available&&mine.claimableNow>0;
+   body+=`<button class="button primary full" id="convert-bonus" ${can&&!bonusBusy?'':'disabled'}>${can?`Claim NFT bonus · ${nib((BigInt(b.nibPerNft)*BigInt(mine.claimableNow)).toString())} NIB`:'Claim NFT bonus'}</button>`;
+  }
+  body+=`<p class="tiny muted">Bonus pool left: ${esc(nib(b.remainingNib))} of ${esc(nib(b.capNib))} NIB. Claiming adds convertible TAP only. It does not count toward rankings. Each NFT can be claimed once, ever, even if it is sold.</p>`;
+  return `<h3>NFT holder bonus: ${esc(per)} per NFT</h3>`+body;
+ }
+ async function claimBonus(){
+  if(bonusBusy)return;bonusBusy=true;render();
+  try{const r=await api('airdrop/nft-bonus',{});toast('Bonus credited: '+fmt(r.pointsCredited)+' TAP.');await refreshConvert(true);try{await window.refresh();}catch{}}
+  catch(err){toast(err.message);}finally{bonusBusy=false;render();}
  }
  function estimate(){
   const input=$('#convert-amount'),out=$('#convert-estimate');if(!input||!out||!status?.user)return;
@@ -52,7 +74,7 @@
  }
  document.addEventListener('input',e=>{if(e.target.id==='convert-amount')estimate();});
  document.addEventListener('submit',e=>{if(e.target.id==='convert-form')submit(e);});
- document.addEventListener('click',e=>{if(e.target.closest('#convert-connect')&&typeof connect==='function')connect();if(e.target.closest('#convert-max')&&status?.user){amount=String(status.user.convertible);$('#convert-amount').value=amount;estimate();}});
+ document.addEventListener('click',e=>{if(e.target.closest('#convert-bonus'))claimBonus();if(e.target.closest('#convert-connect')&&typeof connect==='function')connect();if(e.target.closest('#convert-max')&&status?.user){amount=String(status.user.convertible);$('#convert-amount').value=amount;estimate();}});
  window.addEventListener('taptap:view',()=>{if(active()){refreshConvert(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden){refreshConvert();const c=$('#convert-clock');if(c&&status?.user?.pending)c.textContent=countdown(status.user.pending.expiresAt);}},1000);}});
  window.addEventListener('taptap:state',()=>{if(active())refreshConvert(false);});
  if(active())refreshConvert(true);

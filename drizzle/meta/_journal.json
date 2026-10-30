@@ -64,6 +64,13 @@
       "when": 1793374126328,
       "tag": "0008_nib_airdrop",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793376418244,
+      "tag": "0009_nft_bonus",
+      "breakpoints": true
     }
   ]
 }

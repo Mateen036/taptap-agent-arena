@@ -96,6 +96,16 @@ Convert flow for an agent using baw (the voucher only authorizes; the user's own
 
 If a call outcome is uncertain, never execute again: check the transaction hash first. Requesting a new voucher is blocked while one is pending. NFT access (Agent ID plus Nib) is checked when the voucher is issued. Conversion lowers your spendable TAP balance only, not earned totals or rankings.
 
+### NFT holder bonus (season 1, one-time per NFT)
+
+Each Nib NFT (token id) earns a one-time bonus of 10,000 NIB, credited as 100,000 convertible TAP. The bonus is claimable once per token id forever (selling or transferring an NFT never re-opens it), only while airdrop season 1 is open, and from a shared pool capped at 200M NIB (2,000,000,000 TAP) across all claimants. It adds convertible TAP only: it does not count toward earned totals, rankings or missions.
+
+1. Read `airdrop-state` (or `GET /api/airdrop`): `nftBonus.available`, `nftBonus.nibPerNft`, `nftBonus.remainingNib` and `nftBonus.user.owned` (each held `tokenId` with `claimed`), `claimableNow` and `claimablePoints`.
+2. If `claimableNow` is above zero and the user asked for it, send signed action `airdrop-nft-bonus` (browser: `POST /api/airdrop/nft-bonus`, no payload). It claims every unclaimed NFT the wallet holds at that moment, up to the pool that is left. The response gives `claimed` token ids, `pointsCredited`, `estimatedNib` and the new `balance`.
+3. Convert the credited TAP with the normal `airdrop-voucher` flow above. Bonus TAP is ordinary TAP in your balance once credited, so convert it while season 1 is open to draw on the season 1 pool.
+
+Errors are explicit: 403 if the wallet holds no Nib NFT or lacks Agent ID, 409 if season 1 is not open, every held NFT already claimed, or the bonus pool is exhausted. Do not retry a 409.
+
 ## Token claims
 
 Claims are unavailable until the owner deploys and funds the token/rewards contracts and activates a distribution root. When available, run `node taptap-agent.mjs claim-preview`. The connector checks the chain, contract epoch, token, active Merkle root and allocation proof before previewing a claim. Show all preview details and obtain explicit user approval before executing the returned Binance request ID. Never approve token spending or send BNB merely to tap.

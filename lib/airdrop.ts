@@ -6,12 +6,18 @@ import {pointBalance,earnedBalance,pointFields,exactPoints,legacyPoints} from '.
 // NIB airdrop conversion. TAP points are deducted when a voucher is issued, then settled or refunded from the contract's on-chain convertedPoints.
 export class AirdropError extends Error{constructor(public status:number,message:string){super(message);}}
 function fail(status:number,message:string):never{throw new AirdropError(status,message);}
-export type AirdropEnv=UtilityEnv&{BSC_RPC_URL?:string;NIB_SIGNER_PRIVATE_KEY?:string;NIB_AIRDROP?:string;NIB_TOKEN?:string};
+export type AirdropEnv=UtilityEnv&{NFT_RPC_URL?:string;BSC_RPC_URL?:string;NIB_SIGNER_PRIVATE_KEY?:string;NIB_AIRDROP?:string;NIB_TOKEN?:string};
 export const NIB_AIRDROP='0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5' as const;
 export const NIB_TOKEN='0x1F11d9feAF354aD31861B4fa26759349e2860cFb' as const;
 export const VOUCHER_TTL_SECONDS=900;
 const RELEASE_MARGIN_SECONDS=60;
-export const AIRDROP_ACTIONS=['airdrop-state','airdrop-voucher'];
+export const AIRDROP_ACTIONS=['airdrop-state','airdrop-voucher','airdrop-nft-bonus'];
+/** One-time NFT holder bonus: per token id forever, convertible TAP only (never earned), funded from the season 1 pool. */
+export const NIB_COLLECTION='0x7374f0379F5b2689B906D47Da708B394F1910B23' as const;
+export const NFT_BONUS_POINTS=100_000n;// 10,000 NIB per NFT at 10 TAP = 1 NIB
+export const NFT_BONUS_CAP_POINTS=2_000_000_000n;// 200M NIB across all claims
+const NFT_ENUM_LIMIT=200;
+const nftEnumAbi=parseAbi(['function balanceOf(address) view returns (uint256)','function tokenOfOwnerByIndex(address,uint256) view returns (uint256)','function ownerOf(uint256) view returns (address)']);
 const E18=10n**18n;
 export const airdropAbi=parseAbi([
  'function currentSeason() view returns (uint256)',
@@ -25,7 +31,7 @@ export const airdropAbi=parseAbi([
 ]);
 const voucherTypes={Voucher:[{name:'wallet',type:'address'},{name:'season',type:'uint256'},{name:'cumulativePoints',type:'uint256'},{name:'deadline',type:'uint256'},{name:'voucherId',type:'bytes32'}]} as const;
 const addresses=(e:AirdropEnv)=>({airdrop:(e.NIB_AIRDROP&&isAddress(e.NIB_AIRDROP)?e.NIB_AIRDROP:NIB_AIRDROP) as `0x${string}`,token:(e.NIB_TOKEN&&isAddress(e.NIB_TOKEN)?e.NIB_TOKEN:NIB_TOKEN) as `0x${string}`});
-const client=(e:AirdropEnv)=>createPublicClient({chain:bsc,transport:e.BSC_RPC_URL?http(e.BSC_RPC_URL,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])});
+const client=(e:AirdropEnv,url:string|undefined=e.BSC_RPC_URL)=>createPublicClient({chain:bsc,transport:url?http(url,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])});
 const q=(e:AirdropEnv,sql:string,...args:any[])=>e.DB.prepare(sql).bind(...args);
 const first=(e:AirdropEnv,sql:string,...args:any[])=>q(e,sql,...args).first<any>();
 const rows=async(e:AirdropEnv,sql:string,...args:any[])=>(await q(e,sql,...args).all<any>()).results;
@@ -124,7 +130,69 @@ export async function airdropStatus(e:AirdropEnv,a:any|null,now:number){
   const rate=open?.pointsPerNib;
   out.user={wallet:a.wallet,balance:balance.toString(),canConvert:access.canPlay===true&&!!open&&!chain.paused,access:{status:access.status,canPlay:access.canPlay},convertible:open&&access.canPlay?balance.toString():'0',estimatedNib:open&&rate?(balance*E18/rate).toString():'0',minPoints:rate?rate.toString():null,pending:pending?voucherView(e,pending as Row):null,history:history.map(r=>toRowView(r as Row))};
  }
+ try{out.nftBonus=await nftBonusStatus(e,a,chain);}catch(err){out.nftBonus={available:false,error:err instanceof AirdropError?err.message:'The NFT bonus could not be read right now.'};}
  return out;
+}
+
+const collectionAddress=(e:AirdropEnv)=>(e.NFT_COLLECTION&&isAddress(e.NFT_COLLECTION)?e.NFT_COLLECTION:NIB_COLLECTION) as `0x${string}`;
+const bigSum=(v:any)=>BigInt(String(v??0).split('.')[0]||'0');
+const claimedTotal=async(e:AirdropEnv)=>bigSum((await first(e,'SELECT COALESCE(SUM(amount),0) AS total FROM nft_bonus_claims'))?.total);
+/** Token ids this wallet holds right now: enumerate, then confirm each with ownerOf so a mid-read transfer can't slip through. */
+async function ownedTokens(e:AirdropEnv,wallet:string):Promise<{tokens:number[];truncated:boolean}>{
+ const c=client(e,e.NFT_RPC_URL||e.BSC_RPC_URL),address=collectionAddress(e);
+ try{
+  const balance=Number(await c.readContract({address,abi:nftEnumAbi,functionName:'balanceOf',args:[wallet as `0x${string}`]}));
+  const count=Math.min(balance,NFT_ENUM_LIMIT),ids=await Promise.all(Array.from({length:count},(_,i)=>c.readContract({address,abi:nftEnumAbi,functionName:'tokenOfOwnerByIndex',args:[wallet as `0x${string}`,BigInt(i)]})));
+  const owners=await Promise.all(ids.map(id=>c.readContract({address,abi:nftEnumAbi,functionName:'ownerOf',args:[id]})));
+  const tokens=[...new Set(ids.filter((_,i)=>String(owners[i]).toLowerCase()===wallet.toLowerCase()).map(Number))].sort((x,y)=>x-y);
+  return {tokens,truncated:balance>NFT_ENUM_LIMIT};
+ }catch{return fail(503,'The Nib NFT collection could not be read. Nothing was changed.');}
+}
+const bonusClaimsFor=async(e:AirdropEnv,tokens:number[])=>tokens.length?new Set((await rows(e,`SELECT token_id FROM nft_bonus_claims WHERE token_id IN (${tokens.map(()=>'?').join(',')})`,...tokens)).map((r:any)=>Number(r.token_id))):new Set<number>();
+/** Bonus pool numbers, plus per-NFT claimed state for a connected wallet. */
+export async function nftBonusStatus(e:AirdropEnv,a:any|null,chain:Awaited<ReturnType<typeof chainSnapshot>>){
+ const credited=await claimedTotal(e),remaining=NFT_BONUS_CAP_POINTS>credited?NFT_BONUS_CAP_POINTS-credited:0n,rate=chain.seasons[0]?.pointsPerNib||10n;
+ const open=chain.currentSeason===1&&chain.seasons[0]?.status==='open'&&!chain.paused;
+ const out:any={available:open&&remaining>=NFT_BONUS_POINTS,seasonOpen:open,collection:collectionAddress(e),pointsPerNft:NFT_BONUS_POINTS.toString(),nibPerNft:(NFT_BONUS_POINTS*E18/rate).toString(),capPoints:NFT_BONUS_CAP_POINTS.toString(),capNib:(NFT_BONUS_CAP_POINTS*E18/rate).toString(),creditedPoints:credited.toString(),remainingPoints:remaining.toString(),remainingNib:(remaining*E18/rate).toString(),
+  message:open?'NFT holders get a one-time bonus per NFT (token id), once ever. Bonus TAP is convertible only and does not count toward rankings.':'The NFT bonus can only be claimed while airdrop season 1 is open.'};
+ if(a?.connected){
+  const {tokens,truncated}=await ownedTokens(e,a.wallet),claimed=await bonusClaimsFor(e,tokens),unclaimed=tokens.filter(t=>!claimed.has(t));
+  const mine=await first(e,'SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM nft_bonus_claims WHERE wallet=?',a.wallet);
+  const claimable=open?Math.min(unclaimed.length,Number(remaining/NFT_BONUS_POINTS)):0;
+  out.user={owned:tokens.map(t=>({tokenId:t,claimed:claimed.has(t)})),unclaimedCount:unclaimed.length,claimableNow:claimable,claimablePoints:(NFT_BONUS_POINTS*BigInt(claimable)).toString(),truncated,claimedByWalletPoints:bigSum(mine?.total).toString(),claimedByWalletCount:Number(mine?.n||0)};
+ }
+ return out;
+}
+/** Claim the bonus for every unclaimed NFT the wallet holds right now. Atomic: points, ledger and per-token rows commit together or not at all. */
+export async function claimNftBonus(e:AirdropEnv,a:any,now:number){
+ if(!a||!a.connected)fail(409,'Pair a verified agent first.');
+ const access=await requireGameAccess(e,a);
+ const chain=await chainSnapshot(e,now,true);
+ if(chain.paused)fail(409,'NIB conversions are paused.');
+ if(!(chain.currentSeason===1&&chain.seasons[0]?.status==='open'))fail(409,'The NFT bonus can only be claimed while airdrop season 1 is open.');
+ const {tokens,truncated}=await ownedTokens(e,a.wallet);
+ if(!tokens.length)fail(403,'This wallet does not currently hold a Nib NFT.');
+ const exact=access.required===true;
+ for(let attempt=0;attempt<3;attempt++){
+  const claimed=await bonusClaimsFor(e,tokens),fresh=tokens.filter(t=>!claimed.has(t));
+  if(!fresh.length)fail(409,'Every NFT in this wallet has already claimed its one-time bonus.');
+  const credited=await claimedTotal(e),room=NFT_BONUS_CAP_POINTS>credited?(NFT_BONUS_CAP_POINTS-credited)/NFT_BONUS_POINTS:0n;
+  if(room<=0n)fail(409,'The NFT bonus pool is exhausted.');
+  const take=fresh.slice(0,Number(room<BigInt(fresh.length)?room:BigInt(fresh.length))),total=NFT_BONUS_POINTS*BigInt(take.length);
+  const current=await first(e,'SELECT * FROM agents WHERE wallet=?',a.wallet);if(!current)fail(409,'Pair a verified agent first.');
+  try{
+   await applyPoints(e,current,exact,total,'nft-bonus',`NFT bonus · token${take.length>1?'s':''} #${take.join(', #')}`,take.map(t=>(event:string)=>q(e,'INSERT INTO nft_bonus_claims(token_id,wallet,agent,amount,claimed_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',t,a.wallet,current.name,Number(NFT_BONUS_POINTS),now,a.wallet,event)),now,
+    {sql:`(SELECT COALESCE(SUM(amount),0) FROM nft_bonus_claims)+? <= ? AND NOT EXISTS(SELECT 1 FROM nft_bonus_claims WHERE token_id IN (${take.map(()=>'?').join(',')}))`,args:[Number(total),Number(NFT_BONUS_CAP_POINTS),...take]});
+  }catch(err){
+   // A concurrent claim of the same token or the last of the pool: the whole batch rolled back or never applied. Re-read and retry, then give up cleanly.
+   if(attempt<2)continue;
+   if(err instanceof AirdropError&&err.status!==409)throw err;
+   fail(409,'These NFT bonuses were just claimed or the bonus pool filled up. Refresh and check your status.');
+  }
+  const after=await first(e,'SELECT * FROM agents WHERE wallet=?',a.wallet),rate=chain.seasons[0].pointsPerNib;
+  return {claimed:take.map(t=>({tokenId:t,points:NFT_BONUS_POINTS.toString()})),pointsCredited:total.toString(),estimatedNib:(total*E18/rate).toString(),balance:pointBalance(after).toString(),truncated,message:`Credited ${total} convertible TAP for ${take.length} NFT${take.length>1?'s':''}. Convert it from the Convert panel while season 1 is open.`};
+ }
+ return fail(409,'Could not record the NFT bonus. Retry.');
 }
 /** Issue a voucher. Deducts the points and records the pending conversion in one atomic batch, then returns the signed voucher. */
 export async function issueVoucher(e:AirdropEnv,a:any,payload:any,now:number){
@@ -166,12 +234,14 @@ export async function airdropRoute(request:Request,e:AirdropEnv,a:any|null,readB
  const path=new URL(request.url).pathname.replace(/^\/api/,'');
  const respond=(data:any,status=200)=>new Response(JSON.stringify(data,(_,v)=>typeof v==='bigint'?v.toString():v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
  if(path==='/airdrop'&&request.method==='GET')return respond(await airdropStatus(e,a,now));
+ if(path==='/airdrop/nft-bonus'&&request.method==='POST'){if(!request.headers.get('oai-authenticated-user-id'))fail(401,'Sign in to manage your agent.');return respond(await claimNftBonus(e,a,now),200);}
  if(path==='/airdrop/voucher'&&request.method==='POST'){if(!request.headers.get('oai-authenticated-user-id'))fail(401,'Sign in to manage your agent.');const b=await readBody();return respond(await issueVoucher(e,a,b,now),200);}
  return null;
 }
 /** Signed agent actions mirror the browser endpoints for agents using baw. */
 export async function airdropAction(e:AirdropEnv,a:any,action:string,payload:any,now:number){
  if(action==='airdrop-state')return {airdrop:await airdropStatus(e,a,now)};
+ if(action==='airdrop-nft-bonus')return {airdrop:await claimNftBonus(e,a,now)};
  if(action==='airdrop-voucher')return {airdrop:await issueVoucher(e,a,payload,now)};
  return fail(400,'Unknown airdrop action.');
 }
