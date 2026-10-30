@@ -22,4 +22,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run test:browser:utility
+      - run: npm run test:browser:bnb
       - run: npm run build:vercel

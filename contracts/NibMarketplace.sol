@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 interface INibMarketIdentity { function balanceOf(address) external view returns (uint256); }
 
 /// @notice Noncustodial, zero-fee, fixed-price market. Each purchase checks its exact listing version.
 contract NibMarketplace is ReentrancyGuard {
-    using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.UintSet;
     struct Listing { uint256 id; address seller; uint256 price; uint256 expiresAt; }
     IERC721 public immutable collection;
-    IERC20 public immutable paymentToken;
+    address public constant paymentToken = address(0); // Native BNB, never an ERC-20 allowance.
     INibMarketIdentity public immutable agentIdRegistry;
     uint256 public listingNonce;
     uint256 public completedSales;
@@ -24,10 +21,9 @@ contract NibMarketplace is ReentrancyGuard {
     event Cancelled(uint256 indexed tokenId, uint256 indexed id);
     event Bought(uint256 indexed tokenId, uint256 indexed id, address indexed buyer, address seller, uint256 price);
 
-    constructor(address collection_, address payment_, address registry_) {
-        require(collection_.code.length > 0 && payment_.code.length > 0 && registry_.code.length > 0, "Missing contracts");
+    constructor(address collection_, address registry_) {
+        require(collection_.code.length > 0 && registry_.code.length > 0, "Missing contracts");
         collection = IERC721(collection_);
-        paymentToken = IERC20(payment_);
         agentIdRegistry = INibMarketIdentity(registry_);
     }
     function available(uint256 tokenId) public view returns (bool) {
@@ -62,17 +58,17 @@ contract NibMarketplace is ReentrancyGuard {
         delete listings[tokenId]; active.remove(tokenId);
         if (id > 0) emit Cancelled(tokenId,id);
     }
-    function buy(uint256 tokenId, uint256 expectedId, uint256 expectedPrice, address expectedSeller, uint256 deadline) external nonReentrant {
+    function buy(uint256 tokenId, uint256 expectedId, uint256 expectedPrice, address expectedSeller, uint256 deadline) external payable nonReentrant {
         require(block.timestamp <= deadline, "Purchase expired");
         require(agentIdRegistry.balanceOf(msg.sender) > 0, "Buyer needs Agent ID");
         Listing memory l = listings[tokenId];
         require(l.id == expectedId && l.price == expectedPrice && l.seller == expectedSeller, "Listing changed");
         require(l.seller != msg.sender && available(tokenId), "Listing unavailable");
         delete listings[tokenId]; active.remove(tokenId);
-        uint256 beforeBalance = paymentToken.balanceOf(l.seller);
-        paymentToken.safeTransferFrom(msg.sender,l.seller,l.price);
-        require(paymentToken.balanceOf(l.seller) - beforeBalance == l.price, "Payment token fee");
+        require(msg.value == l.price, "Exact BNB price required");
         collection.safeTransferFrom(l.seller,msg.sender,tokenId);
+        (bool paid,) = payable(l.seller).call{value:l.price}("");
+        require(paid, "BNB seller payment failed");
         ++completedSales; volume += l.price;
         emit Bought(tokenId,l.id,msg.sender,l.seller,l.price);
     }

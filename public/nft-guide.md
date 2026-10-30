@@ -5,9 +5,10 @@ Nib Foundry is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (c
 ## Minting
 
 - Maximum supply: **10,000**. No owner reserve, administrative mint or supply increase.
-- Each eligible wallet's first NFT is **free in USDT**. BNB gas still applies.
-- Every later NFT costs **1 USDT**, with a lifetime mint limit of **10 NFTs per wallet**, including the free NFT. A first batch of ten costs nine USDT. Selling or transferring does not reset this count.
-- Payment is BNB Chain Tether USD at `0x55d398326f99059fF775485246999027B3197955`, with 18 decimals. One USDT is a nominal dollar-denominated price; its market peg can vary. This is not a BNB/USD oracle-priced sale.
+- Each eligible wallet's first NFT is **free in either USDT or BNB**. BNB gas still applies.
+- Every later NFT costs **1 USDT or the BNB equivalent of $1**, with a lifetime mint limit of **10 NFTs per wallet**, including the free NFT. A first batch of ten has nine paid NFTs; changing payment currency never resets the free mint or the limit. Selling or transferring does not reset this count.
+- Payment is BNB Chain Tether USD at `0x55d398326f99059fF775485246999027B3197955`, with 18 decimals. USDT remains a nominal dollar-denominated price; its market peg can vary. BNB minting uses the Chainlink BNB/USD feed at `0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE`, with eight feed decimals. Its official listing is https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json. Paid BNB mints reject nonpositive, incomplete, future-dated or older-than-one-hour rounds. A free BNB mint does not require a price round.
+- The BNB preview sends a maximum quote with a **1% ceiling**. The contract charges only the current $1-equivalent cost and refunds unused BNB in the same transaction. A cost above that ceiling reverts; request a fresh quote rather than re-executing an uncertain transaction. Network gas is separate.
 - Eligibility checks the SPACE ID Agent ID registry `0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F`. The limit is per wallet, not a permanent per-identity-token limit across wallets. Moving an Agent ID can qualify another wallet.
 - Minted serials are sequential. Designs and traits are deterministic and visible in advance; there is no random reveal. The next available serial is assigned when the transaction executes.
 - Each mint has a unique intent ID and a maximum payment, preventing retries from executing the same mint twice or exceeding the reviewed cost.
@@ -18,17 +19,17 @@ Nib Foundry is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (c
 2. Request a mint or market action from the Foundry/Market view. The request goes to your agent; the browser does not sign or submit it.
 3. The agent checks its connected wallet and Developer Mode, validates the exact contract/function/amount, and obtains a Binance transaction preview.
 4. Open **Review & approve** in the transaction desk. Review the wallet, contract, payment/allowance, gas note, parsed transaction, risks and authority changes. Approve that exact request.
-5. The agent submits it through Binance. Binance may also require confirmation in its app. The site verifies the transaction's exact sender, contract, calldata, zero native transfer value, successful receipt and three chain confirmations.
+5. The agent submits it through Binance. Binance may also require confirmation in its app. The site verifies the transaction's exact sender, contract, calldata, exact reviewed native BNB value, successful receipt and three chain confirmations.
 
 NFT requests expire after 20 minutes; Binance previews expire sooner. An expired preview needs a fresh request. A TapTap game-session signature does **not** authorize spending, token approval or NFT transfers.
 
-Paid mints require an ERC-20 approval for the exact mint payment first. Purchasing requires a separate approval for the exact listing price. Listing requires approval of the **individual NFT**, followed by a separate listing transaction. No unlimited token approval or collection-wide NFT approval is requested by the connector. An allowance can remain until used or revoked.
+Paid **USDT** mints require an ERC-20 approval for the exact mint payment first. BNB mints and marketplace purchases send native BNB and require **no USDT approval**. Listing requires approval of the **individual NFT**, followed by a separate listing transaction. No unlimited token approval or collection-wide NFT approval is requested by the connector. An allowance can remain until used or revoked.
 
 If submission status is uncertain, **do not execute it again**. Find its transaction hash in Binance and use **Verify receipt**. The agent will never automatically retry an uncertain wallet execution. Disconnect cancels requests before submission; it cannot undo an already submitted blockchain transaction or revoke an on-chain allowance.
 
 ## Marketplace
 
-Fixed-price, noncustodial listings in USDT. The marketplace fee is **0%**. NFT ownership stays with the seller until a purchase. Buyer payment and NFT transfer happen atomically, so both succeed or both revert. Purchases bind the listing version, exact price, seller and deadline; changed or stale listings revert. Gas can still be charged for reverted transactions.
+Fixed-price, noncustodial listings in **BNB only**, with up to 18 decimal places. Buyers send exactly the listing price as native BNB; underpayment and overpayment revert. The marketplace fee is **0%**. NFT ownership stays with the seller until a purchase. Buyer payment and NFT transfer happen atomically, so both succeed or both revert. Purchases bind the listing version, exact price, seller and deadline; changed or stale listings revert. Gas can still be charged for reverted transactions.
 
 Buyers, sellers and NFT recipients must hold an eligible Agent ID. Listings can expire or become unavailable if the owner changes, approval is revoked or eligibility is lost. Sellers can cancel their listings. Marketplace volume and ownership are read from the contracts; no synthetic trades are seeded.
 
@@ -36,11 +37,11 @@ Wallet signatures prove key control and registry eligibility, not AI authorship.
 
 ## Mint proceeds and future token liquidity
 
-All **primary mint payments** go directly to the LP vault. Resale payments go to NFT sellers. The vault has no generic withdrawal, rescue, arbitrary-call or liquidity-removal function. Its immutable router is PancakeSwap V2 at `0x10ED43C718714eb63d5aA57B78B54704E256024E`.
+All **primary mint payments** go directly to the LP vault. USDT is held as USDT. Native BNB is immediately wrapped into WBNB (`0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c`) for future token/WBNB liquidity. Resale payments go to NFT sellers. The vault has no generic withdrawal, rescue, arbitrary-call or liquidity-removal function. Its immutable router is PancakeSwap V2 at `0x10ED43C718714eb63d5aA57B78B54704E256024E`.
 
-The future token is **TBA**. The owner must publicly propose its contract, wait two days, activate it once, and deposit matching tokens before adding liquidity. Token choice becomes permanent after activation. Liquidity provider tokens stay in the vault with no withdrawal path. Unused USDT remains there for later liquidity additions. If the token never launches or matching tokens are never supplied, proceeds can remain locked indefinitely.
+The future token is **TBA**. The owner must publicly propose its contract, wait two days, activate it once, and deposit matching tokens before adding liquidity. Token choice becomes permanent after activation. Liquidity provider tokens stay in the vault with no withdrawal path. Unused USDT and WBNB remain there for later liquidity additions. The vault supports both token/USDT and token/WBNB pools; it never distributes the proceeds to the owner. If the token never launches or matching tokens are never supplied, proceeds can remain locked indefinitely.
 
-The owner controls token selection and liquidity timing/minimums. A timelock and locked LP tokens do not guarantee token quality, price, liquidity value, or protection from token-owner economic actions. This is not an investment-return promise. With one free NFT per wallet and ten mints per wallet, a fully minted collection can generate anywhere from zero to 9,000 USDT in primary payments, depending on how wallets mint.
+The owner controls token selection and liquidity timing/minimums. A timelock and locked LP tokens do not guarantee token quality, price, liquidity value, or protection from token-owner economic actions. This is not an investment-return promise. With one free NFT per wallet and ten mints per wallet, the collection can have zero to 9,000 paid mints, depending on how wallets mint. Proceeds can be a mix of USDT and BNB; later asset prices can change their value.
 
 ## Artwork and availability
 

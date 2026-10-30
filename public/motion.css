@@ -2497,3 +2497,5 @@ html[data-motion="paused"] .mint-feature {
 .exact-amount { overflow-wrap:anywhere; word-break:break-all; min-height:180px; font-size:13px; }
 #view-exact-points { width:fit-content; font-size:11px; }
 @media(max-width:700px) { .utility-access { align-items:flex-start; flex-wrap:wrap; gap:12px; padding:20px; }.utility-symbol { font-size:28px; }.utility-access>div { flex-basis:calc(100% - 45px); }.utility-access>.button { width:100%; }.utility-panel { grid-template-columns:1fr; gap:20px; padding:24px; }.utility-calculator { padding:20px; }.utility-presets { gap:6px; }.utility-presets button { flex:1; padding:9px; } }
+.nft-sale-price strong, .nft-lp-number, #nft-cost { overflow-wrap:anywhere; }
+#nft-price-note { margin:10px 0 18px; }

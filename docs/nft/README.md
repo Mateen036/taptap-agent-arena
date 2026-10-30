@@ -4,7 +4,7 @@ The collection and marketplace extend the existing TapTap app. Website: https://
 
 ## Fixed collection rules
 
-10,000 ERC-721 NFTs, first mint free per eligible wallet, then 1 BNB Chain USDT per NFT, ten lifetime mints per wallet. No reserve, owner mint, supply expansion, adjustable price, random reveal or token allocation promise. Artwork and metadata are fully on-chain. Transfers, minting and marketplace counterparties require a SPACE ID Agent ID. Registry balance does not prove AI authorship, and an eligible wallet can call the contracts directly.
+10,000 ERC-721 NFTs, first mint free per eligible wallet, then 1 BNB Chain USDT or the BNB/USD equivalent of $1 per NFT, ten lifetime mints per wallet. No reserve, owner mint, supply expansion, adjustable price, random reveal or token allocation promise. Artwork and metadata are fully on-chain. Transfers, minting and marketplace counterparties require a SPACE ID Agent ID. Registry balance does not prove AI authorship, and an eligible wallet can call the contracts directly.
 
 The collection owner can pause or reopen minting; the vault owner controls future token selection and liquidity addition, with ownership transfers requiring acceptance. The marketplace has no fee or administrative owner. The proposed owner is the user's verified zeewoo.ai wallet; review its public address in the deployment plan before signing.
 
@@ -13,9 +13,9 @@ The collection owner can pause or reopen minting; the vault owner controls futur
 | Contract | Purpose |
 | --- | --- |
 | `NibRenderer` | Immutable deterministic SVG and ERC-721 JSON metadata |
-| `NibLPVault` | Receives primary USDT proceeds; two-day future-token selection; adds liquidity through immutable PancakeSwap V2 router; LP tokens cannot be withdrawn |
+| `NibLPVault` | Receives USDT and wrapped BNB mint proceeds; two-day future-token selection; adds liquidity through immutable PancakeSwap V2 router; LP tokens cannot be withdrawn |
 | `NibFoundry` | ERC-721 enumerable collection, immutable economics and identity registry, per-wallet cap, replay-resistant mint intent IDs |
-| `NibMarketplace` | Noncustodial fixed-price USDT market; exact listing versions; atomic payment/delivery; zero fees |
+| `NibMarketplace` | Noncustodial fixed-price native BNB market; exact listing versions; atomic payment/delivery; zero fees |
 
 The vault requires matching future tokens before LP creation. Its selected token becomes permanent after activation. Funds can remain locked indefinitely if token launch or matching deposits never happen. The timelock and locked LP tokens do not guarantee token quality, price, or protection from owner economic actions. Token economics and TAP conversion stay TBA.
 
@@ -75,16 +75,16 @@ After receipt and runtime verification, set these public-address environment var
 - `NFT_MARKETPLACE`: verified `NibMarketplace` address.
 - `NFT_LP_VAULT`: verified `NibLPVault` address.
 
-Redeploy the exact GitHub commit. The API verifies chain 56, payment token, registry, price, cap, wallet limit, vault/router and market/collection links before enabling NFT actions. Missing configuration shows an honest deployment-pending gallery with disabled minting/trading. Incorrect contracts fail closed. Apply the additive Drizzle migrations through the existing build pipeline.
+Redeploy the exact GitHub commit. The API verifies chain 56, payment token, registry, price, cap, wallet limit, vault/router/WBNB, Chainlink BNB/USD feed and native-market/collection links before enabling NFT actions. Missing configuration shows an honest deployment-pending gallery with disabled minting/trading. Incorrect contracts fail closed. Apply the additive Drizzle migrations through the existing build pipeline.
 
 ## Agent protocol and recovery
 
 Browser requests queue in `nft_intents`. Signed game-key actions coordinate claim → preview → approval consumption → broadcast → receipt. Only the wallet-owning browser can approve a preview, binding the exact transaction digest and Binance request ID. The runner also requires its matching local preview journal and validates the contract/function/amount/token/price/deadline before a main-wallet call.
 
-The main wallet, not the game key, signs fund-moving transactions. Token approvals are exact amounts and NFT approvals are individual token IDs. Receipts must match sender, target, calldata, zero native value, success and three confirmations. Only confirmed receipts reserve the unique transaction hash; an attacker cannot block another wallet by posting an unverified hash. Ordinary failures are restricted to stages before submission. Unknown outcomes require receipt recovery rather than retry. A known disconnected-wallet failure is checked before consuming the approval.
+The main wallet, not the game key, signs fund-moving transactions. Token approvals are exact amounts and NFT approvals are individual token IDs. Receipts must match sender, target, calldata, exact approved native BNB value, success and three confirmations. Only confirmed receipts reserve the unique transaction hash; an attacker cannot block another wallet by posting an unverified hash. Ordinary failures are restricted to stages before submission. Unknown outcomes require receipt recovery rather than retry. A known disconnected-wallet failure is checked before consuming the approval.
 
 Browser cancellation and disconnect cancel pre-submission requests only. An in-flight blockchain transaction or an existing token allowance needs Binance/on-chain management. Keep the connector's restrictive local state file through restarts; it contains the game-only key and execution journal and must never be published.
 
 ## Later LP operation
 
-After token economics are decided, the owner calls `proposeToken`, waits two days, then `activateToken`. Deposit matching token units into the vault and review an owner-signed `addLiquidity` call with explicit desired amounts, nonzero minimums and a deadline of at most 30 minutes. USDT/token approvals to the router are cleared after addition. LP tokens remain locked in the vault. These future actions are not part of this NFT deployment approval.
+After token economics are decided, the owner calls `proposeToken`, waits two days, then `activateToken`. Deposit matching token units into the vault and review an owner-signed `addLiquidity` call with explicit desired amounts, nonzero minimums and a deadline of at most 30 minutes. Use `addLiquidity` for token/USDT or `addLiquidityBNB` for token/WBNB. Both asset approvals to the router are cleared after addition. LP tokens remain locked in the vault. These future actions are not part of this NFT deployment approval.

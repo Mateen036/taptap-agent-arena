@@ -18523,9 +18523,13 @@ function strategyDecision(e, now) {
 
 // lib/nft-protocol.ts
 var NFT_PAYMENT = "0x55d398326f99059fF775485246999027B3197955";
+var nativeMintBudget = (quote) => (quote * 101n + 99n) / 100n;
 var nftAbi = parseAbi([
   "function MAX_SUPPLY() view returns(uint256)",
   "function WALLET_LIMIT() view returns(uint256)",
+  "function priceFeed() view returns(address)",
+  "function mintPriceBNB() view returns(uint256)",
+  "function mintCostBNB(address,uint256) view returns(uint256)",
   "function minted() view returns(uint256)",
   "function mintedBy(address) view returns(uint256)",
   "function mintPrice() view returns(uint256)",
@@ -18539,6 +18543,7 @@ var nftAbi = parseAbi([
   "function tokenOfOwnerByIndex(address,uint256) view returns(uint256)",
   "function ownerOf(uint256) view returns(address)",
   "function getApproved(uint256) view returns(address)",
+  "function mintBNB(uint256,uint256,uint256,bytes32) payable",
   "function approve(address,uint256)",
   "function mint(uint256,uint256,uint256,bytes32)",
   "function tokenURI(uint256) view returns(string)"
@@ -18555,10 +18560,10 @@ var nftMarketAbi = parseAbi([
   "function volume() view returns(uint256)",
   "function list(uint256,uint256,uint256)",
   "function cancel(uint256,uint256)",
-  "function buy(uint256,uint256,uint256,address,uint256)"
+  "function buy(uint256,uint256,uint256,address,uint256) payable"
 ]);
 var nftPaymentAbi = parseAbi(["function balanceOf(address) view returns(uint256)", "function allowance(address,address) view returns(uint256)", "function approve(address,uint256)", "function decimals() view returns(uint8)", "function symbol() view returns(string)"]);
-var nftVaultAbi = parseAbi(["function paymentToken() view returns(address)", "function liquidityToken() view returns(address)", "function pendingToken() view returns(address)", "function tokenReadyAt() view returns(uint256)", "function paymentAdded() view returns(uint256)", "function lpTokensLocked() view returns(uint256)", "function router() view returns(address)"]);
+var nftVaultAbi = parseAbi(["function wrappedNative() view returns(address)", "function bnbAdded() view returns(uint256)", "function lpTokensLockedBNB() view returns(uint256)", "function paymentToken() view returns(address)", "function liquidityToken() view returns(address)", "function pendingToken() view returns(address)", "function tokenReadyAt() view returns(uint256)", "function paymentAdded() view returns(uint256)", "function lpTokensLocked() view returns(uint256)", "function router() view returns(address)"]);
 var nftConfigAbi = parseAbi(["function owner() view returns(address)"]);
 
 // agent/nft-runner.ts
@@ -18566,13 +18571,18 @@ var txDigest = (t) => keccak256(toHex(canonical(t)));
 var same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 function validateNftTransaction(intent, contracts, wallet) {
   const tx = intent.transaction, p = intent.payload;
-  if (tx.chainId !== 56 || !same(tx.from, wallet) || tx.value !== "0" || !/^0x[0-9a-f]+$/i.test(tx.data)) throw Error("NFT transaction envelope does not match this wallet.");
-  const approval = ["mint-approval", "buy-approval"].includes(intent.kind);
+  if (tx.chainId !== 56 || !same(tx.from, wallet) || typeof tx.value !== "string" || !/^(0|[1-9][0-9]*)$/.test(tx.value) || !/^0x[0-9a-f]+$/i.test(tx.data)) throw Error("NFT transaction envelope does not match this wallet.");
+  if (!["mint-approval", "nft-approval", "mint", "list", "cancel", "buy"].includes(intent.kind)) throw Error("Unsupported NFT transaction kind.");
+  const nativeMint = intent.kind === "mint" && p.currency === "BNB";
+  const expectedValue = nativeMint ? p.costRaw : intent.kind === "buy" ? p.priceRaw : "0";
+  if (tx.value !== expectedValue) throw Error("Native BNB value differs from the exact request.");
+  if (nativeMint && nativeMintBudget(BigInt(p.quotedCostRaw)).toString() !== p.costRaw) throw Error("BNB mint quote ceiling changed.");
+  const approval = intent.kind === "mint-approval";
   const abi2 = approval ? nftPaymentAbi : ["nft-approval", "mint"].includes(intent.kind) ? nftAbi : nftMarketAbi;
   const destination = approval ? NFT_PAYMENT : ["nft-approval", "mint"].includes(intent.kind) ? contracts.collection : contracts.market;
   if (!same(tx.to, destination)) throw Error("NFT transaction targets an unexpected contract.");
   const decoded = decodeFunctionData({ abi: abi2, data: tx.data }), args2 = decoded.args || [], name = decoded.functionName;
-  const expected = { "mint-approval": "approve", "buy-approval": "approve", "nft-approval": "approve", mint: "mint", list: "list", cancel: "cancel", buy: "buy" };
+  const expected = { "mint-approval": "approve", "nft-approval": "approve", mint: nativeMint ? "mintBNB" : "mint", list: "list", cancel: "cancel", buy: "buy" };
   if (name !== expected[intent.kind]) throw Error("NFT transaction function does not match the requested action.");
   if (approval) {
     if (!same(args2[0], intent.kind === "mint-approval" ? contracts.collection : contracts.market) || String(args2[1]) !== String(p.costRaw || p.priceRaw)) throw Error("USDT approval exceeds or differs from the exact request.");
@@ -18658,7 +18668,7 @@ async function processNftIntent(s, intents, bridge) {
         validateNftTransaction(i, claimed.contracts, s.wallet);
         if (!same(developerMode(baw2), s.wallet)) throw Error("The connected Binance wallet differs from the paired game wallet.");
         const tx = i.transaction;
-        const preview = baw2(["contract-call", "preview", "--binanceChainId", "56", "--from", s.wallet, "--to", tx.to, "--value", "0", "--inputData", tx.data]);
+        const preview = baw2(["contract-call", "preview", "--binanceChainId", "56", "--from", s.wallet, "--to", tx.to, "--value", tx.value, "--inputData", tx.data]);
         if (!preview.requestId) throw Error("Binance did not return a usable preview.");
         const n = Number(preview.expiresAt), expiresAt = Number.isFinite(n) ? n < 1e12 ? n * 1e3 : n : Date.now() + 18e4;
         s.nftPreviews[id] = { requestId: preview.requestId, txDigest: txDigest(tx), expiresAt };

@@ -20,7 +20,8 @@
     "test:browser": "playwright test",
     "test:load": "tsx scripts/load-test.ts",
     "precheck": "node scripts/prepare-ui.mjs && node scripts/prepare-vercel.mjs",
-    "test:browser:utility": "playwright test --config playwright.utility.config.ts"
+    "test:browser:utility": "playwright test --config playwright.utility.config.ts",
+    "test:browser:bnb": "playwright test --config playwright.bnb.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
