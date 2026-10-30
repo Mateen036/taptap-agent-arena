@@ -73,6 +73,8 @@ After receipt and runtime verification, set these public-address environment var
 
 - `NFT_COLLECTION`: verified `NibCollection` address.
 - `NFT_MARKETPLACE`: verified `NibMarketplace` address.
+- `NFT_MARKETPLACE_FROM_BLOCK` (optional): first block to scan for the Recent sales index (defaults to the known mainnet deploy block).
+- `NFT_LOGS_RPC_URL` (optional): RPC used only for `eth_getLogs`. BNB's `bsc-dataseed` nodes reject log queries, so without this the sales index tries `NFT_RPC_URL`, `BSC_RPC_URL`, then a public node.
 - `NFT_LP_VAULT`: verified `NibLPVault` address.
 - `NFT_FEE_RECIPIENT`: optional, must match the marketplace’s immutable recipient; defaults to the LP vault. For a treasury, supply the same public address to deployment planning, preview, and verification with `--fee-recipient ADDRESS`, then set this environment variable. Changing the recipient changes the marketplace’s CREATE2 address and requires a new preview. Trading fees never increase primary mint prices.
 

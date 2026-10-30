@@ -34,6 +34,11 @@ accessory  = n % 5
 
 Integer division truncates. Because 7919 is coprime to 10000, the permutation visits every tuple exactly once. The product 5 × 5 × 5 × 4 × 4 × 5 is exactly 10,000. Each NFT therefore has a different six-trait combination as well as an engraved five-digit token serial; there is no collision or rejection loop. Trait rarity is balanced: each background/chassis/eye/accessory occurs 2,000 times, and each headgear/emblem occurs 2,500 times. This is a deterministic art allocation, not a random reveal or a claim of investment scarcity.
 
+## Rarity rank (computed, not assigned)
+
+The marketplace and `/api/nft` show a *statistical* rarity rank for minted Nibs. For each trait value, the score is `minted supply ÷ number of minted Nibs with that value`; a Nib's score is the sum over its six traits (rarity.tools method). Rank 1 has the highest score, ties share a rank, and ranks are recomputed from the minted supply (`minted()`), so they move as more Nibs are minted. Because the full 10,000 supply is perfectly balanced, every Nib ties at fully minted supply; rank is a snapshot of current scarcity, not a promise of future value. Unminted designs have no rank.
+
+
 `nftSvgParts(id)` exposes the source strings separately. Render in this order:
 
 1. `background`: colored grid, concentric signal rings, corner marks, two small labels and ground shadow.
