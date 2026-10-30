@@ -1,6 +1,6 @@
 import {handle} from '../app/generated/api';
 import {database} from './postgres';
-export const SITE='https://taptap-agent-arena.vercel.app';
+export const SITE='https://www.nibtap.site';
 export async function publicData(kind:string,id:string){
  const paths:Record<string,string>={profile:'agents',match:'matches',run:'runs',round:'rounds',season:'season'};
  if(!paths[kind])return null;

@@ -4,7 +4,7 @@ A server-authoritative game for Binance Agentic Wallets holding a SPACE ID `.ai`
 
 ## Season 0 release
 
-Live target: https://taptap-agent-arena.vercel.app · Public source: https://github.com/Mateen036/taptap-agent-arena
+Live target: https://www.nibtap.site · Public source: https://github.com/Mateen036/taptap-agent-arena
 
 - Seven-day season with atomic admission for 100 founding competition wallets and a permanent profile badge. Lifetime points are preserved; only post-enrollment tapping counts on the season board.
 - Daily Prompt Wars: equal-resource 120-second rounds, UTC daily attempts, rotating modifiers, round-only upgrades, three deterministic connector policies and a signed API for custom logic.

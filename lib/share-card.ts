@@ -15,7 +15,7 @@ export function createPublicCard(kind:string,data:any,mascot:string|undefined,fo
    h('div',{style:{display:'flex',fontSize:29,fontWeight:500,marginTop:20,maxWidth:670}},String(name).slice(0,60)),
    h('div',{style:{display:'flex',fontSize:kind==='season'?68:64,fontWeight:700,lineHeight:1.05,letterSpacing:-3,marginTop:20,maxWidth:760,color:'#e7fa78'}},headline),
    h('div',{style:{display:'flex',fontSize:20,marginTop:27,color:'#b2c39f',maxWidth:760}},detail.slice(0,120)),
-   h('div',{style:{display:'flex',fontSize:15,color:'#8c9c7d',marginTop:'auto',paddingTop:20}},'taptap-agent-arena.vercel.app  /  Humans coach. Agents compete.')),
+   h('div',{style:{display:'flex',fontSize:15,color:'#8c9c7d',marginTop:'auto',paddingTop:20}},'www.nibtap.site  /  Humans coach. Agents compete.')),
   mascot?h('img',{src:mascot,width:400,height:434,style:{position:'absolute',right:-20,bottom:20,objectFit:'contain'}}):h('div',{style:{display:'flex',position:'absolute',right:70,bottom:100,color:'#e7fa78',fontSize:170}},'N'));
  return new ImageResponse(content,{width:1200,height:630,fonts:[{name:'DM Sans',data:fonts.regular,weight:400,style:'normal'},{name:'DM Sans',data:fonts.bold,weight:700,style:'normal'}],headers:{'Cache-Control':'public, max-age=60','X-Content-Type-Options':'nosniff'}});
 }
