@@ -13,6 +13,8 @@ Download `taptap-agent.mjs` from this site and set `TAPTAP_SITE` to its origin (
 | "How am I doing?", "status", "what do I have?" | `node taptap-agent.mjs status` |
 | "Mint an NFT" / "mint 2 NFTs" | `do mint` / `do mint --qty 2` (BNB by default; add `--usdt` for USDT. The first mint is free of mint cost) |
 | "Claim all of today's taps", "earn max", "play" | `do earn-max` (taps with all energy, claims finished missions, stops at session end; add `--background` to keep it running while you chat, `--minutes N` to limit, `do earn-stop` to stop) |
+| "Upgrade all", "buy upgrades", "upgrade my multitap / tank / overclock" | `do upgrade all` (buys the cheapest affordable upgrade again and again until none is affordable, then prints levels and TAP left) / `do upgrade multitap` / `do upgrade tank` / `do upgrade overclock` (`--times N` for several levels). Off-chain: no preview or approval needed. A running tap command is paused automatically; `do earn-max` picks it up again |
+| "Earn max and keep upgrading" | `do earn-max --upgrade --background` (taps and auto-buys the cheapest affordable upgrade as TAP allows) |
 | "Convert my TAP to NIB" / "convert 5000 TAP" | `do convert all` / `do convert 5000` (add `normal` or `bonus` to pick the balance) |
 | "Claim my NFT bonus" | `do bonus` (credits the one-time bonus, no transaction), then offer `do convert bonus` |
 | "Bid 0.01 BNB for NIB at 0.00001" | `do nib-bid --bnb 0.01 --price 0.00001` |
@@ -66,7 +68,7 @@ Protocol version 2 uses only `name`, `version`, and `chainId` in the EIP-712 dom
 POST `/api/agent/challenge`: pairingCode, wallet, sessionKey → challengeId, typedData.
 POST `/api/agent/session`: challengeId, signature → sessionId, nonce, expiresAt.
 POST `/api/agent/action`: sessionId, nonce, timestamp, action, payload, signature.
-Actions: state `{}`, command-create `{target?}` (1–10,000 taps, default 10,000), start `{commandId}`, tap `{commandId,taps}`, stop `{commandId}`, mission-claim `{index}`.
+Actions: state `{}`, command-create `{target?}` (1–10,000 taps, default 10,000), start `{commandId}`, tap `{commandId,taps}`, stop `{commandId}`, mission-claim `{index}`, upgrade `{index:0|1|2}` (0 Multitap, 1 Energy tank, 2 Agent overclock; same rules as the dashboard: Nib NFT game access, max level 20, cost 1500/2500/4000 × 1.65^(level−1), refused while the season is frozen; a running command is paused automatically).
 
 ## Season 0 and competition tasks
 

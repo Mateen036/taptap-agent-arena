@@ -18843,7 +18843,7 @@ var DoError = class extends Error {
 var fail = (m) => {
   throw new DoError(m);
 };
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["usdt", "once", "json", "background", "approve", "all", "convert", "help"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["usdt", "once", "json", "background", "approve", "all", "convert", "help", "upgrade"]);
 function parseDoArgs(argv) {
   const flags = {}, positional = [];
   for (let i = 0; i < argv.length; i++) {
@@ -19080,6 +19080,66 @@ async function nibCancel(ctx, id) {
   const preview = previewTx(ctx, m.transaction);
   return finishPreview(ctx, { requestId: preview.requestId, type: "tx", label: "Cancel NIB bid #" + id, expect }, m.transaction, preview, ["What:      Cancel bid #" + id + " and refund " + m.summary.refundBnb + " BNB (no fee)"]);
 }
+var UPGRADE_KEYS = { multitap: 0, power: 0, tank: 1, energy: 1, "energy-tank": 1, overclock: 2, speed: 2, "agent-overclock": 2 };
+var UPGRADE_TITLES = ["Multitap", "Energy tank", "Agent overclock"];
+var MAX_UPGRADE_LEVEL = 20;
+var bigPoints = (v) => {
+  try {
+    return BigInt(String(v));
+  } catch {
+    return 0n;
+  }
+};
+function cheapestAffordable(a) {
+  const points = bigPoints(a?.points);
+  let best = null;
+  for (const [i, u] of (a?.upgrades || []).entries()) {
+    if (!u || u.level >= MAX_UPGRADE_LEVEL || !Number.isFinite(u.cost) || points < BigInt(u.cost)) continue;
+    if (!best || u.cost < best.cost) best = { index: i, cost: u.cost, level: u.level };
+  }
+  return best;
+}
+var levelsText = (a) => UPGRADE_TITLES.map((t, i) => t + " L" + (a?.upgrades?.[i]?.level ?? a?.levels?.[i] ?? "?")).join(" \xB7 ");
+var nextCostsText = (a) => (a?.upgrades || []).map((u, i) => UPGRADE_TITLES[i] + ": " + (u.level >= MAX_UPGRADE_LEVEL ? "max" : u.cost + " TAP")).join(" \xB7 ");
+async function buyOne(ctx, index2) {
+  const r = await act(ctx, "upgrade", { index: index2 });
+  const u = r.upgraded || {};
+  ctx.out("Upgraded " + UPGRADE_TITLES[index2] + " to level " + u.level + " for " + u.cost + " TAP" + (u.paused ? " (paused the running tap command)" : "") + ".");
+  return r;
+}
+async function upgradeAll(ctx, start, quiet = false) {
+  let a = start || (await act(ctx, "state")).agent;
+  const bought = [];
+  let spent = 0n;
+  for (let n = 0; n < 3 * MAX_UPGRADE_LEVEL; n++) {
+    const pick = cheapestAffordable(a);
+    if (!pick) break;
+    const r = await act(ctx, "upgrade", { index: pick.index });
+    a = r.agent;
+    spent += BigInt(pick.cost);
+    bought.push(UPGRADE_TITLES[pick.index] + " \u2192 L" + r.upgraded.level + " (" + pick.cost + " TAP)");
+  }
+  const summary = { bought, spentTap: spent.toString(), levels: { multitap: a.upgrades?.[0]?.level, energyTank: a.upgrades?.[1]?.level, agentOverclock: a.upgrades?.[2]?.level }, pointsLeft: String(a.points), next: nextCostsText(a) };
+  if (!quiet) ctx.out((bought.length ? "Bought " + bought.length + " upgrade(s):\n  " + bought.join("\n  ") + "\n" : "Nothing is affordable right now.\n") + "Levels: " + levelsText(a) + "\nTAP left: " + summary.pointsLeft + "\nNext costs: " + summary.next);
+  return { ...summary, agent: a };
+}
+async function upgradeCmd(ctx, what, f) {
+  const key = String(what || "").toLowerCase();
+  if (key === "all") {
+    const r = await upgradeAll(ctx);
+    const { agent: _a, ...rest } = r;
+    return rest;
+  }
+  if (!(key in UPGRADE_KEYS)) fail("Say which upgrade: multitap, tank, overclock or all. Example: do upgrade all");
+  const times = f.times !== void 0 ? Number(f.times) : 1;
+  if (!Number.isInteger(times) || times < 1 || times > MAX_UPGRADE_LEVEL) fail("--times must be 1\u201320.");
+  let last;
+  for (let i = 0; i < times; i++) {
+    last = await buyOne(ctx, UPGRADE_KEYS[key]);
+  }
+  ctx.out("Levels: " + levelsText(last.agent) + "\nTAP left: " + String(last.agent.points) + "\nNext costs: " + nextCostsText(last.agent));
+  return { upgraded: last.upgraded, levels: last.agent.levels, pointsLeft: String(last.agent.points) };
+}
 async function earnMax(ctx, f) {
   const s = ctx.s;
   let r = await act(ctx, "state"), a = r.agent;
@@ -19094,7 +19154,7 @@ async function earnMax(ctx, f) {
     }
   };
   const startPoints = big(a.points), startTaps = a.taps;
-  let stopped = false, lastLog = 0, claimed = [];
+  let stopped = false, lastLog = 0, claimed = [], spent = 0n;
   const onStop = () => {
     stopped = true;
   };
@@ -19112,9 +19172,25 @@ async function earnMax(ctx, f) {
     }
   };
   await claimMissions();
+  const autoUpgrade = f.upgrade === true, upgradeNow = async () => {
+    if (!autoUpgrade) return;
+    try {
+      if (cheapestAffordable(a)) {
+        const r2 = await upgradeAll(ctx, a, true);
+        if (r2.bought.length) {
+          a = r2.agent;
+          spent += BigInt(r2.spentTap);
+          ctx.out("Auto-upgrade: " + r2.bought.join(", ") + " \xB7 TAP left " + r2.pointsLeft);
+        }
+      }
+    } catch (e) {
+      if (!/Season is frozen|Maximum upgrade|Not enough TAP/.test(e.message)) ctx.out("Upgrade skipped: " + e.message);
+    }
+  };
+  await upgradeNow();
   const MIN_START = () => Math.min(a.capacity || 1e3, 500);
   let cmd;
-  ctx.out("Earning TAP with the signed game session until " + (minutes ? minutes + " minutes" : "the session ends") + (once ? " or the tank is empty" : "") + " (" + new Date(end).toISOString() + "). Ctrl+C stops safely.");
+  ctx.out("Earning TAP" + (autoUpgrade ? " (auto-buying the cheapest affordable upgrade)" : "") + " with the signed game session until " + (minutes ? minutes + " minutes" : "the session ends") + (once ? " or the tank is empty" : "") + " (" + new Date(end).toISOString() + "). Ctrl+C stops safely.");
   try {
     while (!stopped && Date.now() < end) {
       try {
@@ -19151,7 +19227,7 @@ async function earnMax(ctx, f) {
         a = res.agent;
         if (Date.now() - lastLog > 3e4) {
           lastLog = Date.now();
-          ctx.out(JSON.stringify({ taps: a.taps - startTaps, pointsEarned: (big(a.points) - startPoints).toString(), energy: a.energy }));
+          ctx.out(JSON.stringify({ taps: a.taps - startTaps, pointsEarned: (big(a.points) - startPoints + spent).toString(), energy: a.energy }));
         }
         if (a.energy < 1) {
           const c2 = a.commands.find((c) => c.status === "running");
@@ -19159,6 +19235,7 @@ async function earnMax(ctx, f) {
           if (once) break;
         }
         await claimMissions();
+        await upgradeNow();
       } catch (error) {
         if (/energy/i.test(error.message)) {
           try {
@@ -19202,7 +19279,7 @@ async function earnMax(ctx, f) {
     process.off("SIGINT", onStop);
     process.off("SIGTERM", onStop);
   }
-  const summary = { earnedTap: (big(a.points) - startPoints).toString(), taps: a.taps - startTaps, balance: String(a.points), energy: a.energy, missionsClaimed: claimed.length, sessionEndsAt: new Date(s.expiresAt).toISOString() };
+  const summary = { earnedTap: (big(a.points) - startPoints + spent).toString(), taps: a.taps - startTaps, balance: String(a.points), energy: a.energy, missionsClaimed: claimed.length, ...autoUpgrade ? { levels: a.levels, spentOnUpgrades: spent.toString() } : {}, sessionEndsAt: new Date(s.expiresAt).toISOString() };
   ctx.out("Done: " + JSON.stringify(summary));
   return summary;
 }
@@ -19241,7 +19318,7 @@ async function status(ctx, json = false) {
   const s = ctx.s, out = { wallet: s.wallet, site: ctx.origin, sessionExpiresAt: new Date(s.expiresAt).toISOString(), sessionMinutesLeft: Math.max(0, Math.round((s.expiresAt - Date.now()) / 6e4)) };
   const st = await act(ctx, "state");
   const a = st.agent;
-  out.game = { tap: String(a.points), energy: a.energy + "/" + a.capacity, speedPerSec: a.speed, nftAccess: a.gameAccess ? { canPlay: a.gameAccess.canPlay, nfts: a.gameAccess.owned, multiplier: String(a.gameAccess.multiplier) } : null, missionsClaimable: (a.missions || []).filter((m) => !m.claimed && m.progress >= m.goal).map((m) => m.name) };
+  out.game = { tap: String(a.points), energy: a.energy + "/" + a.capacity, speedPerSec: a.speed, nftAccess: a.gameAccess ? { canPlay: a.gameAccess.canPlay, nfts: a.gameAccess.owned, multiplier: String(a.gameAccess.multiplier) } : null, levels: a.levels, upgradeCosts: (a.upgrades || []).map((u) => u.level >= MAX_UPGRADE_LEVEL ? null : u.cost), missionsClaimable: (a.missions || []).filter((m) => !m.claimed && m.progress >= m.goal).map((m) => m.name) };
   try {
     const d = (await act(ctx, "airdrop-state")).airdrop;
     out.airdrop = { open: d.open, message: d.message, pointsPerNib: d.season?.pointsPerNib, bonusTap: d.user?.bonusBalance, convertibleTap: d.user?.convertible, nftBonusClaimableNow: d.nftBonus?.user?.claimableNow, pendingVoucher: d.user?.pending ? { id: d.user.pending.id, points: d.user.pending.points, expiresAt: new Date(d.user.pending.expiresAt).toISOString() } : void 0 };
@@ -19269,7 +19346,7 @@ async function status(ctx, json = false) {
   const lines = [
     "Wallet " + out.wallet,
     "Session: " + out.sessionMinutesLeft + " min left",
-    "TAP " + out.game.tap + " \xB7 energy " + out.game.energy + (out.game.nftAccess ? " \xB7 " + out.game.nftAccess.nfts + " NFT, multiplier " + out.game.nftAccess.multiplier + "x" : "") + (out.game.missionsClaimable.length ? " \xB7 missions to claim: " + out.game.missionsClaimable.join(", ") : ""),
+    "TAP " + out.game.tap + " \xB7 energy " + out.game.energy + (out.game.nftAccess ? " \xB7 " + out.game.nftAccess.nfts + " NFT, multiplier " + out.game.nftAccess.multiplier + "x" : "") + " \xB7 upgrades " + levelsText(a) + (cheapestAffordable(a) ? ' (affordable: say "upgrade all")' : "") + (out.game.missionsClaimable.length ? " \xB7 missions to claim: " + out.game.missionsClaimable.join(", ") : ""),
     "Airdrop: " + (out.airdrop.error || out.airdrop.message) + (out.airdrop.convertibleTap ? " \xB7 convertible TAP " + out.airdrop.convertibleTap : "") + (out.airdrop.bonusTap && out.airdrop.bonusTap !== "0" ? " \xB7 bonus TAP " + out.airdrop.bonusTap : "") + (Number(out.airdrop.nftBonusClaimableNow) > 0 ? " \xB7 NFT bonus claimable now: " + out.airdrop.nftBonusClaimableNow + ' NFT(s) (say "claim my bonus")' : ""),
     "NIB market: " + (out.nibMarket.error || (out.nibMarket.deployed ? (out.nibMarket.bestBid ? "best bid " + out.nibMarket.bestBid : "no open bids") + " \xB7 you hold " + (out.nibMarket.yourNib ?? "?") + " NIB" : "not live"))
   ];
@@ -19410,7 +19487,10 @@ async function execute(ctx, requestId, approved, knownHash) {
 var DO_HELP = `Plain-chat commands (the agent runs these; the user just says it):
   do mint [--qty N] [--usdt]            mint Nib NFT(s) (BNB by default; the first one is free of mint cost)
   do earn-max [--once] [--minutes N] [--background]   tap with all available energy, claim missions (alias: play)
+  do earn-max --upgrade                 also auto-buy the cheapest affordable upgrade as TAP allows
   do earn-stop                          stop a background earn-max
+  do upgrade <multitap|tank|overclock> [--times N]   buy lifetime upgrade level(s) (off-chain, no approval)
+  do upgrade all                        keep buying the cheapest affordable upgrade until none is affordable
   do convert all|bonus|normal [pts]|<pts>   convert TAP to NIB (voucher + preview)
   do bonus [--convert]                  claim the one-time NFT bonus (no transaction); --convert also previews converting it
   do nib-bid --bnb 0.01 --price 0.00001 [--nib N] [--hours H]
@@ -19441,6 +19521,9 @@ async function runDo(ctx, argv) {
       return earnMax(ctx, f);
     case "earn-stop":
       return earnStop(ctx);
+    case "upgrade":
+    case "upgrades":
+      return upgradeCmd(ctx, rest[0], f);
     case "convert": {
       const c = convertPayload(rest);
       return airdropVoucher(ctx, c.payload, c.label);

@@ -55,7 +55,18 @@ async function claimMission(env:Env,a:any,index:any,now:number){
  await requireGameAccess(env,a);if(!Number.isInteger(index)||!missions[index])fail(400,'Invalid mission.');const m=missions[index];if(a[m.key]<m.goal)fail(409,'Complete this mission first.');if(await first(env,'SELECT id FROM mission_claims WHERE wallet=? AND mission=?',a.wallet,index))fail(409,'Reward already claimed.');const exact=a._gameAccess?.required===true,reward=BigInt(m.reward)*(exact?BigInt(a._gameAccess.multiplier):1n);if(!exact&&pointBalance(a)+reward>BigInt(MAX_POINTS))fail(409,'Point limit reached.');
  await cas(env,a,pointFields(pointBalance(a)+reward,earnedBalance(a)+reward,exact),'mission',exact?reward:Number(reward),m.name,[stmt(env,'INSERT INTO mission_claims(id,wallet,mission,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id(),a.wallet,index,now,...guard(a))]);return reward;
 }
-export const EARN_ACTIONS=['command-create','mission-claim'];
+/** Lifetime upgrade purchase, shared by the browser endpoint and the signed agent action `upgrade`. */
+const UPGRADE_NAMES=['Multitap','Energy tank','Agent overclock'];
+async function buyUpgrade(env:Env,a:any,index:any,now:number,pauseActive:boolean){
+ await requireGameAccess(env,a);if(![0,1,2].includes(index))fail(400,'Invalid upgrade.');
+ const run=await active(env,a.wallet);if(run&&!pauseActive)fail(409,'Pause your agent before upgrading.');
+ const key=['power_level','tank_level','speed_level'][index];if(a[key]>=20)fail(409,'Maximum upgrade level reached.');const price=upgradeCost(a,index);if(pointBalance(a)<BigInt(price))fail(409,'Not enough TAP points.');
+ const energy=energyAt(a,now,!!run);
+ await cas(env,a,{[key]:a[key]+1,...pointFields(pointBalance(a)-BigInt(price),earnedBalance(a),a._gameAccess?.required===true),energy:energy+(index===1?1000:0),updated_at:now},'upgrade',-price,UPGRADE_NAMES[index]+' upgraded'+(run?' (running command paused)':''),
+  run?[stmt(env,"UPDATE commands SET status='paused',finished_at=? WHERE id=? AND status='running' AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,run.id,...guard(a))]:[]);
+ return {index,level:a[key]+1,cost:price,paused:run?String(run.id):null};
+}
+export const EARN_ACTIONS=['command-create','mission-claim','upgrade'];
 export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
@@ -174,6 +185,8 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  const command=await queueCommand(env,a,'Tap '+target+' times (agent)',now);return json({nonce:nextNonce,command,agent:await snapshot(env,await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet)),serverTime:now});}
  if(b.action==='mission-claim'){
  if(frozen?.value==='frozen')fail(409,'Season is frozen for token allocation.');const reward=await claimMission(env,a,b.payload.index,now);return json({nonce:nextNonce,claimed:Number(b.payload.index),reward:reward.toString(),agent:await snapshot(env,await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet)),serverTime:now});}
+ if(b.action==='upgrade'){
+ if(frozen?.value==='frozen')fail(409,'Season is frozen for token allocation.');const bought=await buyUpgrade(env,a,b.payload.index,now,true);return json({nonce:nextNonce,upgraded:bought,agent:await snapshot(env,await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet)),serverTime:now});}
  if(['start','tap'].includes(b.action))await requireGameAccess(env,a);
  const command=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.payload.commandId),s.wallet);if(!command)fail(404,'Command not found.');
  if(frozen?.value==='frozen'&&['start','tap'].includes(b.action))fail(409,'Season is frozen for token allocation.');
@@ -203,7 +216,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,c.id,...guard(a))]);return json({ok:true});
  }
  if(path==='/upgrades'&&request.method==='POST'){
- const a=await own(env,request),b=await body(request);await requireGameAccess(env,a);if(![0,1,2].includes(b.index))fail(400,'Invalid upgrade.');if(await active(env,a.wallet))fail(409,'Pause your agent before upgrading.');const key=['power_level','tank_level','speed_level'][b.index];if(a[key]>=20)fail(409,'Maximum upgrade level reached.');const price=upgradeCost(a,b.index);if(pointBalance(a)<BigInt(price))fail(409,'Not enough TAP points.');const energy=energyAt(a,now);await cas(env,a,{[key]:a[key]+1,...pointFields(pointBalance(a)-BigInt(price),earnedBalance(a),a._gameAccess?.required===true),energy:energy+(b.index===1?1000:0),updated_at:now},'upgrade',-price,['Multitap','Energy tank','Agent overclock'][b.index]+' upgraded');return json({ok:true});
+ const a=await own(env,request),b=await body(request);await buyUpgrade(env,a,b.index,now,false);return json({ok:true});
  }
  if(path==='/missions/claim'&&request.method==='POST'){
  const a=await own(env,request),b=await body(request);await claimMission(env,a,b.index,now);return json({ok:true});
