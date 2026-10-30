@@ -1,5 +1,7 @@
 /* TapTap / motion direction 02. Shared app controls stay wired to signed agent actions. */
 :root {
+  /* The app owns its dark palette; avoid a second automatic darkening pass. */
+  color-scheme: only dark;
   --lime: #dfff70;
   --text: #f3f3e9;
   --muted: #a8ad9f;
@@ -9,6 +11,7 @@
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 html {
+  background-color: var(--bg, #10110f);
   scroll-padding-top: 140px;
 }
 body {
