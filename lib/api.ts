@@ -46,7 +46,7 @@ async function snapshot(e:Env,a:any,accessOverride?:any){
 export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
- if(request.method==='GET'&&/^\/nft\/art\/[^/]+$/.test(path))return nftArtResponse(path.split('/').pop()!);
+ if(request.method==='GET'&&/^\/nft\/art\/(?:v2\/)?[^/]+$/.test(path))return nftArtResponse(path.split('/').pop()!);
  if(!env.DB)fail(503,'Game storage is not available.');
  env={...env,_utilityPolicy:await utilityPolicy(env)};
  if(request.method==='POST'){const origin=request.headers.get('origin');if(origin&&origin!==url.origin)fail(403,'Cross-origin writes are not allowed.');}

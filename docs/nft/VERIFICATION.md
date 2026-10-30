@@ -12,9 +12,9 @@
 - Vault checks: no owner withdrawal method, future-token delay, permanent token selection, matching deposits, liquidity addition, locked LP tokens and cleared router approvals.
 - SQLite and the PostgreSQL adapter: real EIP-712 game signatures, exact preview binding, browser-owner authorization, approval consumption once, submitted spends not hidden as ordinary failures, unverified hashes unable to block another wallet's receipt, successful on-chain receipt verification and disconnect cancellation.
 - Runner checks: no repeated uncertain execution and no journal/approval consumption when a known wallet preflight fails.
-- Chromium: responsive Foundry and Market views, art/traits, honest undeployed state, free mint queue, exact preview review/approval, real local-EVM mint receipt, NFT ownership readback, individual NFT approval and marketplace listing. Existing game/browser checks still run.
+- Chromium: responsive Collection and Market views, art/traits, honest undeployed state, free mint queue, exact preview review/approval, real local-EVM mint receipt, NFT ownership readback, individual NFT approval and marketplace listing. Existing game/browser checks still run.
 
-[Desktop preview](desktop-foundry.png) · [Mobile preview](mobile-foundry.png). The screenshots and blockchain tests use **local synthetic wallets**, mocked registry/payment/router dependencies and a Ganache chain 56 fixture. They are not live NFT sales, live funds or Binance app approvals. The database compatibility fixture uses PGlite with a serialized connection, not a production Neon throughput benchmark.
+[Desktop preview](desktop-collection.png) · [Mobile preview](mobile-collection.png). The screenshots and blockchain tests use **local synthetic wallets**, mocked registry/payment/router dependencies and a Ganache chain 56 fixture. They are not live NFT sales, live funds or Binance app approvals. The database compatibility fixture uses PGlite with a serialized connection, not a production Neon throughput benchmark.
 
 ## Release state
 
@@ -26,7 +26,7 @@ The contracts have meaningful automated coverage and a bounded read-only review,
 
 The GitHub release `16b82b5277eb0acdd8bace9e70eee8c812fcc753` is deployed READY on the existing Vercel project (`dpl_EGG9tk4qDaMafyK3oGhF4TEKNFJA`). [Live smoke report](production-smoke.json) · [Production desktop](production-desktop.png) · [Production mobile](production-mobile.png).
 
-The public Foundry/Market views, design inspection, six traits, SVG/metadata boundaries and downloads pass. IDs 1 and 10,000 render; ID 10,001 returns 404. Mobile 390px and desktop 1440px have no horizontal overflow or page errors. The existing wallet retains 200 TAP, 200 taps and two completed runs. NFT transactions remain blocked before contract deployment; no mainnet NFT transaction or mint payment was submitted in these checks. Current runtime diagnostics show no application error groups; the existing PostgreSQL SSL-mode deprecation warning remains.
+The public Collection/Market views, design inspection, six traits, SVG/metadata boundaries and downloads pass. IDs 1 and 10,000 render; ID 10,001 returns 404. Mobile 390px and desktop 1440px have no horizontal overflow or page errors. The existing wallet retains 200 TAP, 200 taps and two completed runs. NFT transactions remain blocked before contract deployment; no mainnet NFT transaction or mint payment was submitted in these checks. Current runtime diagnostics show no application error groups; the existing PostgreSQL SSL-mode deprecation warning remains.
 
 [GitHub release CI](https://github.com/Mateen036/taptap-agent-arena/actions/runs/40887399361) runs compilation, type checks, 27 automated tests, the local 100-agent accounting workload, 4 browser tests and the Vercel production build.
 

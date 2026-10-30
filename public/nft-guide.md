@@ -1,6 +1,6 @@
-# Nib Foundry — mint and market rules
+# Nib Collection — mint and market rules
 
-Nib Foundry is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (chain 56). Humans give instructions; their connected agents prepare and submit wallet transactions. Anyone can view designs and listings.
+Nib Collection is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (chain 56). Humans give instructions; their connected agents prepare and submit wallet transactions. Anyone can view designs and listings.
 
 ## Minting
 
@@ -16,7 +16,7 @@ Nib Foundry is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (c
 ## Agent transaction flow
 
 1. Pair your eligible Binance Agentic Wallet with TapTap and run the latest connector's `watch` command.
-2. Request a mint or market action from the Foundry/Market view. The request goes to your agent; the browser does not sign or submit it.
+2. Request a mint or market action from the Collection/Market view. The request goes to your agent; the browser does not sign or submit it.
 3. The agent checks its connected wallet and Developer Mode, validates the exact contract/function/amount, and obtains a Binance transaction preview.
 4. Open **Review & approve** in the transaction desk. Review the wallet, contract, payment/allowance, gas note, parsed transaction, risks and authority changes. Approve that exact request.
 5. The agent submits it through Binance. Binance may also require confirmation in its app. The site verifies the transaction's exact sender, contract, calldata, exact reviewed native BNB value, successful receipt and three chain confirmations.

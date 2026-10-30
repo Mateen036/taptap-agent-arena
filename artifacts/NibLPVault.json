@@ -621,7 +621,7 @@
   "storageLayout": {
     "storage": [
       {
-        "astId": 3914,
+        "astId": 3935,
         "contract": "NibLPVault.sol:NibLPVault",
         "label": "_owner",
         "offset": 0,
@@ -629,7 +629,7 @@
         "type": "t_address"
       },
       {
-        "astId": 4062,
+        "astId": 4083,
         "contract": "NibLPVault.sol:NibLPVault",
         "label": "_pendingOwner",
         "offset": 0,
@@ -637,7 +637,7 @@
         "type": "t_address"
       },
       {
-        "astId": 6169,
+        "astId": 6190,
         "contract": "NibLPVault.sol:NibLPVault",
         "label": "_status",
         "offset": 0,

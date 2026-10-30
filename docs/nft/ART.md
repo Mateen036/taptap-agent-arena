@@ -1,6 +1,6 @@
-# Nib Foundry — original collection art
+# Nib Collection — original collection art
 
-Nib Foundry is an original vector collection of 10,000 expressive robot gremlins made for TapTap. Angular armor, oversized sensor eyes, circuit ears and one little fang carry the existing Nib identity into a compact collectible portrait. The art uses no external images, scripts, fonts, network calls, foreign objects or existing third-party character assets. SVG text uses ordinary local monospace fallbacks.
+Nib Collection is an original vector collection of 10,000 expressive robot gremlins made for TapTap. Angular armor, oversized sensor eyes, circuit ears and one little fang carry the existing Nib identity into a compact collectible portrait. The art uses no external images, scripts, fonts, network calls, foreign objects or existing third-party character assets. SVG text uses ordinary local monospace fallbacks.
 
 ## Files and use
 
@@ -43,7 +43,7 @@ Integer division truncates. Because 7919 is coprime to 10000, the permutation vi
 5. `accessory`: hands, raised tap gauntlet, wand, companion drone or crystalline data bloom.
 6. `label`: dark serial plaque and “Humans coach. Agents collect.” text.
 
-The root SVG is `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 560" width="560" height="560" role="img" aria-label="Nib Foundry TOKEN_ID">…</svg>`.
+The root SVG is `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 560" width="560" height="560" role="img" aria-label="Nib TOKEN_ID">…</svg>`.
 
 ## Trait tables (index order)
 
@@ -53,7 +53,7 @@ The root SVG is `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 560" w
 | Chassis | Carbon | Sage | Ceramic | Signal Orange | Ultraviolet |
 | Eyes | Side Quest | Wide Awake | Laser Focus | Dream Mode | Glitch Wink |
 | Headgear | Circuit Ears | Crown Relay | Satellite Kit | Halo Array | — |
-| Emblem | Double Tap | Orbit | Spark | Foundry | — |
+| Emblem | Double Tap | Orbit | Spark | Crown | — |
 | Accessory | Idle Hands | Tap Gauntlet | Signal Wand | Pocket Drone | Data Bloom |
 
 Background values are `{base,line,glow}`:

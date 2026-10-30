@@ -9,7 +9,7 @@ test('fixed 5x per NFT is linear across the complete collection supply',()=>{
 });
 test('real-chain NFT utility: fresh ownership, exact TAP, independent competition and API enforcement',async t=>{
  const f=await nftChain(),nativeNow=Date.now;let offset=0;Date.now=()=>nativeNow()+offset;
- const abi=f.art('NibFoundry').abi;
+ const abi=f.art('NibCollection').abi;
  async function mint(who:number,n=1){if(n>1)await f.write(NFT_PAYMENT,f.m.MockToken.abi,'approve',[f.collection,BigInt(n-1)*10n**18n],who);await f.write(f.collection,abi,'mint',[BigInt(n),BigInt(n-1)*10n**18n,await f.deadline(),f.intent()],who);}
  async function transfer(id:number,from:number,to:number){await f.write(f.collection,abi,'transferFrom',[f.accounts[from].address,f.accounts[to].address,BigInt(id)],from);}
  try{await mint(1);await mint(2);await mint(3); // ids 1, 2, 3

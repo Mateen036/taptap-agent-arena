@@ -35,7 +35,7 @@ const server=http.createServer(async(req,res)=>{
   }
   else if(url.pathname==='/__test/utility/transfer'){
    if(!nftFixture)throw Error('NFT fixture not started');const from=nftFixture.accounts.findIndex(a=>a.address.toLowerCase()===b.wallet),to=b.back?from:2,source=b.back?2:from;
-   await nftFixture.write(nftFixture.collection,nftFixture.art('NibFoundry').abi,'transferFrom',[nftFixture.accounts[source].address,nftFixture.accounts[to].address,BigInt(b.tokenId)],source);result={transferred:true};
+   await nftFixture.write(nftFixture.collection,nftFixture.art('NibCollection').abi,'transferFrom',[nftFixture.accounts[source].address,nftFixture.accounts[to].address,BigInt(b.tokenId)],source);result={transferred:true};
   }
   else if(url.pathname==='/__test/utility/balance'){
    const amount='9007199254740993123456789';await db.prepare('UPDATE agents SET points=9000000000000,earned=9000000000000,points_exact=?,earned_exact=? WHERE wallet=?').bind(amount,amount,b.wallet).run();result={amount};
@@ -51,7 +51,7 @@ const server=http.createServer(async(req,res)=>{
   else if(url.pathname==='/__test/reset'){await db.prepare("DELETE FROM arena_entries").run();await db.prepare("DELETE FROM arena_matches").run();}
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
  }
- if(url.pathname.startsWith('/api/nft/preview/v1/')){const result=nftPreviewResponse(decodeURIComponent(url.pathname.slice('/api/nft/preview/v1/'.length)));res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;}
+ if(url.pathname.startsWith('/api/nft/preview/v2/')){const result=nftPreviewResponse(decodeURIComponent(url.pathname.slice('/api/nft/preview/v2/'.length)));res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;}
  if(url.pathname.startsWith('/api/card/')){
   const [, , ,kind,id]=url.pathname.split('/'),routes:Record<string,string>={profile:'agents',match:'matches',run:'runs',round:'rounds'};
   const endpoint=kind==='season'?'/api/season':routes[kind]?'/api/public/'+routes[kind]+'/'+id:null;

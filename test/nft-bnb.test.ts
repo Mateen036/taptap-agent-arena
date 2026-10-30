@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {encodeFunctionData,parseEther} from 'viem';
 import {nftChain} from './helpers/nft-chain';import {NFT_PAYMENT,NFT_PRICE_FEED,NFT_WBNB,NFT_NATIVE,nativeMintBudget,nftPrice} from '../lib/nft-protocol';import {handle} from '../lib/api';import {databaseFixture} from './helpers/database';import {generatePrivateKey,privateKeyToAccount} from 'viem/accounts';import {actionData} from '../lib/protocol';import {validateNftTransaction} from '../agent/nft-runner';import {AGENT_ID_REGISTRY} from '../lib/protocol';
 test('native BNB mint, atomic BNB market and LP-only wrapped proceeds',async t=>{
- const f=await nftChain(),nft=f.art('NibFoundry').abi,market=f.art('NibMarketplace').abi,vault=f.art('NibLPVault').abi;
+ const f=await nftChain(),nft=f.art('NibCollection').abi,market=f.art('NibMarketplace').abi,vault=f.art('NibLPVault').abi;
  const updateFeed=async(answer=65000000000n,at?:bigint,round=1n,answered=1n)=>f.write(NFT_PRICE_FEED,f.m.MockOracle.abi,'set',[answer,at??(await f.client.getBlock()).timestamp,round,answered]);
  try{
  await t.test('one shared free mint, $1 BNB quotes, exact refunds, currency switches and mint limits',async()=>{

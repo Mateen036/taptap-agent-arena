@@ -1,4 +1,4 @@
-# Nib Foundry deployment and operation
+# Nib Collection deployment and operation
 
 The collection and marketplace extend the existing TapTap app. Website: https://taptap-agent-arena.vercel.app/#collection · [Public rules](../../public/nft-guide.md) · [Artwork](ART.md) · [Verification](VERIFICATION.md).
 
@@ -14,7 +14,7 @@ The collection owner can pause or reopen minting; the vault owner controls futur
 | --- | --- |
 | `NibRenderer` | Immutable deterministic SVG and ERC-721 JSON metadata |
 | `NibLPVault` | Receives USDT and wrapped BNB mint proceeds; two-day future-token selection; adds liquidity through immutable PancakeSwap V2 router; LP tokens cannot be withdrawn |
-| `NibFoundry` | ERC-721 enumerable collection, immutable economics and identity registry, per-wallet cap, replay-resistant mint intent IDs |
+| `NibCollection` | ERC-721 enumerable collection, immutable economics and identity registry, per-wallet cap, replay-resistant mint intent IDs |
 | `NibMarketplace` | Noncustodial fixed-price native BNB market; exact listing versions; atomic payment/delivery; zero fees |
 
 The vault requires matching future tokens before LP creation. Its selected token becomes permanent after activation. Funds can remain locked indefinitely if token launch or matching deposits never happen. The timelock and locked LP tokens do not guarantee token quality, price, or protection from owner economic actions. Token economics and TAP conversion stay TBA.
@@ -71,7 +71,7 @@ This checks all four deployed runtime bytecodes (normalizing compiler-recorded i
 
 After receipt and runtime verification, set these public-address environment variables on the existing Vercel **production** project:
 
-- `NFT_COLLECTION`: verified `NibFoundry` address.
+- `NFT_COLLECTION`: verified `NibCollection` address.
 - `NFT_MARKETPLACE`: verified `NibMarketplace` address.
 - `NFT_LP_VAULT`: verified `NibLPVault` address.
 
@@ -91,4 +91,4 @@ After token economics are decided, the owner calls `proposeToken`, waits two day
 
 ## Website image previews
 
-Gallery, Mint and Market images use `/api/nft/preview/v1/ID.png`, a stateless Node route rendering the original SVG with a bundled monospace font. It returns cached, opaque 560×560 PNGs without session cookies. The original `/api/nft/art/ID.svg`, metadata and Solidity renderer are unchanged. The legacy Worker route redirects these image requests to the public Vercel image service. Explicit browser/OS image-inversion settings can still override any website.
+Gallery, Mint and Market images use `/api/nft/preview/v2/ID.png`, a stateless Node route rendering the original SVG with a bundled monospace font. It returns cached, opaque 560×560 PNGs without session cookies. The original `/api/nft/art/ID.svg`, metadata and Solidity renderer are unchanged. The legacy Worker route redirects these image requests to the public Vercel image service. Explicit browser/OS image-inversion settings can still override any website.
