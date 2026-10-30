@@ -19,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="/nft.js" defer />
         <script src="/utility.js" defer />
         <script src="/convert.js" defer />
+        <script src="/nibmarket.js" defer />
         <script src="/motion.js" defer />
       </body>
     </html>

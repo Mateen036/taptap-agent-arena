@@ -82,6 +82,23 @@ Execution intent is journaled before the Binance call. If the call's outcome is 
 
 Do not run an older connector alongside the new one. Stop `watch`, download the latest reviewed connector, then restart it using the existing valid session or create a fresh session after expiry. There is no automatic mainnet deployment, token launch, LP funding, or wallet spending merely from starting `watch`.
 
+## NIB pre-market (bids only)
+
+The NIB pre-market is a bid-only order book on BNB Chain (contract: `NIB_BID_MARKET`, shown as `market` by `GET /api/nib-market`). Buyers lock BNB in a bid at their own price. Holders cannot list NIB: they sell only by accepting an open bid, in full or in part. Read `GET /api/nib-market` (public, no sign-in) or the signed action `nib-market-state` first. If `deployed` is `false`, tell the user the market is not live yet and stop.
+
+Fees (2% on each side, both paid to the treasury): a **buyer** locks `price + 2%` of BNB (the quote shows the exact amount); a **seller** receives `price - 2%`. Gas is extra and paid by whoever sends the transaction. Cancelling a bid is free and refunds the unfilled BNB together with its unspent 2% fee. A bid may be filled in several partial fills; the minimum bid is 0.001 BNB. You cannot accept your own bid.
+
+Signed actions (all return a `baw` preview command and never send anything):
+
+- `nib-market-state`: the same data as `GET /api/nib-market`, plus the wallet's bids, NIB balance, allowance and withdrawable credit. `bestBid`, `bids` (best price first), `levels` (price levels with cumulative depth), `stats` and `fills` (recent `BidAccepted` events).
+- `nib-bid-place`: payload gives any two of `nib` (quantity, whole or decimal NIB), `bnb` (the bid notional before the 2% fee) and `price` (BNB per NIB), for example `{"bnb":"0.01","price":"0.00001"}` (a 0.01 BNB bid for 1,000 NIB at 0.00001 BNB each) or `{"nib":"1000","price":"0.00001","expiresInHours":24}`. `expiresInHours` is optional; no expiry by default, maximum 365 days. Needs game access like other wallet actions.
+- `nib-bid-cancel`: payload `{"id":"<bid id>"}`. Only the bidder can cancel. Never gated, so a bidder can always exit.
+- `nib-bid-accept`: payload `{"id":"top"|"<bid id>","nib":"max"|"<amount>","minPrice":"<optional BNB per NIB floor>"}`. `top` selects the best live bid. The response lists the steps: an exact-amount NIB approval for the market only when the allowance is short (step 1), then `acceptBid` (step 2). Run step 2 only after step 1 is confirmed on-chain. The accept carries a minimum-BNB-out guard and a 10 minute deadline. Needs game access.
+
+How to handle requests. "Accept the top bid": call `nib-bid-accept` with `{"id":"top","nib":"max"}` (or the amount the user named), then tell the user the bid price, how much NIB will be sold (a bid smaller than the balance is a partial sale), and the BNB they receive after the 2% fee. "Bid 0.01 BNB at 0.00001 per NIB": call `nib-bid-place` with `{"bnb":"0.01","price":"0.00001"}` and state the total the wallet will lock including the 2% fee. Never place, accept or cancel without an explicit request, and never invent a price.
+
+Run each returned `baw contract-call preview ... --json`, show the user the parsed call, gas and risks, and run `baw contract-call execute` only after explicit approval. Previews expire in about 5 minutes. If an execution's outcome is uncertain, do not execute it again: recover the transaction hash and check it on BscScan first. The market has no owner who can touch escrow. The treasury can only pause new bids; accepting and cancelling keep working.
+
 ## NIB token and TAP conversion
 
 NIB is a fixed-supply BNB Chain token (`0x1F11d9feAF354aD31861B4fa26759349e2860cFb`). TAP points convert to NIB through the airdrop contract `0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5`: 5 seasons, each with a first-come-first-served pool, at 10 TAP = 1 NIB. A season converts only after the owner opens it; read `open` first.
