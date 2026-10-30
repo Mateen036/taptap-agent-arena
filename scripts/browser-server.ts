@@ -30,14 +30,14 @@ const server=http.createServer(async(req,res)=>{
   }
   else if(url.pathname==='/__test/utility/activate'){
    if(!nftFixture)throw Error('Start real local NFT chain first');
-   env.NFT_GAME_UTILITY='true';await db.prepare("INSERT INTO game_settings(key,value) VALUES('nft_utility_v1','active') ON CONFLICT(key) DO UPDATE SET value='active'").run();result={active:true};
+   env.NFT_GAME_UTILITY='true';await db.prepare("INSERT INTO game_settings(key,value) VALUES('nft_utility_v2','active') ON CONFLICT(key) DO UPDATE SET value='active'").run();result={active:true};
   }
   else if(url.pathname==='/__test/utility/transfer'){
    if(!nftFixture)throw Error('NFT fixture not started');const from=nftFixture.accounts.findIndex(a=>a.address.toLowerCase()===b.wallet),to=b.back?from:2,source=b.back?2:from;
    await nftFixture.write(nftFixture.collection,nftFixture.art('NibFoundry').abi,'transferFrom',[nftFixture.accounts[source].address,nftFixture.accounts[to].address,BigInt(b.tokenId)],source);result={transferred:true};
   }
   else if(url.pathname==='/__test/utility/balance'){
-   const amount=(1n<<10000n).toString();await db.prepare('UPDATE agents SET points=9000000000000,earned=9000000000000,points_exact=?,earned_exact=? WHERE wallet=?').bind(amount,amount,b.wallet).run();result={amount};
+   const amount='9007199254740993123456789';await db.prepare('UPDATE agents SET points=9000000000000,earned=9000000000000,points_exact=?,earned_exact=? WHERE wallet=?').bind(amount,amount,b.wallet).run();result={amount};
   }
   else if(url.pathname==='/__test/nft/preview'){
    const c=await act(b.wallet,'nft-claim',{intentId:b.intentId});if(c.status!==200)throw Error(c.body.error);const i=c.body.intent;

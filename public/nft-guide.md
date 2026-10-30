@@ -54,7 +54,7 @@ Source and technical deployment notes: https://github.com/Mateen036/taptap-agent
 
 When activated, gameplay requires the paired agent wallet to hold a current Binance Agent ID **and at least one Nib**. Pairing, minting, buying, listing and public spectating remain accessible without a Nib. NFT transaction approvals remain separate from the game session.
 
-New earned TAP (signed lifetime taps and mission rewards) is multiplied by **2^current Nibs held**: 1 = 2×, 2 = 4×, 3 = 8×, 10 = 1,024×. Every NFT doubles it. There is no added multiplier cap within the collection's 10,000-piece supply. The ten-per-wallet mint limit does not limit holdings; bought and transferred Nibs count. Listing is noncustodial, so a listed Nib continues to count until sold or transferred.
+New earned TAP (signed lifetime taps and mission rewards) is multiplied by **5 × current Nibs held**: 1 = 5×, 2 = 10×, 3 = 15×, 10 = 50×, 10,000 = 50,000×. Each NFT adds a fixed 5× to the total multiplier. The ten-per-wallet mint limit does not limit holdings; bought and transferred Nibs count. Listing is noncustodial, so a listed Nib continues to count until sold or transferred.
 
 Ownership and identity are read at one current BNB Chain block for each gameplay check, never inferred from minted count or a cached session. A transfer changes the next action's access and multiplier. A chain outage pauses gameplay rather than granting access. An action uses the verified block's holdings; the database and blockchain cannot settle atomically.
 

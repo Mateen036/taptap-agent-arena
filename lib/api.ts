@@ -27,7 +27,7 @@ async function own(e:Env,r:Request){const a=await first(e,'SELECT * FROM agents 
 async function active(e:Env,wallet:string){return first(e,"SELECT * FROM commands WHERE wallet=? AND status='running' ORDER BY created_at DESC LIMIT 1",wallet);}
 async function cas(e:Env,a:any,fields:Record<string,any>,kind:string,delta:number|bigint,detail:string,extra:D1PreparedStatement[]=[]){
  const event=a._event||id(),now=Date.now();const entries=Object.entries(fields);const res=await e.DB.batch([
- stmt(e,`UPDATE agents SET ${entries.map(([k])=>`${k}=?`).join(',')},version=version+1,last_event=? WHERE wallet=? AND version=?${['tap','start','upgrade','mission'].includes(kind)?" AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v2' AND value='frozen')":''}`,...entries.map(([,v])=>v),event,a.wallet,a.version),
+ stmt(e,`UPDATE agents SET ${entries.map(([k])=>`${k}=?`).join(',')},version=version+1,last_event=? WHERE wallet=? AND version=?${['tap','start','upgrade','mission'].includes(kind)?" AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v3' AND value='frozen')":''}`,...entries.map(([,v])=>v),event,a.wallet,a.version),
  a._gameAccess?.required?stmt(e,'INSERT INTO ledger(id,wallet,kind,delta,delta_exact,detail,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',event,a.wallet,kind,legacyPoints(exactPoints(delta)),exactPoints(delta).toString(),detail,now,a.wallet,event):stmt(e,'INSERT INTO ledger(id,wallet,kind,delta,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',event,a.wallet,kind,delta,detail,now,a.wallet,event),
  ...extra.map(s=>s)
  ]);
@@ -51,7 +51,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  env={...env,_utilityPolicy:await utilityPolicy(env)};
  if(request.method==='POST'){const origin=request.headers.get('origin');if(origin&&origin!==url.origin)fail(403,'Cross-origin writes are not allowed.');}
  
- const frozen=await first(env,"SELECT value FROM game_settings WHERE key='season_phase_v2'");
+ const frozen=await first(env,"SELECT value FROM game_settings WHERE key='season_phase_v3'");
  if(frozen?.value==='frozen'&&request.method==='POST'&&['/commands','/upgrades','/missions/claim'].includes(path))fail(409,'Season is frozen for token allocation.');
  if(path.startsWith('/admin/')&&request.method==='POST'){
   if(!env.ADMIN_WALLET||!isAddress(env.ADMIN_WALLET))fail(503,'Launch operator wallet has not been configured.');
@@ -60,7 +60,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   let valid=false;try{valid=await verifyTypedData({address:env.ADMIN_WALLET,...typed,signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid operator signature.');
   try{await stmt(env,'INSERT INTO admin_requests(id,created_at) VALUES(?,?)',b.requestId,now).run();}catch{fail(409,'Operator request already used.');}
   if(path==='/admin/freeze'){
-   await stmt(env,"INSERT INTO game_settings(key,value) VALUES('season_phase_v2','frozen') ON CONFLICT(key) DO UPDATE SET value='frozen'").run();
+   await stmt(env,"INSERT INTO game_settings(key,value) VALUES('season_phase_v3','frozen') ON CONFLICT(key) DO UPDATE SET value='frozen'").run();
    return json({ok:true,phase:'frozen'});
   }
   if(path==='/admin/snapshot'){
