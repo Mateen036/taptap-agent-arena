@@ -14,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#11120f" />
         <link rel="stylesheet" href="/style.css" />
         <link rel="stylesheet" href="/motion.css" />
