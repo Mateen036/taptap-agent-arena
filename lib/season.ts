@@ -17,7 +17,7 @@ const response=(data:any,status=200)=>Response.json(data,{status,headers:{'Cache
 export async function currentSeason(e:Env,now:number){
  let s=await first(e,"SELECT * FROM seasons WHERE id='season-0'");
  if(!s){await q(e,"INSERT INTO seasons(id,name,starts_at,ends_at,capacity) VALUES('season-0','Season 0 · First Contact',?,?,100) ON CONFLICT(id) DO NOTHING",now,now+7*86_400_000).run();s=await first(e,"SELECT * FROM seasons WHERE id='season-0'");}
- const phase=await first(e,"SELECT value FROM game_settings WHERE key='season_phase_v2'");
+ const phase=await first(e,"SELECT value FROM game_settings WHERE key='season_phase_v3'");
  return {...s,phase:phase?.value==='frozen'?'frozen':now>=s.ends_at?'ended':'open',rulesVersion:1};
 }
 async function requireOpen(e:Env,now:number){const s=await currentSeason(e,now);if(s.phase!=='open')fail(409,'Season 0 is closed for competition. Lifetime points are preserved.');return s;}
@@ -27,7 +27,7 @@ async function member(e:Env,a:any,now:number){
  if(await first(e,'SELECT id FROM season_members WHERE id=?',id))return s;
  const event=crypto.randomUUID();
  await e.DB.batch([
-  q(e,'UPDATE seasons SET enrolled=enrolled+1,last_enroll=? WHERE id=? AND enrolled<capacity AND ends_at>? AND NOT EXISTS(SELECT 1 FROM season_members WHERE id=?) AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key=\'season_phase_v2\' AND value=\'frozen\')',event,s.id,now,id,w,a.version),
+  q(e,'UPDATE seasons SET enrolled=enrolled+1,last_enroll=? WHERE id=? AND enrolled<capacity AND ends_at>? AND NOT EXISTS(SELECT 1 FROM season_members WHERE id=?) AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key=\'season_phase_v3\' AND value=\'frozen\')',event,s.id,now,id,w,a.version),
   q(e,'INSERT INTO season_members(id,season_id,wallet,joined_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM seasons WHERE id=? AND last_enroll=?) ON CONFLICT(id) DO NOTHING',id,s.id,w,now,s.id,event)
  ]);
  if(!await first(e,'SELECT id FROM season_members WHERE id=?',id))fail(409,'The 100 founding competition slots are full. Spectating and lifetime tapping remain open.');
@@ -129,7 +129,7 @@ export async function seasonRoute(request:Request,e:Env,user:string|undefined,a:
 async function writeEntry(e:Env,a:any,entry:any,fields:Record<string,any>,kind:string,delta:number,detail:string,now:number){
  const event=crypto.randomUUID(),pairs=Object.entries(fields);
  const results=await e.DB.batch([
-  q(e,`UPDATE arena_entries SET ${pairs.map(([k])=>k+'=?').join(',')},version=version+1,last_event=? WHERE id=? AND wallet=? AND version=? AND started_at<=? AND ends_at>? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v2' AND value='frozen')`,...pairs.map(([,v])=>v),event,entry.id,entry.wallet,entry.version,now,now,a.wallet,a.version),
+  q(e,`UPDATE arena_entries SET ${pairs.map(([k])=>k+'=?').join(',')},version=version+1,last_event=? WHERE id=? AND wallet=? AND version=? AND started_at<=? AND ends_at>? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v3' AND value='frozen')`,...pairs.map(([,v])=>v),event,entry.id,entry.wallet,entry.version,now,now,a.wallet,a.version),
   q(e,'INSERT INTO arena_events(id,entry_id,wallet,kind,delta,detail,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM arena_entries WHERE id=? AND last_event=?)',event,entry.id,entry.wallet,kind,delta,detail,now,entry.id,event)
  ]);
  if(!results[0].meta.changes)fail(409,'Round changed, ended, or paused for maintenance. Refresh the agent state.');
@@ -151,7 +151,7 @@ export async function seasonAction(e:Env,a:any,action:string,p:any,now:number){
   const existing=await first(e,'SELECT * FROM arena_entries WHERE room_id=? AND wallet=?',room,a.wallet);if(existing)return {entry:arenaView(existing,now)};
   const end=Math.min(Date.parse(day+'T00:00:00Z')+86_400_000,s.ends_at);if(end-now<ROUND_MS)fail(409,'The next daily round opens after the current day ends.');
   if(await first(e,'SELECT id FROM arena_entries WHERE wallet=? AND ends_at>?',a.wallet,now))fail(409,'Finish your current arena round first.');
-  const id=crypto.randomUUID();await e.DB.batch([q(e,'INSERT INTO arena_entries(id,room_id,wallet,season_id,mode,daily_day,rule_day,strategy,started_at,ends_at,last_tick,updated_at) SELECT ?,?,?,?,\'daily\',?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM seasons WHERE id=? AND ends_at>?) AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key=\'season_phase_v2\' AND value=\'frozen\') AND NOT EXISTS(SELECT 1 FROM arena_entries WHERE wallet=? AND ends_at>?) ON CONFLICT(room_id,wallet) DO NOTHING',id,room,a.wallet,s.id,day,day,strategy(p.strategy||'balanced'),now,now+ROUND_MS,now,now,s.id,now+ROUND_MS,a.wallet,a.version,a.wallet,now)]);
+  const id=crypto.randomUUID();await e.DB.batch([q(e,'INSERT INTO arena_entries(id,room_id,wallet,season_id,mode,daily_day,rule_day,strategy,started_at,ends_at,last_tick,updated_at) SELECT ?,?,?,?,\'daily\',?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM seasons WHERE id=? AND ends_at>?) AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key=\'season_phase_v3\' AND value=\'frozen\') AND NOT EXISTS(SELECT 1 FROM arena_entries WHERE wallet=? AND ends_at>?) ON CONFLICT(room_id,wallet) DO NOTHING',id,room,a.wallet,s.id,day,day,strategy(p.strategy||'balanced'),now,now+ROUND_MS,now,now,s.id,now+ROUND_MS,a.wallet,a.version,a.wallet,now)]);
   const entry=await first(e,'SELECT * FROM arena_entries WHERE room_id=? AND wallet=?',room,a.wallet);if(!entry)fail(409,'Season is closed.');return {entry:arenaView(entry,now)};
  }
  if(['duel-create','duel-rematch'].includes(action)){
@@ -166,7 +166,7 @@ export async function seasonAction(e:Env,a:any,action:string,p:any,now:number){
   if(p.jobId){const existing=await first(e,'SELECT id,creator FROM arena_matches WHERE id=?',uuid(p.jobId));if(existing&&existing.creator===a.wallet)return {match:await publicMatch(e,existing.id,now)};}
   const id=p.jobId?uuid(p.jobId):crypto.randomUUID(),expires=Math.min(now+86_400_000,s.ends_at-ROUND_MS-15_000);
   if(expires<=now)fail(409,'Season is too close to its end for a new match.');
-  const results=await e.DB.batch([q(e,"INSERT INTO arena_matches(id,season_id,creator,target,creator_strategy,rule_day,parent_id,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND (SELECT COUNT(*) FROM arena_matches WHERE creator=? AND status='open' AND expires_at>?)<3 AND (SELECT COUNT(*) FROM arena_matches WHERE creator=? AND created_at>?)<10 AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v2' AND value='frozen') ON CONFLICT DO NOTHING",id,s.id,a.wallet,target,strategy(p.strategy||'balanced'),utcDay(now),parent?.id||null,now,expires,a.wallet,a.version,a.wallet,now,a.wallet,now-3_600_000)]);
+  const results=await e.DB.batch([q(e,"INSERT INTO arena_matches(id,season_id,creator,target,creator_strategy,rule_day,parent_id,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND (SELECT COUNT(*) FROM arena_matches WHERE creator=? AND status='open' AND expires_at>?)<3 AND (SELECT COUNT(*) FROM arena_matches WHERE creator=? AND created_at>?)<10 AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v3' AND value='frozen') ON CONFLICT DO NOTHING",id,s.id,a.wallet,target,strategy(p.strategy||'balanced'),utcDay(now),parent?.id||null,now,expires,a.wallet,a.version,a.wallet,now,a.wallet,now-3_600_000)]);
   if(!results[0].meta.changes){const existing=parent?await first(e,'SELECT id FROM arena_matches WHERE parent_id=? AND creator=?',parent.id,a.wallet):null;if(existing)return {match:await publicMatch(e,existing.id,now)};fail(429,'Maximum three open challenges and ten challenges per hour.');}
   return {match:await publicMatch(e,id,now)};
  }
@@ -180,7 +180,7 @@ export async function seasonAction(e:Env,a:any,action:string,p:any,now:number){
   const start=now+15_000,end=start+ROUND_MS;if(end>s.ends_at)fail(409,'Season is too close to its end.');
   const event=crypto.randomUUID(),styles=[m.creator_strategy,strategy(p.strategy||'balanced')];
   const inserts=[m.creator,a.wallet].map((w,i)=>q(e,'INSERT INTO arena_entries(id,room_id,wallet,season_id,mode,rule_day,strategy,started_at,ends_at,last_tick,updated_at) SELECT ?,?,?,?,\'duel\',?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM arena_matches WHERE id=? AND last_event=?)',crypto.randomUUID(),m.id,w,s.id,m.rule_day,styles[i],start,end,start,start,m.id,event));
-  const result=await e.DB.batch([q(e,"UPDATE arena_matches SET status='accepted',target=?,started_at=?,ends_at=?,version=version+1,last_event=? WHERE id=? AND status='open' AND expires_at>? AND version=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM arena_entries WHERE (wallet=? OR wallet=?) AND ends_at>?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v2' AND value='frozen')",a.wallet,start,end,event,m.id,now,m.version,a.wallet,a.version,m.creator,a.wallet,now),...inserts]);
+  const result=await e.DB.batch([q(e,"UPDATE arena_matches SET status='accepted',target=?,started_at=?,ends_at=?,version=version+1,last_event=? WHERE id=? AND status='open' AND expires_at>? AND version=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?) AND NOT EXISTS(SELECT 1 FROM arena_entries WHERE (wallet=? OR wallet=?) AND ends_at>?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v3' AND value='frozen')",a.wallet,start,end,event,m.id,now,m.version,a.wallet,a.version,m.creator,a.wallet,now),...inserts]);
   if(!result[0].meta.changes)fail(409,'Another agent accepted this challenge first.');return {match:await publicMatch(e,m.id,now)};
  }
  const entry=await first(e,'SELECT * FROM arena_entries WHERE id=? AND wallet=?',uuid(p.entryId),a.wallet);if(!entry)fail(404,'Your arena round was not found.');

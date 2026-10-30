@@ -6,7 +6,8 @@ test('release preserves balances, drains legacy writes and permanently quarantin
  await db.query("INSERT INTO agents(wallet,user_id,name,points,earned,created_at,updated_at) VALUES('wallet','user','Agent',123,456,0,0)");
  await freezeLegacy(db,1000);await assert.rejects(activateExact(db,60000),/60 seconds/);
  await activateExact(db,61000);const agent:any=(await db.query('SELECT points_exact,earned_exact FROM agents')).rows[0];assert.equal(agent.points_exact,'123');assert.equal(agent.earned_exact,'456');
+ const oldExponential:any=await db.query("UPDATE agents SET points=999 WHERE NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v2' AND value='frozen') RETURNING wallet");assert.equal(oldExponential.rows.length,0,'Old exponential runtimes must stay frozen');
  const old:any=await db.query("UPDATE agents SET points=999 WHERE NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase' AND value='frozen') RETURNING wallet");assert.equal(old.rows.length,0,'Old deployment SQL cannot award legacy unboosted points');
- assert.equal((await db.query("SELECT value FROM game_settings WHERE key='season_phase_v2'")).rows[0].value,'open');assert.equal((await db.query("SELECT value FROM game_settings WHERE key='nft_utility_v1'")).rows[0].value,'active');await assert.rejects(freezeLegacy(db,70000),/already active/);
+ assert.equal((await db.query("SELECT value FROM game_settings WHERE key='season_phase_v3'")).rows[0].value,'open');assert.equal((await db.query("SELECT value FROM game_settings WHERE key='nft_utility_v2'")).rows[0].value,'active');await assert.rejects(freezeLegacy(db,70000),/already active/);
  }finally{await db.close();}
 });

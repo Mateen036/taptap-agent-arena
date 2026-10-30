@@ -50,6 +50,13 @@
       "when": 1793297664849,
       "tag": "0006_nft_exact_points",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793326463126,
+      "tag": "0007_linear_nft_utility",
+      "breakpoints": true
     }
   ]
 }

@@ -4,19 +4,19 @@ import pg from 'pg';import {createPublicClient,http,parseAbi} from 'viem';import
 import {nftDeploymentPlan,normalizeRuntime} from './nft-deploy';import {nftGameHolding} from '../lib/nft';import {nftAbi} from '../lib/nft-protocol';
 import {PostgresDatabase} from '../deploy/vercel/lib/postgres';
 export async function freezeLegacy(client:any,now:number){
- const active=await client.query("SELECT value FROM game_settings WHERE key='nft_utility_v1'");if(active.rows[0]?.value==='active')throw Error('Utility is already active. Never revert to legacy numeric accounting.');
- await client.query("INSERT INTO game_settings(key,value) SELECT 'nft_utility_previous_phase',COALESCE((SELECT value FROM game_settings WHERE key='season_phase_v2'),'open') ON CONFLICT(key) DO NOTHING");
- await client.query("INSERT INTO game_settings(key,value) VALUES('season_phase','frozen'),('season_phase_v2','frozen') ON CONFLICT(key) DO UPDATE SET value='frozen'");
- await client.query("INSERT INTO game_settings(key,value) VALUES('nft_utility_frozen_at',$1) ON CONFLICT(key) DO NOTHING",[String(now)]);
+ const active=await client.query("SELECT value FROM game_settings WHERE key='nft_utility_v2'");if(active.rows[0]?.value==='active')throw Error('Utility is already active. Never revert to legacy numeric accounting.');
+ await client.query("INSERT INTO game_settings(key,value) SELECT 'nft_utility_v2_previous_phase',COALESCE((SELECT value FROM game_settings WHERE key='season_phase_v3'),'open') ON CONFLICT(key) DO NOTHING");
+ await client.query("INSERT INTO game_settings(key,value) VALUES('season_phase','frozen'),('season_phase_v2','frozen'),('season_phase_v3','frozen') ON CONFLICT(key) DO UPDATE SET value='frozen'");
+ await client.query("INSERT INTO game_settings(key,value) VALUES('nft_utility_v2_frozen_at',$1) ON CONFLICT(key) DO NOTHING",[String(now)]);
 }
 export async function activateExact(client:any,now:number){
- const row=await client.query("SELECT value FROM game_settings WHERE key='nft_utility_frozen_at'");if(!row.rows.length||now-Number(row.rows[0].value)<60000)throw Error('Freeze both runtimes first, then allow at least 60 seconds for in-flight requests to drain.');
- const phases=await client.query("SELECT key,value FROM game_settings WHERE key IN ('season_phase','season_phase_v2')");if(phases.rows.length!==2||phases.rows.some((v:any)=>v.value!=='frozen'))throw Error('Both legacy and new game runtimes must be frozen before activation.');
+ const row=await client.query("SELECT value FROM game_settings WHERE key='nft_utility_v2_frozen_at'");if(!row.rows.length||now-Number(row.rows[0].value)<60000)throw Error('Freeze all runtime generations first, then allow at least 60 seconds for in-flight requests to drain.');
+ const phases=await client.query("SELECT key,value FROM game_settings WHERE key IN ('season_phase','season_phase_v2','season_phase_v3')");if(phases.rows.length!==3||phases.rows.some((v:any)=>v.value!=='frozen'))throw Error('All legacy and current game runtimes must be frozen before activation.');
  await client.query('UPDATE agents SET points_exact=COALESCE(points_exact,CAST(points AS TEXT)),earned_exact=COALESCE(earned_exact,CAST(earned AS TEXT))');
  await client.query('UPDATE commands SET earned_exact=COALESCE(earned_exact,CAST(earned AS TEXT))');
  await client.query('UPDATE ledger SET delta_exact=COALESCE(delta_exact,CAST(delta AS TEXT))');
- await client.query("INSERT INTO game_settings(key,value) VALUES('nft_utility_v1','active') ON CONFLICT(key) DO UPDATE SET value='active'");
- await client.query("UPDATE game_settings SET value=COALESCE((SELECT value FROM game_settings WHERE key='nft_utility_previous_phase'),'open') WHERE key='season_phase_v2'");
+ await client.query("INSERT INTO game_settings(key,value) VALUES('nft_utility_v2','active') ON CONFLICT(key) DO UPDATE SET value='active'");
+ await client.query("UPDATE game_settings SET value=COALESCE((SELECT value FROM game_settings WHERE key='nft_utility_v2_previous_phase'),'open') WHERE key='season_phase_v3'");
 }
 async function run(){
  const mode=process.argv[2]||'check';if(!['check','freeze','activate'].includes(mode))throw Error('Use check, freeze or activate.');
