@@ -1,12 +1,14 @@
 import {decodeFunctionData,keccak256,toHex} from 'viem';
 import {canonical} from '../lib/game';
-import {NFT_PAYMENT,nativeMintBudget,marketQuote,nftAbi,nftMarketAbi,nftPaymentAbi} from '../lib/nft-protocol';
+import {NFT_PAYMENT,nativeMintBudget,marketQuote,collectionBidDeposit,nftAbi,nftMarketAbi,nftPaymentAbi,nftCollectionBidsAbi} from '../lib/nft-protocol';
 type Bridge={action:(s:any,kind:string,payload?:any)=>Promise<any>;baw:(argv:string[])=>any;persist:(s:any)=>void};
 export const txDigest=(t:any)=>keccak256(toHex(canonical(t)));
 const same=(a:any,b:any)=>String(a).toLowerCase()===String(b).toLowerCase();
 export function validateNftTransaction(intent:any,contracts:any,wallet:string){
  const tx=intent.transaction,p=intent.payload;
  if(tx.chainId!==56||!same(tx.from,wallet)||typeof tx.value!=='string'||!/^(0|[1-9][0-9]*)$/.test(tx.value)||!/^0x[0-9a-f]+$/i.test(tx.data))throw Error('NFT transaction envelope does not match this wallet.');
+ const CBID_KINDS=['cbid','cbid-cancel','cbid-accept','cbid-approval'];
+ if(CBID_KINDS.includes(intent.kind))return validateCollectionBidTransaction(intent,contracts,wallet);
  const nativeMint=intent.kind==='mint'&&p.currency==='BNB';
  const isBid=intent.kind==='bid',isBuy=intent.kind==='buy';
  const expectedValue=nativeMint?p.costRaw:isBid||isBuy?marketQuote(BigInt(p.priceRaw)).buyerTotal.toString():'0';
@@ -32,6 +34,27 @@ export function validateNftTransaction(intent:any,contracts:any,wallet:string){
   if(intent.kind==='cancel'&&String(args[1])!==p.listingId)throw Error('Cancellation listing changed.');
   if(isBuy&&(String(args[1])!==p.listingId||String(args[2])!==p.priceRaw||!same(args[3],p.seller)||Number(args[4])!==Math.floor(intent.expires_at/1000)))throw Error('Purchase price, seller, or expiry changed.');
  }
+ return true;
+}
+/** Collection-wide bids: the exact contract, function, arguments and BNB escrow are re-derived locally from the stored request. */
+function validateCollectionBidTransaction(intent:any,contracts:any,wallet:string){
+ const tx=intent.transaction,p=intent.payload,cb=contracts.collectionBids;
+ if(!cb)throw Error('Collection bids are not configured on this deployment.');
+ const approval=intent.kind==='cbid-approval';
+ if(!same(tx.to,approval?contracts.collection:cb))throw Error('Collection-bid transaction targets an unexpected contract.');
+ const decoded:any=decodeFunctionData({abi:approval?nftAbi:nftCollectionBidsAbi,data:tx.data}),args=decoded.args||[],name=decoded.functionName;
+ const expected:any={cbid:'placeBid','cbid-cancel':'cancelBid','cbid-accept':'acceptBid','cbid-approval':'approve'};
+ if(name!==expected[intent.kind])throw Error('Collection-bid function does not match the requested action.');
+ if(intent.kind==='cbid'){
+  const price=BigInt(p.priceRaw),quantity=BigInt(p.quantity),total=collectionBidDeposit(price,quantity).toString();
+  if(tx.value!==total||p.totalRaw!==total)throw Error('BNB escrow differs from quantity × (price + 2% buyer fee).');
+  if(BigInt(args[0])!==price||BigInt(args[1])!==quantity||Number(args[2])!==Math.floor(intent.created_at/1000)+p.days*86400||p.days<1||p.days>30)throw Error('Collection bid price, quantity, or expiry changed.');
+  return true;
+ }
+ if(tx.value!=='0')throw Error('This collection-bid action must not send BNB.');
+ if(approval){if(!same(args[0],cb)||Number(args[1])!==p.tokenId)throw Error('Unexpected NFT approval.');return true;}
+ if(intent.kind==='cbid-cancel'){if(String(args[0])!==p.bidId||!same(args[1],wallet)||!same(p.bidder,wallet)||!same(p.recipient,wallet))throw Error('Cancellation bid or refund recipient changed.');return true;}
+ if(String(args[0])!==p.bidId||Number(args[1])!==p.tokenId||!same(args[2],p.bidder)||String(args[3])!==p.priceRaw||!same(p.seller,wallet)||Number(args[4])!==Math.floor(intent.expires_at/1000))throw Error('Collection bid acceptance terms changed.');
  return true;
 }
 export function developerMode(baw:Bridge['baw']){

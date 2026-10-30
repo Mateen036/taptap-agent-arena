@@ -11,6 +11,8 @@ export const NIB_AIRDROP='0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5';
 export const NIB_TOKEN='0x1F11d9feAF354aD31861B4fa26759349e2860cFb';
 export const NIB_MARKET='0x775377BAdf400F070024b2C806A2573461b5dCb7';
 export const NIB_COLLECTION='0x7374f0379F5b2689B906D47Da708B394F1910B23';
+// Collection-wide bids contract (deterministic CREATE2 address from scripts/nib-collection-bids-deploy.ts). Pinned so a site can never point the connector at another contract.
+export const NIB_COLLECTION_BIDS='0xdCd8FB9d7fE9680D247CF14E2BEEd04D714a1b67';
 const airdropAbi=parseAbi(['function claim((address wallet,uint256 season,uint256 cumulativePoints,uint256 deadline,bytes32 voucherId) v,bytes signature) returns (uint256 points,uint256 nib)']);
 const marketAbi=parseAbi(['function placeBid(uint256 nibAmount,uint256 bnbAmount,uint256 expiresAt) payable returns (uint256)','function cancelBid(uint256 id)','function acceptBid(uint256 id,uint256 nibAmount,uint256 minBnbOut,uint256 deadline)']);
 const erc20Abi=parseAbi(['function approve(address,uint256) returns (bool)']);
@@ -105,7 +107,7 @@ export type Ctx={
  baw:(argv:string[])=>any;
  out:(text:string)=>void;
  sleep:(ms:number)=>Promise<void>;
- rpcUrl?:string;collection?:string;
+ rpcUrl?:string;collection?:string;collectionBids?:string;
  fetchJson?:(url:string)=>Promise<any>;
  receipt?:(hash:string)=>Promise<{status:string;blockNumber:bigint;from:string;to:string|null;input:string;value:bigint;confirmations:bigint}>;
  script?:string;argvForBackground?:string[];stateDir?:string;
@@ -146,13 +148,14 @@ async function nftPrepare(ctx:Ctx,label:string,values:any,nextHint?:string,e?:{u
   throw error;
  }
  const intent=r.intent,contracts=r.contracts;if(!same(contracts.collection,ctx.collection||NIB_COLLECTION))fail('The site reports an unexpected NFT collection contract. Refusing.');
+ if(String(intent.kind).startsWith('cbid')&&!same(contracts.collectionBids,ctx.collectionBids||NIB_COLLECTION_BIDS))fail('The site reports an unexpected collection-bids contract. Refusing.');
  validateNftTransaction(intent,contracts,ctx.s.wallet);
  const claimed=await act(ctx,'nft-claim',{intentId:intent.id});validateNftTransaction(claimed.intent,claimed.contracts,ctx.s.wallet);
  if(txDigest(claimed.intent.transaction)!==txDigest(intent.transaction))fail('The transaction changed between request and claim. Refusing.');
  const tx=claimed.intent.transaction,preview=previewTx(ctx,tx);
  const exp=normalizeExpiry(preview);
  await act(ctx,'nft-preview',{intentId:intent.id,transaction:tx,preview:{...preview,expiresAt:exp}});
- const sm=intent.summary||{};const facts=[sm.title?'What:      '+sm.title:'',sm.payment&&sm.payment!=='0'&&!sm.salePrice?'You pay:   '+sm.payment+' '+(sm.currency||'')+' (plus network gas; any unused BNB is refunded)':'',sm.salePrice?'Price:     '+sm.salePrice+' BNB'+(sm.buyerFee!==undefined?' (buyer fee 2%: '+sm.buyerFee+' · you pay '+sm.buyerTotal+', seller receives '+sm.sellerProceeds+')':''):'',sm.scope?'Scope:     '+sm.scope:''].filter(Boolean);
+ const sm=intent.summary||{};const facts=[sm.title?'What:      '+sm.title:'',sm.payment&&sm.payment!=='0'&&!sm.salePrice?'You pay:   '+sm.payment+' '+(sm.currency||'')+' (plus network gas; any unused BNB is refunded)':'',sm.salePrice?'Price:     '+sm.salePrice+' BNB'+(sm.buyerFee!==undefined?' (buyer fee 2%: '+sm.buyerFee+' · you pay '+sm.buyerTotal+', seller receives '+sm.sellerProceeds+')':''):'',sm.totalEscrow?'Escrow:    '+sm.totalEscrow+' BNB locked now ('+sm.quantity+' × '+sm.buyerTotal+' incl. 2% buyer fee) · expires in '+sm.days+' day(s)':'',sm.refund&&sm.remaining!==undefined?'Refund:    '+sm.refund+' BNB for '+sm.remaining+' unfilled NFT(s), paid to your wallet in this transaction':'',sm.scope?'Scope:     '+sm.scope:''].filter(Boolean);
  if(intent.payload?.followUp)facts.push('This is the one-time approval for this NFT. After it confirms, run the same '+intent.payload.followUp+' command again.');
  return finishPreview(ctx,{requestId:preview.requestId,type:'nft',label:sm.title||label,intentId:intent.id,kind:intent.kind},tx,preview,facts,nextHint);
 }
@@ -403,6 +406,10 @@ export const DO_HELP=`Plain-chat commands (the agent runs these; the user just s
   do nib-book                           show the NIB bid book
   do nft-list <id> --bnb P [--days D] | nft-buy <id> | nft-bid <id> --bnb P [--days D] | nft-cancel <id>
   do nft-cancel-bid <bidId> | nft-accept <bidId> | nft-withdraw
+  do nft-collection-bid --bnb P --qty N [--days D]   bid P BNB each for N NFTs of the whole collection (escrows N × (P + 2%))
+  do nft-collection-accept <bidId> <tokenId>         sell one NFT you own into a collection bid
+  do nft-collection-cancel <bidId>                   cancel and refund every unfilled NFT of your collection bid
+  do nft-collection-book                             list open collection bids
   do nft-market                         list NFTs for sale
   status [--json]                       balances, session, previews waiting for a yes
   execute <requestId> --approve         ONLY after the user said yes to that exact preview`;
@@ -431,6 +438,10 @@ export async function runDo(ctx:Ctx,argv:string[]){
   case 'nft-cancel-bid':return nftPrepare(ctx,'Cancel NFT bid',{kind:'cancel-bid',bidId:bidId(rest[0])});
   case 'nft-accept':return nftPrepare(ctx,'Accept NFT bid',{kind:'accept-bid',bidId:bidId(rest[0])});
   case 'nft-withdraw':return nftPrepare(ctx,'Withdraw cancelled NFT bid deposit',{kind:'withdraw-bid-refund'});
+  case 'nft-collection-bid':{const n=Number(f.qty);if(!Number.isInteger(n)||n<1||n>10000)fail('--qty must be a whole number from 1 to 10000.');return nftPrepare(ctx,'Collection-wide bid',{kind:'cbid',price:decimal(f.bnb,'--bnb'),quantity:n,days:Number(f.days??7)});}
+  case 'nft-collection-accept':return nftPrepare(ctx,'Sell NFT into a collection bid',{kind:'cbid-accept',bidId:bidId(rest[0]),tokenId:tokenId(rest[1])});
+  case 'nft-collection-cancel':return nftPrepare(ctx,'Cancel collection bid',{kind:'cbid-cancel',bidId:bidId(rest[0])});
+  case 'nft-collection-book':{const j=await (ctx.fetchJson||(async(u:string)=>(await fetch(u)).json()))(ctx.origin+'/api/nft'),cb=j.collectionBids;if(!cb?.configured){ctx.out('Collection bids are not live yet.');return null;}const items=cb.bids||[];ctx.out(items.length?'Open collection bids (best price first):\n'+items.map((b:any)=>'  #'+b.bidId+' '+b.price+' BNB each · '+b.remaining+' of '+b.quantity+' left · seller receives '+b.sellerProceeds+' BNB · expires '+new Date(b.expiresAt).toISOString()).join('\n'):'No collection bids are open right now.');return items;}
   case 'nft-market':{const j=await (ctx.fetchJson||(async(u:string)=>(await fetch(u)).json()))(ctx.origin+'/api/nft');const items=(j.listings||[]).slice(0,12);ctx.out(items.length?'NFTs for sale:\n'+items.map((l:any)=>'  Nib #'+l.tokenId+' '+l.price+' BNB (buyer pays '+l.buyerTotal+' incl. 2%)'+(l.rarity?' · rank '+l.rarity.rank:'')).join('\n'):'No NFTs are listed right now.');return items;}
   default:ctx.out(DO_HELP);return null;
  }

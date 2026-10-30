@@ -4,11 +4,12 @@ import {AGENT_ID_REGISTRY} from './protocol';
 import {canonical} from './game';
 import {nftTraits,nftMetadata,nftSvg} from './nft-art';
 import {MARKET_SORTS,parseSort,sortListings,withRarity,traitFrequencies,recentSales} from './nft-market';
-import {nftAbi,nftMarketAbi,nftPaymentAbi,nftVaultAbi,nftConfig,NFT_PAYMENT,NFT_ROUTER,NFT_NATIVE,NFT_WBNB,NFT_PRICE_FEED,nativeMintBudget,marketQuote,NFT_BUYER_FEE_BPS,NFT_SELLER_FEE_BPS,nftCall,nftPrice as rawPrice,nftTokenId as rawTokenId,type NftTransaction,type NftAddresses} from './nft-protocol';
-export type NftEnv={DB:D1Database;BSC_RPC_URL?:string;NFT_RPC_URL?:string;NFT_COLLECTION?:string;NFT_MARKETPLACE?:string;NFT_LP_VAULT?:string;NFT_FEE_RECIPIENT?:string;NFT_LOGS_RPC_URL?:string;NFT_LOGS_CHUNK?:string;NFT_MARKETPLACE_FROM_BLOCK?:string};
+import {nftCollectionBidsAbi,nftCollectionBidsAddress,collectionBidDeposit,NFT_COLLECTION_BID_MAX_QUANTITY,nftQuantity as rawQuantity,nftAbi,nftMarketAbi,nftPaymentAbi,nftVaultAbi,nftConfig,NFT_PAYMENT,NFT_ROUTER,NFT_NATIVE,NFT_WBNB,NFT_PRICE_FEED,nativeMintBudget,marketQuote,NFT_BUYER_FEE_BPS,NFT_SELLER_FEE_BPS,nftCall,nftPrice as rawPrice,nftTokenId as rawTokenId,type NftTransaction,type NftAddresses} from './nft-protocol';
+export type NftEnv={DB:D1Database;BSC_RPC_URL?:string;NFT_RPC_URL?:string;NFT_COLLECTION?:string;NFT_MARKETPLACE?:string;NFT_LP_VAULT?:string;NFT_COLLECTION_BIDS?:string;NFT_FEE_RECIPIENT?:string;NFT_LOGS_RPC_URL?:string;NFT_LOGS_CHUNK?:string;NFT_MARKETPLACE_FROM_BLOCK?:string};
 export class NftError extends Error{constructor(public status:number,message:string){super(message);}}
 const fail=(status:number,message:string):never=>{throw new NftError(status,message);};
 const nftTokenId=(v:any)=>{try{return rawTokenId(v)}catch(error){return fail(400,(error as Error).message)}};
+const nftQuantity=(v:any)=>{try{return rawQuantity(v)}catch(error){return fail(400,(error as Error).message)}};
 const nftPrice=(v:any)=>{try{return rawPrice(v)}catch(error){return fail(400,(error as Error).message)}};
 const q=(e:NftEnv,sql:string,...args:any[])=>e.DB.prepare(sql).bind(...args);
 const first=(e:NftEnv,sql:string,...args:any[])=>q(e,sql,...args).first<any>();
@@ -18,7 +19,7 @@ const identityAbi=[{type:'function',name:'balanceOf',stateMutability:'view',inpu
 const client=(e:NftEnv)=>createPublicClient({chain:bsc,transport:http(e.NFT_RPC_URL||e.BSC_RPC_URL||'https://bsc-dataseed.bnbchain.org',{timeout:10000,retryCount:1})});
 const digest=(tx:NftTransaction)=>keccak256(toHex(canonical(tx)));
 const read=async(c:any,address:string,abi:any,name:string,args:any[]=[])=>c.readContract({address,abi,functionName:name,args});
-function configured(e:NftEnv):NftAddresses{try{const config=nftConfig(e);if(!config)throw new NftError(409,'Collection contracts are awaiting mainnet deployment. No mint or trade can be submitted yet.');return config;}catch(error){if(error instanceof NftError)throw error;throw new NftError(503,'NFT contract configuration is incomplete.');}}
+function configured(e:NftEnv):NftAddresses{try{const config=nftConfig(e);if(!config)throw new NftError(409,'Collection contracts are awaiting mainnet deployment. No mint or trade can be submitted yet.');return {...config,collectionBids:nftCollectionBidsAddress(e)};}catch(error){if(error instanceof NftError)throw error;throw new NftError(503,'NFT contract configuration is incomplete.');}}
 
 const checked=new Map<string,number>();
 async function chain(e:NftEnv){
@@ -32,6 +33,39 @@ async function chain(e:NftEnv){
   }catch(error){if(error instanceof NftError)throw error;fail(503,'BNB Chain NFT verification is unavailable. Try again shortly.');}
  }
  return {c,config};
+}
+
+/* ---------- Collection-wide bids (optional contract; hidden until NFT_COLLECTION_BIDS is set and verified) ---------- */
+const cbChecked=new Map<string,number>();
+async function cbidsContract(e:NftEnv,c:any,config:NftAddresses,required=false):Promise<`0x${string}`|null>{
+ const address=config.collectionBids;if(!address){if(required)fail(409,'Collection bids are awaiting contract deployment. Nothing can be submitted yet.');return null;}
+ const key=[e.NFT_RPC_URL||e.BSC_RPC_URL,address,config.collection,config.market].join(':');
+ if((cbChecked.get(key)||0)<Date.now()){
+  try{
+   const v=await Promise.all([read(c,address,nftCollectionBidsAbi,'collection'),read(c,address,nftCollectionBidsAbi,'agentIdRegistry'),read(c,address,nftCollectionBidsAbi,'feeRecipient'),read(c,address,nftCollectionBidsAbi,'BUYER_FEE_BPS'),read(c,address,nftCollectionBidsAbi,'SELLER_FEE_BPS'),read(c,address,nftCollectionBidsAbi,'MAX_QUANTITY'),read(c,config.market,nftMarketAbi,'feeRecipient')]);
+   const same=(a:any,b:string)=>String(a).toLowerCase()===b.toLowerCase();
+   // The collection-bid fees go to the exact recipient of the verified per-NFT marketplace.
+   if(!same(v[0],config.collection)||!same(v[1],AGENT_ID_REGISTRY)||!same(v[2],String(v[6]))||BigInt(v[3])!==BigInt(NFT_BUYER_FEE_BPS)||BigInt(v[4])!==BigInt(NFT_SELLER_FEE_BPS)||BigInt(v[5])!==BigInt(NFT_COLLECTION_BID_MAX_QUANTITY))fail(503,'The collection-bid contract does not match the published rules.');
+   if(cbChecked.size>32)cbChecked.clear();cbChecked.set(key,Date.now()+60000);
+  }catch(error){if(error instanceof NftError)throw error;fail(503,'BNB Chain collection-bid verification is unavailable. Try again shortly.');}
+ }
+ return address;
+}
+const cbView=(id:bigint,b:any,available:boolean)=>{const price=BigInt(b[1]),quantity=BigInt(b[2]),filled=BigInt(b[3]),left=quantity-filled,total=marketQuote(price).buyerTotal*left;return {bidId:id.toString(),bidder:String(b[0]).toLowerCase(),priceRaw:price.toString(),price:formatUnits(price,18),...quoteDisplay(price),quantity:Number(quantity),filled:Number(filled),remaining:Number(left),depositRaw:total.toString(),deposit:formatUnits(total,18),expiresAt:Number(b[4])*1000,available};};
+async function collectionBid(c:any,address:string,id:bigint){const [b,available]=await Promise.all([read(c,address,nftCollectionBidsAbi,'bids',[id]),read(c,address,nftCollectionBidsAbi,'bidAvailable',[id])]);if(/^0x0{40}$/i.test(String(b[0])))return null;return cbView(id,b,available===true);}
+export const COLLECTION_BID_LIMIT=200;
+async function collectionBidsSnapshot(e:NftEnv,c:any,config:NftAddresses,wallet:string|null,url:URL){
+ const base={configured:false,address:null as string|null,bids:[] as any[],buyerFeeBps:NFT_BUYER_FEE_BPS,sellerFeeBps:NFT_SELLER_FEE_BPS,maxQuantity:NFT_COLLECTION_BID_MAX_QUANTITY,maxDays:30};
+ if(!config.collectionBids)return {...base,status:'awaiting_deployment'};
+ let address:`0x${string}`;try{address=(await cbidsContract(e,c,config))!;}catch(error){return {...base,status:'unavailable',error:error instanceof NftError?error.message:'Collection bids are unavailable.'};}
+ const view=url.searchParams.get('cbView')==='mine'&&wallet?'mine':'all',page=Math.max(0,Math.min(1000000,Math.floor(Number(url.searchParams.get('cbPage'))||0)));
+ const [count,mineCount,completed,volume,fees,escrowed]=await Promise.all([read(c,address,nftCollectionBidsAbi,'bidCount'),wallet?read(c,address,nftCollectionBidsAbi,'bidderBidCount',[wallet]):0n,read(c,address,nftCollectionBidsAbi,'completedSales'),read(c,address,nftCollectionBidsAbi,'volume'),read(c,address,nftCollectionBidsAbi,'feesCollected'),read(c,address,nftCollectionBidsAbi,'escrowedBNB')]);
+ const total=Math.min(Number(view==='mine'?mineCount:count),COLLECTION_BID_LIMIT),truncated=Number(view==='mine'?mineCount:count)>total;
+ const ids:bigint[]=(await batch(c,Array.from({length:total},(_:unknown,i:number)=>view==='mine'?{address,abi:nftCollectionBidsAbi,functionName:'bidderBidAt',args:[wallet,BigInt(i)]}:{address,abi:nftCollectionBidsAbi,functionName:'bidAt',args:[BigInt(i)]}))).map((v:any)=>BigInt(v));
+ const data=await batch(c,ids.flatMap((id:bigint)=>[{address,abi:nftCollectionBidsAbi,functionName:'bids',args:[id]},{address,abi:nftCollectionBidsAbi,functionName:'bidAvailable',args:[id]}]));
+ // Best price first; a stale (expired or ineligible) bid only appears in the bidder's own list so it can be cancelled.
+ const items=ids.map((id:bigint,i:number)=>cbView(id,data[i*2],data[i*2+1]===true)).filter((b:any)=>view==='mine'||b.available).sort((a:any,b:any)=>{const d=BigInt(b.priceRaw)-BigInt(a.priceRaw);return d>0n?1:d<0n?-1:Number(BigInt(a.bidId)-BigInt(b.bidId));});
+ return {...base,configured:true,status:'live',address,view,page,slots:items.length,truncated,bids:items.slice(page*12,page*12+12),outgoing:Number(mineCount),stats:{completedSales:Number(completed),volume:formatUnits(BigInt(volume),18),feesCollected:formatUnits(BigInt(fees),18),escrowedBNB:formatUnits(BigInt(escrowed),18),openBids:Number(count)},feePolicy:'Escrow is quantity × (price + 2%). A seller receives price − 2% per NFT; the 2% fees go to the project treasury. Cancelling refunds every unfilled NFT in full.'};
 }
 // Ownership is read at one current block for each access/earning check; it is not session-cached.
 export async function nftGameHolding(e:NftEnv,wallet:string):Promise<{owned:number;block:string;identityEligible:boolean}>{
@@ -62,7 +96,7 @@ export async function nftSnapshot(e:NftEnv,wallet:string|null,url:URL,now:number
  const page=Math.max(0,Math.min(833,Number(url.searchParams.get('page'))||0)),offset=Math.floor(page)*12;
  const gallery=Array.from({length:Math.min(12,10000-offset)},(_,i)=>asset(offset+i+1));
  const base={name:'Nib Collection',supply:10000,walletLimit:10,freePerWallet:1,paidPrice:'1',paidPriceCurrency:'USD',mintPaymentSymbols:['USDT','BNB'],marketPaymentSymbol:'BNB',paymentToken:NFT_PAYMENT,priceFeed:NFT_PRICE_FEED,chainId:56,artMode:'fully-onchain',gallery,galleryPage:Math.floor(page),galleryPages:834,token:'TBA',marketFeeBps:NFT_BUYER_FEE_BPS+NFT_SELLER_FEE_BPS,buyerFeeBps:NFT_BUYER_FEE_BPS,sellerFeeBps:NFT_SELLER_FEE_BPS,feePolicy:'2% charged to each side; buyer pays 102%, seller receives 98%. Fees round down to whole wei.'};
- if(!nftConfig(e))return {...base,status:'awaiting_deployment',configured:false,notice:'The art and agent flows are ready. Mainnet contracts need deployment and activation before minting or trading.',minted:0,mintOpen:false,listings:[],bids:[],bidSlots:0,bidView:'all',bidPage:0,owned:[],wallet:null,intents:wallet?await nftIntents(e,wallet,now):[]};
+ if(!nftConfig(e))return {...base,status:'awaiting_deployment',configured:false,notice:'The art and agent flows are ready. Mainnet contracts need deployment and activation before minting or trading.',minted:0,mintOpen:false,listings:[],bids:[],bidSlots:0,bidView:'all',bidPage:0,owned:[],wallet:null,collectionBids:{configured:false,status:'awaiting_deployment',bids:[],address:null,buyerFeeBps:NFT_BUYER_FEE_BPS,sellerFeeBps:NFT_SELLER_FEE_BPS,maxQuantity:NFT_COLLECTION_BID_MAX_QUANTITY,maxDays:30},intents:wallet?await nftIntents(e,wallet,now):[]};
  const {c,config}=await chain(e);
  const [minted,open,paused,count,volume,sales,funds,token,added,locked,wrappedFunds,bnbAdded,bnbLocked,bidSlots,feesCollected,escrowed,feeRecipient]=await Promise.all([read(c,config.collection,nftAbi,'minted'),read(c,config.collection,nftAbi,'mintOpen'),read(c,config.collection,nftAbi,'paused'),read(c,config.market,nftMarketAbi,'activeCount'),read(c,config.market,nftMarketAbi,'volume'),read(c,config.market,nftMarketAbi,'completedSales'),read(c,NFT_PAYMENT,nftPaymentAbi,'balanceOf',[config.vault]),read(c,config.vault,nftVaultAbi,'liquidityToken'),read(c,config.vault,nftVaultAbi,'paymentAdded'),read(c,config.vault,nftVaultAbi,'lpTokensLocked'),read(c,NFT_WBNB,nftPaymentAbi,'balanceOf',[config.vault]),read(c,config.vault,nftVaultAbi,'bnbAdded'),read(c,config.vault,nftVaultAbi,'lpTokensLockedBNB'),read(c,config.market,nftMarketAbi,'bidCount'),read(c,config.market,nftMarketAbi,'feesCollected'),read(c,config.market,nftMarketAbi,'escrowedBNB'),read(c,config.market,nftMarketAbi,'feeRecipient')]);
  let bnbPriceRaw:string|null=null;try{bnbPriceRaw=String(await read(c,config.collection,nftAbi,'mintPriceBNB'));}catch{}
@@ -77,12 +111,13 @@ export async function nftSnapshot(e:NftEnv,wallet:string|null,url:URL,now:number
   owned=await Promise.all(ownedIds.map(async id=>rar({...asset(Number(id)),listing:rar(await listing(c,config.market,Number(id)))})));
   mine={minted:Number(used),remaining:10-Number(used),owned:Number(held),freeAvailable:BigInt(used)===0n,paymentBalance:formatUnits(BigInt(balance),18),eligible:BigInt(identity)>0n,mintAllowanceRaw:String(mintAllowance),bnbBalance:formatUnits(BigInt(bnbBalance),18),refundRaw:String(refundsRaw),refund:formatUnits(BigInt(refundsRaw),18),outgoingBids:Number(outgoing),incomingBids:Number(incoming)};
  }
+ const collectionBids=await collectionBidsSnapshot(e,c,config,wallet,url);
  const requestedBidView=url.searchParams.get('bidView'),bidView=['mine','incoming'].includes(requestedBidView||'')?requestedBidView!:'all';
  const selectedCount=bidView==='all'?Number(bidSlots):!mine?0:bidView==='mine'?mine.outgoingBids:mine.incomingBids;
  const bidOffset=Math.min(1000000,Math.max(0,Math.floor(Number(url.searchParams.get('bidPage'))||0)))*12;
  const bidIds=await Promise.all(Array.from({length:Math.max(0,Math.min(12,selectedCount-bidOffset))},(_,i)=>read(c,config.market,nftMarketAbi,bidView==='all'?'bidAt':bidView==='mine'?'bidderBidAt':'sellerBidAt',bidView==='all'?[BigInt(i+bidOffset)]:[wallet,BigInt(i+bidOffset)])));
  const bids=(await Promise.all(bidIds.map(id=>bid(c,config.market,BigInt(id))))).filter(Boolean).map((v:any)=>rar(v));
- return {...base,gallery:gallery.map(rar),sort,sortOptions:MARKET_SORTS,rarity:{method:'Each trait value scores minted supply ÷ number of minted Nibs with that value; the six scores are summed. Rank 1 is rarest. Ties share a rank. Recomputed as supply is minted.',minted:mintedCount,traits:traitFrequencies(mintedCount)},recentSales:salesResult.items.map(v=>rar(v)).map(v=>({...v,...asset(v.tokenId)})),salesIndex:salesResult.index,marketTruncated:truncated,bids,bidSlots:selectedCount,bidView,bidPage:bidOffset/12,feeRecipient:String(feeRecipient),feeDestination:String(feeRecipient).toLowerCase()===config.vault.toLowerCase()?'LP vault':'Project treasury',status:open&&!paused?'live':'paused',configured:true,bnbPriceRaw,bnbQuoteBufferBps:100,contracts:config,minted:Number(minted),mintOpen:open&&!paused,listings,marketPage:marketOffset/12,marketSlots:sorted.length,marketActive:Number(count),owned,wallet:mine,intents:wallet?await nftIntents(e,wallet,now):[],lp:{wrappedBNB:NFT_WBNB,bnbBalance:formatUnits(BigInt(wrappedFunds),18),bnbAdded:formatUnits(BigInt(bnbAdded),18),lockedBNBRaw:String(bnbLocked),balance:formatUnits(BigInt(funds),18),paymentAdded:formatUnits(BigInt(added),18),lockedRaw:String(locked),token:String(token),tokenConfigured:String(token)!=='0x0000000000000000000000000000000000000000',vault:config.vault,router:NFT_ROUTER},market:{completedSales:Number(sales),volume:formatUnits(BigInt(volume),18),feesCollected:formatUnits(BigInt(feesCollected),18),escrowedBNB:formatUnits(BigInt(escrowed),18),bidCount:Number(bidSlots)}};
+ return {...base,collectionBids,gallery:gallery.map(rar),sort,sortOptions:MARKET_SORTS,rarity:{method:'Each trait value scores minted supply ÷ number of minted Nibs with that value; the six scores are summed. Rank 1 is rarest. Ties share a rank. Recomputed as supply is minted.',minted:mintedCount,traits:traitFrequencies(mintedCount)},recentSales:salesResult.items.map(v=>rar(v)).map(v=>({...v,...asset(v.tokenId)})),salesIndex:salesResult.index,marketTruncated:truncated,bids,bidSlots:selectedCount,bidView,bidPage:bidOffset/12,feeRecipient:String(feeRecipient),feeDestination:String(feeRecipient).toLowerCase()===config.vault.toLowerCase()?'LP vault':'Project treasury',status:open&&!paused?'live':'paused',configured:true,bnbPriceRaw,bnbQuoteBufferBps:100,contracts:config,minted:Number(minted),mintOpen:open&&!paused,listings,marketPage:marketOffset/12,marketSlots:sorted.length,marketActive:Number(count),owned,wallet:mine,intents:wallet?await nftIntents(e,wallet,now):[],lp:{wrappedBNB:NFT_WBNB,bnbBalance:formatUnits(BigInt(wrappedFunds),18),bnbAdded:formatUnits(BigInt(bnbAdded),18),lockedBNBRaw:String(bnbLocked),balance:formatUnits(BigInt(funds),18),paymentAdded:formatUnits(BigInt(added),18),lockedRaw:String(locked),token:String(token),tokenConfigured:String(token)!=='0x0000000000000000000000000000000000000000',vault:config.vault,router:NFT_ROUTER},market:{completedSales:Number(sales),volume:formatUnits(BigInt(volume),18),feesCollected:formatUnits(BigInt(feesCollected),18),escrowedBNB:formatUnits(BigInt(escrowed),18),bidCount:Number(bidSlots)}};
 }
 async function queue(e:NftEnv,a:any,b:any,now:number,agent=false){
  const {c,config}=await chain(e),wallet=a.wallet as `0x${string}`,payload:any={};let kind=String(b.kind),tx:NftTransaction,summary:any;
@@ -90,13 +125,18 @@ async function queue(e:NftEnv,a:any,b:any,now:number,agent=false){
   b={...b};if(kind==='buy'&&b.tokenId!==undefined&&(!b.listingId||!b.priceRaw)){const l=await listing(c,config.market,nftTokenId(b.tokenId));b.listingId=l.listingId;b.priceRaw=l.priceRaw;}
   if(kind==='accept-bid'&&b.bidId!==undefined&&(!b.priceRaw||!b.bidder)){const o=await bid(c,config.market,bidId(String(b.bidId)));if(o){b.priceRaw=o.priceRaw;b.bidder=o.bidder;}}
   if(kind==='withdraw-bid-refund'&&!b.amountRaw)b.amountRaw=String(await read(c,config.market,nftMarketAbi,'refunds',[wallet]));
+  // Selling into a collection bid needs a per-NFT approval of the collection-bid contract first (the same single-token approach).
+  if(kind==='cbid-accept'&&b.tokenId!==undefined&&b.bidId!==undefined){
+   const cb=await cbidsContract(e,c,config,true),tokenId=nftTokenId(b.tokenId);let owner='';try{owner=String(await read(c,config.collection,nftAbi,'ownerOf',[BigInt(tokenId)])).toLowerCase();}catch{}
+   if(owner===wallet&&!(await read(c,cb!,nftCollectionBidsAbi,'approved',[BigInt(tokenId),wallet]))){payload.followUp='nft-collection-accept';kind='cbid-approval';b={kind,tokenId};}
+  }
   // A listing or bid acceptance needs a per-NFT approval first. Prepare that single exact approval instead (the agent then repeats the original request).
   if(kind==='list'||kind==='accept-bid'){
    let tokenId:number|null=null;if(kind==='list')tokenId=nftTokenId(b.tokenId);else{const o=await bid(c,config.market,bidId(String(b.bidId)));if(o&&o.seller===wallet)tokenId=o.tokenId;}
    if(tokenId!==null&&String(await read(c,config.collection,nftAbi,'getApproved',[BigInt(tokenId)])).toLowerCase()!==config.market.toLowerCase()){payload.followUp=kind;kind='nft-approval';b={kind,tokenId};}
   }
  }
- if(!['cancel-bid','withdraw-bid-refund'].includes(kind)&&BigInt(await read(c,AGENT_ID_REGISTRY,identityAbi,'balanceOf',[wallet]))===0n)fail(403,'This wallet needs a Binance Agent ID on BNB Chain.');
+ if(!['cancel-bid','withdraw-bid-refund','cbid-cancel'].includes(kind)&&BigInt(await read(c,AGENT_ID_REGISTRY,identityAbi,'balanceOf',[wallet]))===0n)fail(403,'This wallet needs a Binance Agent ID on BNB Chain.');
  const id=crypto.randomUUID(),expires=now+20*60000,deadline=BigInt(Math.floor(expires/1000));
  if(kind==='mint'||kind==='mint-approval'){
   const currency=b.currency===undefined?'USDT':String(b.currency);if(!['USDT','BNB'].includes(currency))fail(400,'Choose USDT or BNB for minting.');if(kind==='mint-approval'&&currency!=='USDT')fail(400,'BNB minting needs no token approval.');
@@ -147,6 +187,35 @@ async function queue(e:NftEnv,a:any,b:any,now:number,agent=false){
    }
   }
   summary.currency='BNB';
+ }else if(['cbid','cbid-cancel','cbid-accept','cbid-approval'].includes(kind)){
+  const cb=(await cbidsContract(e,c,config,true))!;payload.currency='BNB';
+  if(kind==='cbid'){
+   const price=nftPrice(b.price),quantity=nftQuantity(b.quantity),days=Number(b.days??7);if(!Number.isInteger(days)||days<1||days>30)fail(400,'Choose a bid duration of 1–30 days.');
+   const q=marketQuote(price),total=collectionBidDeposit(price,quantity);if(await c.getBalance({address:wallet})<total)fail(409,'Not enough BNB for the full escrow: quantity × (price + 2% buyer fee). Network gas is additional.');
+   Object.assign(payload,{priceRaw:price.toString(),quantity,totalRaw:total.toString(),days});
+   tx=nftCall(wallet,cb,nftCollectionBidsAbi,'placeBid',[price,BigInt(quantity),BigInt(Math.floor(now/1000)+days*86400)],total);
+   summary={title:'Collection bid: '+quantity+' Nib NFT'+(quantity===1?'':'s')+' at '+formatUnits(price,18)+' BNB each',payment:formatUnits(total,18),salePrice:formatUnits(price,18),...quoteDisplay(price),quantity,totalEscrow:formatUnits(total,18),days,scope:'BNB escrow of '+formatUnits(total,18)+' (= '+quantity+' × '+formatUnits(q.buyerTotal,18)+', each price plus its 2% buyer fee) stays in the collection-bid contract. Any eligible holder of ANY Nib can sell into it one NFT at a time and receives the price minus 2%; filled NFTs go to your wallet. Cancel any time to refund every unfilled NFT in full, with no fee.'};
+  }else if(kind==='cbid-approval'){
+   const tokenId=nftTokenId(b.tokenId);payload.tokenId=tokenId;let owner='';try{owner=String(await read(c,config.collection,nftAbi,'ownerOf',[BigInt(tokenId)])).toLowerCase();}catch{}
+   if(owner!==wallet)fail(403,'Only the NFT owner can request this action.');
+   tx=nftCall(wallet,config.collection,nftAbi,'approve',[cb,BigInt(tokenId)]);summary={title:'Approve Nib #'+tokenId+' for collection bids',payment:'0',tokenId,spender:cb,scope:'Approval for this one NFT only, to the collection-bid contract. No collection-wide approval.'};
+  }else{
+   const id=bidId(b.bidId),offer=await collectionBid(c,cb,id);if(!offer)return fail(409,'This collection bid has already finished.');
+   payload.bidId=id.toString();payload.priceRaw=offer.priceRaw;payload.bidder=offer.bidder;
+   if(kind==='cbid-cancel'){
+    if(offer.bidder!==wallet)fail(403,'Only the bidder can cancel this bid.');payload.recipient=wallet;payload.refundRaw=offer.depositRaw;
+    tx=nftCall(wallet,cb,nftCollectionBidsAbi,'cancelBid',[id,wallet]);summary={title:'Cancel collection bid #'+offer.bidId,payment:'0',refund:offer.deposit,remaining:offer.remaining,filled:offer.filled,recipient:wallet,scope:'Refund the escrow of the '+offer.remaining+' unfilled NFT'+(offer.remaining===1?'':'s')+' ('+offer.deposit+' BNB, including their buyer fees) straight to your agent wallet in this transaction. NFTs already sold stay sold. No trading fee.'};
+   }else{
+    const tokenId=nftTokenId(b.tokenId);payload.tokenId=tokenId;payload.seller=wallet;
+    if(!offer.available)fail(409,'This collection bid is expired, filled, or its bidder no longer has an eligible Agent ID.');if(offer.bidder===wallet)fail(403,'You cannot sell to your own bid.');
+    if(b.priceRaw!==undefined&&String(b.priceRaw)!==offer.priceRaw)fail(409,'Bid terms changed. Review the exact price again.');
+    let owner='';try{owner=String(await read(c,config.collection,nftAbi,'ownerOf',[BigInt(tokenId)])).toLowerCase();}catch{}
+    if(owner!==wallet)fail(403,'You can only sell an NFT you own.');
+    if(!(await read(c,cb,nftCollectionBidsAbi,'approved',[BigInt(tokenId),wallet])))fail(409,'Approve this individual NFT for collection bids before selling it.');
+    tx=nftCall(wallet,cb,nftCollectionBidsAbi,'acceptBid',[id,BigInt(tokenId),offer.bidder as `0x${string}`,BigInt(offer.priceRaw),deadline]);summary={title:'Sell Nib #'+tokenId+' into collection bid #'+offer.bidId,payment:'0',salePrice:offer.price,...quoteDisplay(BigInt(offer.priceRaw)),tokenId,bidder:offer.bidder,remaining:offer.remaining,scope:'Transfer this NFT to the bidder and receive '+offer.sellerProceeds+' BNB (price minus the 2% seller fee). The bidder\'s escrow covers the price and the separate 2% buyer fee. Settlement is atomic; one NFT per transaction.'};
+   }
+  }
+  summary.currency='BNB';
  }else if(['nft-approval','list','buy','cancel'].includes(kind)){
   const tokenId=nftTokenId(b.tokenId);payload.tokenId=tokenId;payload.currency='BNB';const l=await listing(c,config.market,tokenId);
   if(['nft-approval','list','cancel'].includes(kind)){
@@ -168,7 +237,7 @@ async function queue(e:NftEnv,a:any,b:any,now:number,agent=false){
   summary.currency='BNB';
  }else fail(400,'Unsupported NFT task. Marketplace purchases use BNB and need no USDT approval.');
  if(agent)payload.origin='agent';
- if(['list','buy','bid','accept-bid'].includes(kind))summary.feeRecipient=String(await read(c,config.market,nftMarketAbi,'feeRecipient'));
+ if(['list','buy','bid','accept-bid','cbid','cbid-accept'].includes(kind))summary.feeRecipient=String(await read(c,config.market,nftMarketAbi,'feeRecipient'));
  const result=await e.DB.batch([q(e,"INSERT INTO nft_intents(id,wallet,kind,payload,\"transaction\",summary,status,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND status IN ('queued','preparing','agent_preparing','awaiting_approval','approved','executing','app_confirmation','needs_receipt','broadcast'))<4 AND (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND created_at>?)<12 AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?)",id,wallet,kind,canonical(payload),canonical(tx!),canonical({...summary!,networkFee:'BNB network gas is additional, including on a free mint.'}),agent?'agent_preparing':'queued',now,expires,wallet,wallet,now-60000,wallet,a.version)]);
  if(!result[0].meta.changes)fail(429,'Finish or cancel existing NFT requests before adding another.');return serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id));
 }
@@ -188,7 +257,7 @@ export async function nftReceipt(e:NftEnv,a:any,intentId:string,hash:any,now:num
 const snapshotCache=new Map<string,{until:number,result:Promise<any>}>();
 export async function nftRoute(request:Request,e:NftEnv,a:any,body:()=>Promise<any>,now:number):Promise<Response|null>{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');
- if(path==='/nft'&&request.method==='GET'){const key=[e.NFT_RPC_URL||e.BSC_RPC_URL,e.NFT_COLLECTION,e.NFT_MARKETPLACE,e.NFT_LP_VAULT,e.NFT_FEE_RECIPIENT,a?.wallet||'public',url.search].join(':');let entry=snapshotCache.get(key);if(!entry||entry.until<=now){if(snapshotCache.size>=64)snapshotCache.clear();entry={until:now+5000,result:nftSnapshot(e,a?.wallet||null,url,now)};snapshotCache.set(key,entry);}try{return json(await entry.result);}catch(error){snapshotCache.delete(key);throw error;}}
+ if(path==='/nft'&&request.method==='GET'){const key=[e.NFT_RPC_URL||e.BSC_RPC_URL,e.NFT_COLLECTION,e.NFT_MARKETPLACE,e.NFT_LP_VAULT,e.NFT_COLLECTION_BIDS,e.NFT_FEE_RECIPIENT,a?.wallet||'public',url.search].join(':');let entry=snapshotCache.get(key);if(!entry||entry.until<=now){if(snapshotCache.size>=64)snapshotCache.clear();entry={until:now+5000,result:nftSnapshot(e,a?.wallet||null,url,now)};snapshotCache.set(key,entry);}try{return json(await entry.result);}catch(error){snapshotCache.delete(key);throw error;}}
  if(request.method==='POST')snapshotCache.clear();
  if(path.startsWith('/nft/metadata/')&&request.method==='GET')return json(nftMetadata(nftTokenId(path.split('/').pop())));
  if(path==='/nft/intents'&&request.method==='POST'){if(!a?.connected)fail(409,'Pair an eligible agent wallet before requesting NFT actions.');return json(await queue(e,a,await body(),now),201);}
