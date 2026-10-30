@@ -925,5 +925,38 @@ add(
 ["{n} verified agent taps","{n} 次已验证的代理点击"],
 ["{n} verified agent taps · {o} NFTs · {m}x · block {b}","{n} 次已验证的代理点击 · {o} 枚 NFT · {m} 倍 · 区块 {b}"]
 );
+/* ---------- collection-wide bids ---------- */
+add(
+["BID ON THE WHOLE COLLECTION","对整个系列出价"],["Bid for any Nib. Any holder can sell.","为任意 Nib 出价，任何持有者都可以卖给你。"],
+["Make a collection bid ↗","发起系列出价 ↗"],
+["Escrow BNB for a number of NFTs at one price each. Any eligible holder can sell one Nib into your bid and receive the price minus 2%. Partial fills decrement the quantity, and you can cancel any time to refund every unfilled NFT in full.","为一定数量的 NFT 按统一单价托管 BNB。任何符合条件的持有者都可以把一只 Nib 卖给你的出价，并收到价格减 2% 的款项。部分成交会减少剩余数量，你随时可以取消，未成交的 NFT 会全额退款。"],
+["All collection bids","全部系列出价"],["Your collection bids","我的系列出价"],
+["{a} bids ever placed · {b} BNB in escrow · {c} NFTs sold into collection bids · {d} BNB volume.","累计 {a} 个出价 · 托管 {b} BNB · {c} 枚 NFT 已卖入系列出价 · 成交额 {d} BNB。"],
+["Pair your agent to view its collection bids.","配对你的代理，查看其系列出价。"],
+["You have no collection bids. Make one to bid for several Nibs at once.","你还没有系列出价。发起一个，即可一次为多只 Nib 出价。"],
+["No collection bids are open. Make the first one.","目前没有有效的系列出价。来发起第一个吧。"],
+["Page {n}","第 {n} 页"],
+["Collection bid #{n}","系列出价 #{n}"],["{a} OF {b} LEFT","剩余 {a} / {b}"],["UNAVAILABLE","不可用"],["BNB each","BNB / 枚"],
+["Escrow left {a} BNB · seller gets {b} BNB per NFT","剩余托管 {a} BNB · 卖家每枚获得 {b} BNB"],
+["Manage your bid","管理你的出价"],["Sell a Nib into this bid","把一只 Nib 卖入此出价"],
+["Bid on the whole collection.","对整个系列出价。"],
+["Escrow BNB for several Nibs at one price each. Your deposit is","为多只 Nib 按统一单价托管 BNB。你的押金为"],
+["quantity × (price + 2% buyer fee)","数量 ×（价格 + 2% 买家手续费）"],
+[". Any eligible holder of any Nib can sell into it, and your NFTs arrive in your wallet as bids fill.","。任何符合条件的 Nib 持有者都可以卖给它，出价成交后 NFT 会直接进入你的钱包。"],
+["Price per NFT in BNB","每枚 NFT 的 BNB 价格"],["Quantity of NFTs","NFT 数量"],["Bid duration","出价有效期"],
+["Total escrow now: {a} BNB","现在托管总额：{a} BNB"],
+["for {n} NFT(s), each price plus its 2% buyer fee, rounded down per NFT.","共 {n} 枚 NFT，每枚价格加其 2% 买家手续费，按枚向下取整。"],
+["Partial fills reduce the remaining quantity. Cancelling refunds the unfilled remainder, including its buyer fees, straight to your wallet with no fee. Gas is additional for every transaction.","部分成交会减少剩余数量。取消会把未成交部分（含其买家手续费）直接退回你的钱包，不收费。每笔交易的 Gas 另计。"],
+["A funded collection bid. Exact terms.","一份已注资的系列出价，条款清清楚楚。"],
+["Quantity","数量"],["Escrow left","剩余托管"],["{a} of {b} left · {c} filled","剩余 {a} / {b} · 已成交 {c}"],
+["Expired, filled, or bidder’s Agent ID unavailable","已过期、已成交完，或出价人的 Agent ID 不可用"],
+["Ask agent to cancel and refund the unfilled {n}","让代理取消并退还未成交的 {n} 枚"],
+["{n} BNB is refunded to your wallet in the same transaction. NFTs already sold stay sold. No trading fee.","{n} BNB 将在同一笔交易中退回你的钱包。已卖出的 NFT 不受影响。不收交易手续费。"],
+["Serial number of the Nib you will sell","你要卖出的 Nib 编号"],
+["2. Ask agent to preview the sale","2. 让代理预览出售"],
+["You receive {n} BNB for this one NFT after the 2% seller fee. Your NFT transfers to the bidder. Each step needs its own preview and approval. The approval covers this single NFT, never the whole collection.","扣除 2% 卖家手续费后，这一枚 NFT 你将收到 {n} BNB。你的 NFT 会转给出价人。每一步都需要各自的预览和批准。授权只针对这一枚 NFT，绝不涵盖整个系列。"],
+["This bid can no longer be filled.","此出价已无法再成交。"],
+["Collection bids are not live yet.","系列出价尚未上线。"]
+);
 (root.TAPTAP_I18N_PAIRS=P);
 })(typeof window!=='undefined'?window:globalThis);

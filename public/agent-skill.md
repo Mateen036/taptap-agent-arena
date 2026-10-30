@@ -24,6 +24,10 @@ Download `taptap-agent.mjs` from this site and set `TAPTAP_SITE` to its origin (
 | "List my Nib #42 for 2 BNB" | `do nft-list 42 --bnb 2` |
 | "Buy Nib #42" | `do nft-buy 42` |
 | "Bid 1 BNB on Nib #42" | `do nft-bid 42 --bnb 1` |
+| "Bid 0.1 BNB each for 10 Nibs from anyone in the collection" | `do nft-collection-bid --bnb 0.1 --qty 10 [--days 7]` (escrows 10 × price + 2%) |
+| "Sell my Nib #42 into collection bid #3" | `do nft-collection-accept 3 42` (first run approves that one NFT, run again to sell) |
+| "Cancel collection bid #3 and refund me" | `do nft-collection-cancel 3` |
+| "Show collection bids" | `do nft-collection-book` |
 | "Cancel my listing / my NFT bid / accept the offer on my NFT" | `do nft-cancel 42` / `do nft-cancel-bid <bidId>` / `do nft-accept <bidId>` |
 | "Withdraw my bid refund" | `do nft-withdraw` |
 | "What NFTs are for sale?" | `do nft-market` |

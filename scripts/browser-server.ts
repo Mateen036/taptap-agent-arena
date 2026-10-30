@@ -27,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
   else if(url.pathname==='/__test/act')result=await act(b.wallet,b.action,b.payload||{});
   else if(url.pathname==='/__test/time'){offset+=Number(b.ms)||0;result={serverTime:Date.now()};}
   else if(url.pathname==='/__test/nft/start'){
-   if(!nftFixture)nftFixture=await nftChain();env.NFT_RPC_URL=nftFixture.rpc;env.NFT_COLLECTION=nftFixture.collection;env.NFT_MARKETPLACE=nftFixture.market;env.NFT_LP_VAULT=nftFixture.vault;result={ready:true};
+   if(!nftFixture)nftFixture=await nftChain();env.NFT_RPC_URL=nftFixture.rpc;env.NFT_COLLECTION=nftFixture.collection;env.NFT_MARKETPLACE=nftFixture.market;env.NFT_LP_VAULT=nftFixture.vault;if(b.collectionBids){const art=JSON.parse(fs.readFileSync('artifacts/NibCollectionBids.json','utf8'));env.NFT_COLLECTION_BIDS=await nftFixture.deploy(art,[nftFixture.collection,'0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F',nftFixture.vault]);}result={ready:true};
   }
   else if(url.pathname==='/__test/utility/activate'){
    if(!nftFixture)throw Error('Start real local NFT chain first');

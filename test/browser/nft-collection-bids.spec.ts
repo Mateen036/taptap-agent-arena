@@ -1,0 +1,19 @@
+import {test,expect} from '@playwright/test';
+const headers={'x-taptap-test':'local-browser-fixture'};
+const fixture=async(request:any,path:string,data:any={})=>{const r=await request.post('/__test/'+path,{headers,data,timeout:60000});expect(r.ok()).toBeTruthy();return r.json();};
+test('collection bids stay hidden until the contract is configured, then place, list and cancel through the market tab',async({page,request})=>{
+ test.setTimeout(150000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await fixture(request,'nft/start');await page.goto('/#marketplace');await expect(page.locator('#nft-listings')).toBeVisible();await page.waitForTimeout(1500);
+ await expect(page.locator('#nft-cbids-section')).toBeHidden();
+ await fixture(request,'nft/start',{collectionBids:true});await page.reload();await page.goto('/#marketplace');
+ await expect(page.locator('#nft-cbids-section')).toBeVisible({timeout:20000});await expect(page.locator('#nft-cbids')).toContainText('No collection bids are open');
+ await page.locator('.connect-button').click();await page.locator('#begin-pair').click();const prompt=await page.locator('#agent-prompt').inputValue(),code=prompt.match(/pairing code ([0-9a-f]{64})/)?.[1];expect(code).toBeTruthy();const p=await fixture(request,'pair',{code});await expect(page.locator('#pair-status')).toContainText('Agent paired',{timeout:15000});await page.locator('#close-modal').click();
+ await page.locator('#nft-make-cbid').click();await page.locator('#nft-cbid-price').fill('0.01');await page.locator('#nft-cbid-qty').fill('3');await expect(page.locator('#nft-cbid-total')).toContainText('0.0306 BNB');
+ const queued=page.waitForResponse(r=>r.url().endsWith('/api/nft/intents')&&r.request().method()==='POST');await page.locator('#nft-submit-cbid').click();const intent=await (await queued).json();expect(intent.kind).toBe('cbid');expect(intent.transaction.value).toBe('30600000000000000');expect(intent.summary.quantity).toBe(3);
+ await fixture(request,'nft/preview',{wallet:p.wallet,intentId:intent.id});const review=page.locator('[data-nft-review="'+intent.id+'"]');await expect(review).toBeVisible({timeout:15000});await review.click();await expect(page.locator('#modal-body')).toContainText('0.0306');
+ const approved=page.waitForResponse(r=>r.url().endsWith('/approve'));await page.locator('#nft-confirm-approval').click();expect((await approved).status()).toBe(200);const receipt=await fixture(request,'nft/execute',{wallet:p.wallet,intentId:intent.id});expect(receipt.body.status).toBe('confirmed');
+ await page.reload();await page.goto('/#marketplace');await expect(page.locator('#nft-cbids .cbid-card')).toHaveCount(1,{timeout:20000});await expect(page.locator('#nft-cbids')).toContainText('3 OF 3 LEFT');await expect(page.locator('#nft-cbid-stats')).toContainText('0.0306');
+ await page.locator('[data-cbid-view="mine"]').click();await expect(page.locator('#nft-cbids .cbid-card')).toHaveCount(1);await page.locator('#nft-cbids [data-cbid-detail]').first().click();await expect(page.locator('#modal-body')).toContainText('Ask agent to cancel and refund the unfilled 3');
+ const cancelQueued=page.waitForResponse(r=>r.url().endsWith('/api/nft/intents')&&r.request().method()==='POST');await page.locator('#nft-cbid-cancel').click();const cancel=await (await cancelQueued).json();expect(cancel.kind).toBe('cbid-cancel');expect(cancel.summary.refund).toBe('0.0306');
+ expect(errors).toEqual([]);
+});
