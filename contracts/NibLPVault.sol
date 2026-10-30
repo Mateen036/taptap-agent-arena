@@ -7,10 +7,12 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface INibRouter {
+    function WETH() external view returns (address);
     function factory() external view returns (address);
     function addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)
         external returns (uint256,uint256,uint256);
 }
+interface INibWrappedNative { function deposit() external payable; }
 interface INibFactory { function getPair(address,address) external view returns (address); }
 
 /// @notice Primary mint proceeds can only fund liquidity. LP tokens have no withdrawal path.
@@ -20,11 +22,15 @@ contract NibLPVault is Ownable2Step, ReentrancyGuard {
     uint256 public constant TOKEN_DELAY = 2 days;
     IERC20 public immutable paymentToken;
     INibRouter public immutable router;
+    IERC20 public immutable wrappedNative;
+    uint256 public bnbAdded;
+    uint256 public bnbLiquidityAdded;
     address public pendingToken;
     uint256 public tokenReadyAt;
     address public liquidityToken;
     uint256 public paymentAdded;
     uint256 public liquidityAdded;
+    event NativeLiquidityProvided(uint256 tokenAmount, uint256 bnbAmount, uint256 lpTokens);
     event TokenProposed(address indexed token, uint256 readyAt);
     event TokenActivated(address indexed token);
     event LiquidityProvided(uint256 tokenAmount, uint256 paymentAmount, uint256 lpTokens);
@@ -32,12 +38,16 @@ contract NibLPVault is Ownable2Step, ReentrancyGuard {
     constructor(address payment_, address router_, address owner_) Ownable(owner_) {
         require(payment_.code.length > 0 && router_.code.length > 0, "Missing payment/router");
         require(INibRouter(router_).factory().code.length > 0, "Missing AMM factory");
+        address wrapped = INibRouter(router_).WETH();
+        require(wrapped.code.length > 0 && wrapped != payment_, "Invalid wrapped BNB");
+        wrappedNative = IERC20(wrapped);
         paymentToken = IERC20(payment_);
         router = INibRouter(router_);
     }
+    receive() external payable { INibWrappedNative(address(wrappedNative)).deposit{value:msg.value}(); }
     function proposeToken(address token) external onlyOwner {
         require(liquidityToken == address(0), "Token already permanent");
-        require(token.code.length > 0 && token != address(paymentToken) && token != address(this), "Invalid token");
+        require(token.code.length > 0 && token != address(paymentToken) && token != address(wrappedNative) && token != address(this), "Invalid token");
         pendingToken = token;
         tokenReadyAt = block.timestamp + TOKEN_DELAY;
         emit TokenProposed(token, tokenReadyAt);
@@ -73,6 +83,31 @@ contract NibLPVault is Ownable2Step, ReentrancyGuard {
         paymentAdded += paymentAmount;
         liquidityAdded += liquidity;
         emit LiquidityProvided(tokenAmount, paymentAmount, liquidity);
+    }
+    function pairBNB() public view returns (address) {
+        if (liquidityToken == address(0)) return address(0);
+        return INibFactory(router.factory()).getPair(liquidityToken, address(wrappedNative));
+    }
+    function lpTokensLockedBNB() external view returns (uint256) {
+        address p = pairBNB();
+        return p == address(0) ? 0 : IERC20(p).balanceOf(address(this));
+    }
+    function addLiquidityBNB(uint256 tokenDesired, uint256 bnbDesired, uint256 tokenMin, uint256 bnbMin, uint256 deadline)
+        external onlyOwner nonReentrant returns (uint256 tokenAmount, uint256 bnbAmount, uint256 liquidity)
+    {
+        require(liquidityToken != address(0), "Token TBA");
+        require(tokenMin > 0 && bnbMin > 0 && tokenDesired >= tokenMin && bnbDesired >= bnbMin, "Invalid minimums");
+        require(deadline >= block.timestamp && deadline <= block.timestamp + 30 minutes, "Invalid deadline");
+        IERC20 token = IERC20(liquidityToken);
+        token.forceApprove(address(router), tokenDesired);
+        wrappedNative.forceApprove(address(router), bnbDesired);
+        (tokenAmount, bnbAmount, liquidity) = router.addLiquidity(liquidityToken, address(wrappedNative), tokenDesired, bnbDesired, tokenMin, bnbMin, address(this), deadline);
+        require(tokenAmount >= tokenMin && bnbAmount >= bnbMin && liquidity > 0, "Insufficient liquidity");
+        token.forceApprove(address(router), 0);
+        wrappedNative.forceApprove(address(router), 0);
+        bnbAdded += bnbAmount;
+        bnbLiquidityAdded += liquidity;
+        emit NativeLiquidityProvided(tokenAmount, bnbAmount, liquidity);
     }
     // No generic calls, withdrawals, rescue, LP transfer, or liquidity removal functions.
 }

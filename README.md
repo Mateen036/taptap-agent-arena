@@ -13,11 +13,11 @@ Live target: https://taptap-agent-arena.vercel.app · Public source: https://git
 - Pairing progress, runner heartbeats, task cancellation, session recovery guidance and bounded aggregate funnel diagnostics.
 - Original Nib mascot, responsive desktop/mobile UI, self-hosted fonts and a [launch kit](docs/launch/README.md). No posts or outreach have been sent.
 
-`npm run check`, `npm test`, `npm run test:browser`, `npm run test:browser:utility`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
+`npm run check`, `npm test`, `npm run test:browser`, `npm run test:browser:utility`, `npm run test:browser:bnb`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
 
 ## Nib Foundry NFTs
 
-10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The zero-fee, noncustodial marketplace settles USDT and NFT delivery atomically. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
+10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT or the $1 equivalent in BNB per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The zero-fee, noncustodial marketplace settles native BNB and NFT delivery atomically, with no USDT purchase approval. BNB mint quotes use Chainlink BNB/USD, a 1% spending ceiling and automatic refunds of unused BNB. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
 
 The browser queues agent requests. The connector validates each exact call, gets a Binance preview, waits for explicit approval in the transaction desk, submits once, and verifies the chain receipt. Game-only session keys never gain wallet spending authority. Unknown submissions require receipt recovery, not an automatic retry.
 
