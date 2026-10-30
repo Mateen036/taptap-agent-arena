@@ -12,7 +12,7 @@ async function route(request:Request){
  const browserEndpoint=!/^\/api\/(agent\/|admin\/|health$)/.test(path);
  const session=browserEndpoint?browserSession(request):null;if(session)headers.set('oai-authenticated-user-id',session.userId);
  const forwarded=new Request(request,{headers});
- const response=await handle(forwarded,{DB:database(),NFT_COLLECTION:process.env.NFT_COLLECTION,NFT_GAME_UTILITY:process.env.NFT_GAME_UTILITY,NFT_MARKETPLACE:process.env.NFT_MARKETPLACE,NFT_LP_VAULT:process.env.NFT_LP_VAULT,ADMIN_WALLET:process.env.ADMIN_WALLET,BSC_RPC_URL:process.env.BSC_RPC_URL,ALLOW_WALLET_RELINK:true,STORAGE_NAME:'PostgreSQL'} as any);
+ const response=await handle(forwarded,{DB:database(),NFT_COLLECTION:process.env.NFT_COLLECTION,NFT_GAME_UTILITY:process.env.NFT_GAME_UTILITY,NFT_MARKETPLACE:process.env.NFT_MARKETPLACE,NFT_LP_VAULT:process.env.NFT_LP_VAULT,NFT_FEE_RECIPIENT:process.env.NFT_FEE_RECIPIENT,ADMIN_WALLET:process.env.ADMIN_WALLET,BSC_RPC_URL:process.env.BSC_RPC_URL,ALLOW_WALLET_RELINK:true,STORAGE_NAME:'PostgreSQL'} as any);
  if(session?.cookie)response.headers.append('Set-Cookie',session.cookie);return response;
  }catch(error){console.error('TapTap runtime unavailable',error instanceof Error?error.name:'unknown');return Response.json({error:'The game service is not configured. Database and session configuration are required.'},{status:503,headers:{'Cache-Control':'no-store'}});}
 }

@@ -17,7 +17,7 @@ Live target: https://taptap-agent-arena.vercel.app · Public source: https://git
 
 ## Nib Collection NFTs
 
-10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT or the $1 equivalent in BNB per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The zero-fee, noncustodial marketplace settles native BNB and NFT delivery atomically, with no USDT purchase approval. BNB mint quotes use Chainlink BNB/USD, a 1% spending ceiling and automatic refunds of unused BNB. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
+10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT or the $1 equivalent in BNB per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The marketplace settles native BNB and NFT delivery atomically, charging 2% to buyers and 2% to sellers. Escrowed bids bind the current owner, with exact acceptance, cancellation, and a separate full-deposit refund withdrawal. No USDT purchase or bid approval is required. BNB mint quotes use Chainlink BNB/USD, a 1% spending ceiling and automatic refunds of unused BNB. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
 
 The browser queues agent requests. The connector validates each exact call, gets a Binance preview, waits for explicit approval in the transaction desk, submits once, and verifies the chain receipt. Game-only session keys never gain wallet spending authority. Unknown submissions require receipt recovery, not an automatic retry.
 

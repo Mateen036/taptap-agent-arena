@@ -2,6 +2,9 @@ import {parseAbi,encodeFunctionData,isAddress,parseUnits} from 'viem';
 export const NFT_PAYMENT='0x55d398326f99059fF775485246999027B3197955' as const;
 export const NFT_PRICE_FEED='0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE' as const;
 export const NFT_WBNB='0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' as const;
+export const NFT_BUYER_FEE_BPS=200;
+export const NFT_SELLER_FEE_BPS=200;
+export function marketQuote(price:bigint){const buyerFee=price*BigInt(NFT_BUYER_FEE_BPS)/10000n,sellerFee=price*BigInt(NFT_SELLER_FEE_BPS)/10000n;return {buyerFee,sellerFee,buyerTotal:price+buyerFee,sellerProceeds:price-sellerFee};}
 export const NFT_NATIVE='0x0000000000000000000000000000000000000000' as const;
 export const nativeMintBudget=(quote:bigint)=>(quote*101n+99n)/100n; // 1% ceiling; unused BNB is refunded by the mint.
 export const NFT_ROUTER='0x10ED43C718714eb63d5aA57B78B54704E256024E' as const;
@@ -18,6 +21,15 @@ export const nftMarketAbi=parseAbi([
  'function collection() view returns(address)','function paymentToken() view returns(address)','function agentIdRegistry() view returns(address)',
  'function activeCount() view returns(uint256)','function activeAt(uint256) view returns(uint256)','function listings(uint256) view returns(uint256 id,address seller,uint256 price,uint256 expiresAt)',
  'function available(uint256) view returns(bool)','function completedSales() view returns(uint256)','function volume() view returns(uint256)',
+ 'function BUYER_FEE_BPS() view returns(uint256)','function SELLER_FEE_BPS() view returns(uint256)','function feeRecipient() view returns(address)','function feesCollected() view returns(uint256)',
+ 'function quote(uint256) pure returns(uint256 buyerFee,uint256 sellerFee,uint256 buyerTotal,uint256 sellerProceeds)',
+ 'function bidCount() view returns(uint256)','function bidAt(uint256) view returns(uint256)',
+ 'function bidderBidCount(address) view returns(uint256)','function bidderBidAt(address,uint256) view returns(uint256)',
+ 'function sellerBidCount(address) view returns(uint256)','function sellerBidAt(address,uint256) view returns(uint256)',
+ 'function bids(uint256) view returns(uint256 tokenId,address bidder,address seller,uint256 price,uint256 expiresAt)',
+ 'function bidderTokenBid(address,uint256) view returns(uint256)','function bidAvailable(uint256) view returns(bool)','function refunds(address) view returns(uint256)',
+ 'function escrowedBNB() view returns(uint256)','function totalRefunds() view returns(uint256)',
+ 'function placeBid(uint256,uint256,uint256,address) payable','function cancelBid(uint256)','function acceptBid(uint256,address,uint256,uint256)','function withdrawRefund(uint256,address)',
  'function list(uint256,uint256,uint256)','function cancel(uint256,uint256)','function buy(uint256,uint256,uint256,address,uint256) payable'
 ]);
 export const nftPaymentAbi=parseAbi(['function balanceOf(address) view returns(uint256)','function allowance(address,address) view returns(uint256)','function approve(address,uint256)','function decimals() view returns(uint8)','function symbol() view returns(string)']);

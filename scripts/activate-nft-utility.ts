@@ -20,7 +20,7 @@ export async function activateExact(client:any,now:number){
 }
 async function run(){
  const mode=process.argv[2]||'check';if(!['check','freeze','activate'].includes(mode))throw Error('Use check, freeze or activate.');
- const owner=process.env.ADMIN_WALLET as `0x${string}`,plan=nftDeploymentPlan(owner),env:any=process.env;
+ const owner=process.env.ADMIN_WALLET as `0x${string}`,plan=nftDeploymentPlan(owner,process.env.NFT_FEE_RECIPIENT as `0x${string}`|undefined),env:any=process.env;
  for(const [key,value]of [['NFT_COLLECTION',plan.contracts.collection],['NFT_MARKETPLACE',plan.contracts.market],['NFT_LP_VAULT',plan.contracts.vault]])if(env[key]?.toLowerCase()!==value.toLowerCase())throw Error('Environment differs from reviewed deployment: '+key);
  const chain=createPublicClient({chain:bsc,transport:http(env.NFT_RPC_URL||env.BSC_RPC_URL||'https://bsc-dataseed.bnbchain.org')});if(await chain.getChainId()!==56)throw Error('BNB mainnet required.');
  for(const step of plan.steps){const art=JSON.parse(fs.readFileSync('artifacts/'+step.name+'.json','utf8')),code=await chain.getCode({address:step.address});if(!code||normalizeRuntime(code,art)!==art.deployedBytecode)throw Error(step.name+' is missing or has unexpected bytecode.');}

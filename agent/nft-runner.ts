@@ -1,30 +1,36 @@
 import {decodeFunctionData,keccak256,toHex} from 'viem';
 import {canonical} from '../lib/game';
-import {NFT_PAYMENT,nativeMintBudget,nftAbi,nftMarketAbi,nftPaymentAbi} from '../lib/nft-protocol';
+import {NFT_PAYMENT,nativeMintBudget,marketQuote,nftAbi,nftMarketAbi,nftPaymentAbi} from '../lib/nft-protocol';
 type Bridge={action:(s:any,kind:string,payload?:any)=>Promise<any>;baw:(argv:string[])=>any;persist:(s:any)=>void};
 const txDigest=(t:any)=>keccak256(toHex(canonical(t)));
 const same=(a:any,b:any)=>String(a).toLowerCase()===String(b).toLowerCase();
 export function validateNftTransaction(intent:any,contracts:any,wallet:string){
  const tx=intent.transaction,p=intent.payload;
- if(tx.chainId!==56||!same(tx.from,wallet)||typeof tx.value!=='string'||! /^(0|[1-9][0-9]*)$/.test(tx.value)||!/^0x[0-9a-f]+$/i.test(tx.data))throw Error('NFT transaction envelope does not match this wallet.');
- if(!['mint-approval','nft-approval','mint','list','cancel','buy'].includes(intent.kind))throw Error('Unsupported NFT transaction kind.');
- const nativeMint=intent.kind==='mint'&&p.currency==='BNB';const expectedValue=nativeMint?p.costRaw:intent.kind==='buy'?p.priceRaw:'0';if(tx.value!==expectedValue)throw Error('Native BNB value differs from the exact request.');
+ if(tx.chainId!==56||!same(tx.from,wallet)||typeof tx.value!=='string'||!/^(0|[1-9][0-9]*)$/.test(tx.value)||!/^0x[0-9a-f]+$/i.test(tx.data))throw Error('NFT transaction envelope does not match this wallet.');
+ const nativeMint=intent.kind==='mint'&&p.currency==='BNB';
+ const isBid=intent.kind==='bid',isBuy=intent.kind==='buy';
+ const expectedValue=nativeMint?p.costRaw:isBid||isBuy?marketQuote(BigInt(p.priceRaw)).buyerTotal.toString():'0';
+ if(tx.value!==expectedValue||(isBid||isBuy)&&p.buyerTotalRaw!==expectedValue)throw Error('Native BNB value differs from the exact request including fees.');
  if(nativeMint&&nativeMintBudget(BigInt(p.quotedCostRaw)).toString()!==p.costRaw)throw Error('BNB mint quote ceiling changed.');
- const approval=intent.kind==='mint-approval';
- const abi=approval?nftPaymentAbi:['nft-approval','mint'].includes(intent.kind)?nftAbi:nftMarketAbi;
- const destination=approval?NFT_PAYMENT:['nft-approval','mint'].includes(intent.kind)?contracts.collection:contracts.market;
+ const approval=intent.kind==='mint-approval',onCollection=['nft-approval','mint'].includes(intent.kind);
+ const abi=approval?nftPaymentAbi:onCollection?nftAbi:nftMarketAbi;
+ const destination=approval?NFT_PAYMENT:onCollection?contracts.collection:contracts.market;
  if(!same(tx.to,destination))throw Error('NFT transaction targets an unexpected contract.');
  const decoded:any=decodeFunctionData({abi,data:tx.data}),args=decoded.args||[],name=decoded.functionName;
- const expected:any={'mint-approval':'approve','nft-approval':'approve',mint:nativeMint?'mintBNB':'mint',list:'list',cancel:'cancel',buy:'buy'};
- if(name!==expected[intent.kind])throw Error('NFT transaction function does not match the requested action.');
- if(approval){if(!same(args[0],intent.kind==='mint-approval'?contracts.collection:contracts.market)||String(args[1])!==String(p.costRaw||p.priceRaw))throw Error('USDT approval exceeds or differs from the exact request.');}
+ const expected:any={'mint-approval':'approve','nft-approval':'approve',mint:nativeMint?'mintBNB':'mint',list:'list',cancel:'cancel',buy:'buy',bid:'placeBid','cancel-bid':'cancelBid','accept-bid':'acceptBid','withdraw-bid-refund':'withdrawRefund'};
+ if(!expected[intent.kind]||name!==expected[intent.kind])throw Error('NFT transaction function does not match the requested action.');
+ if(approval){if(!same(args[0],contracts.collection)||String(args[1])!==String(p.costRaw))throw Error('USDT approval exceeds or differs from the exact request.');}
  else if(intent.kind==='nft-approval'){if(!same(args[0],contracts.market)||Number(args[1])!==p.tokenId)throw Error('Unexpected NFT approval.');}
  else if(intent.kind==='mint'){if(Number(args[0])!==p.quantity||String(args[1])!==p.costRaw||Number(args[2])!==Math.floor(intent.expires_at/1000)||args[3]!==keccak256(toHex(intent.id)))throw Error('Mint quote or operation ID changed.');}
+ else if(intent.kind==='cancel-bid'){if(String(args[0])!==p.bidId||!same(p.bidder,wallet))throw Error('Cancellation bid changed.');}
+ else if(intent.kind==='accept-bid'){if(String(args[0])!==p.bidId||!same(args[1],p.bidder)||String(args[2])!==p.priceRaw||!same(p.seller,wallet)||Number(args[3])!==Math.floor(intent.expires_at/1000))throw Error('Bid acceptance terms changed.');}
+ else if(intent.kind==='withdraw-bid-refund'){if(String(args[0])!==p.amountRaw||!same(args[1],wallet)||!same(p.recipient,wallet))throw Error('Refund amount or recipient changed.');}
  else{
   if(Number(args[0])!==p.tokenId)throw Error('Unexpected NFT token ID.');
-  if(intent.kind==='list'&&(String(args[1])!==p.priceRaw||Number(args[2])!==Math.floor(intent.created_at/1000)+p.days*86400))throw Error('Listing terms changed.');
+  if(['list','bid'].includes(intent.kind)&&(String(args[1])!==p.priceRaw||Number(args[2])!==Math.floor(intent.created_at/1000)+p.days*86400))throw Error('Listing or bid terms changed.');
+  if(isBid&&!same(args[3],p.seller))throw Error('Bid target owner changed.');
   if(intent.kind==='cancel'&&String(args[1])!==p.listingId)throw Error('Cancellation listing changed.');
-  if(intent.kind==='buy'&&(String(args[1])!==p.listingId||String(args[2])!==p.priceRaw||!same(args[3],p.seller)||Number(args[4])!==Math.floor(intent.expires_at/1000)))throw Error('Purchase price, seller, or expiry changed.');
+  if(isBuy&&(String(args[1])!==p.listingId||String(args[2])!==p.priceRaw||!same(args[3],p.seller)||Number(args[4])!==Math.floor(intent.expires_at/1000)))throw Error('Purchase price, seller, or expiry changed.');
  }
  return true;
 }

@@ -1,6 +1,6 @@
 # Nib Collection — mint and market rules
 
-Nib Collection is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (chain 56). Humans give instructions; their connected agents prepare and submit wallet transactions. Anyone can view designs and listings.
+Nib Collection is TapTap's original 10,000-piece ERC-721 collection on BNB Chain (chain 56). Humans give instructions; their connected agents prepare and submit wallet transactions. Anyone can view designs, listings, and bids.
 
 ## Minting
 
@@ -29,15 +29,32 @@ If submission status is uncertain, **do not execute it again**. Find its transac
 
 ## Marketplace
 
-Fixed-price, noncustodial listings in **BNB only**, with up to 18 decimal places. Buyers send exactly the listing price as native BNB; underpayment and overpayment revert. The marketplace fee is **0%**. NFT ownership stays with the seller until a purchase. Buyer payment and NFT transfer happen atomically, so both succeed or both revert. Purchases bind the listing version, exact price, seller and deadline; changed or stale listings revert. Gas can still be charged for reverted transactions.
+Listings and bids settle in **BNB only**, with up to 18 decimal places. Each completed trade charges **2% to the buyer and 2% to the seller**. At a 1 BNB NFT price, the buyer pays **1.02 BNB**, the seller receives **0.98 BNB**, and the combined **0.04 BNB** fee goes to the marketplace’s immutable fee recipient. Each fee rounds down independently to whole wei. Gas is separate. The website shows the exact fee recipient and amounts before approval. The recipient is selected at contract deployment; the operator may choose the existing LP vault or a published project treasury. Once deployed, there is no fee-rate or fee-recipient setter.
 
-Buyers, sellers and NFT recipients must hold an eligible Agent ID. Listings can expire or become unavailable if the owner changes, approval is revoked or eligibility is lost. Sellers can cancel their listings. Marketplace volume and ownership are read from the contracts; no synthetic trades are seeded.
+### Fixed-price listings
+
+NFT ownership stays with the seller until a purchase. Buyers send exactly the price **plus the buyer fee** as native BNB; underpayment and overpayment revert. Buyer payment, seller proceeds, trading fees, and NFT transfer settle atomically. Purchases bind the listing version, exact base price, seller and deadline; changed or stale listings revert. Gas can still be charged for reverted transactions.
+
+Buyers, sellers, bidders, and NFT recipients must hold an eligible Agent ID at settlement. Listings can expire or become unavailable if the owner changes, approval is revoked or eligibility is lost. Sellers can cancel their listings. NFT approval is requested individually. Marketplace volume, fees collected, ownership and escrow balances are read from the contracts; no synthetic trades or bids are seeded.
+
+### Escrowed bids
+
+An eligible agent can bid on **any minted NFT**, including one without a listing. A bid is bound to the NFT’s current owner, base price and expiry (up to 30 days). The bidder deposits the price **plus 2% buyer fee** in BNB. The NFT stays in its owner’s wallet. Only one open bid per bidder per NFT is allowed; cancel the old bid before replacing it. BNB is held by the bid contract, so it cannot be spent elsewhere while the bid is open.
+
+The named current owner approves that individual NFT, then previews and approves acceptance of the exact bid. The contract checks both Agent IDs again and settles NFT delivery, net seller proceeds and both fees atomically. Accepting also removes any listing for that NFT. A transfer to another owner, expiry or lost identity makes the bid unavailable. Expiry does **not** automatically transfer BNB back to the bidder.
+
+**Cancellation and refund are two separate transactions:**
+
+1. The bidder cancels the exact bid. The entire deposit, including the reserved buyer fee, becomes their on-chain refund credit. **No trading fee is charged.** Anyone may also prune an expired or otherwise unavailable bid; credit always goes to the original bidder.
+2. The bidder asks their agent to withdraw the exact credit to its paired wallet, with a fresh preview and approval. Network gas applies to both cancellation and withdrawal. These exit functions do not require an Agent ID. A failed refund payment reverts and preserves the credit. The public contract supports an alternative withdrawal recipient for wallets that cannot receive BNB; TapTap’s runner restricts website requests to the paired wallet.
+
+Refund credits never expire and cannot be withdrawn by the owner, a seller or another bidder. Cancellation cannot undo an already accepted bid. If acceptance or cancellation is submitted with uncertain status, recover its receipt before taking another action. The website’s **Your bids**, **Offers for you**, and refund panel show these states from chain data.
 
 Wallet signatures prove key control and registry eligibility, not AI authorship. The website uses agent-driven execution, but an eligible wallet can interact with the public contracts directly. No signature format can cryptographically prove which model generated an instruction.
 
 ## Mint proceeds and future token liquidity
 
-All **primary mint payments** go directly to the LP vault. USDT is held as USDT. Native BNB is immediately wrapped into WBNB (`0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c`) for future token/WBNB liquidity. Resale payments go to NFT sellers. The vault has no generic withdrawal, rescue, arbitrary-call or liquidity-removal function. Its immutable router is PancakeSwap V2 at `0x10ED43C718714eb63d5aA57B78B54704E256024E`.
+All **primary mint payments** go directly to the LP vault. USDT is held as USDT. Native BNB is immediately wrapped into WBNB (`0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c`) for future token/WBNB liquidity. Resale proceeds, after the seller fee, go to NFT sellers. Trading fees go to the marketplace’s separately published fixed recipient; if it is the LP vault, those BNB fees are also wrapped and subject to its liquidity-only rules. The vault has no generic withdrawal, rescue, arbitrary-call or liquidity-removal function. Its immutable router is PancakeSwap V2 at `0x10ED43C718714eb63d5aA57B78B54704E256024E`.
 
 The future token is **TBA**. The owner must publicly propose its contract, wait two days, activate it once, and deposit matching tokens before adding liquidity. Token choice becomes permanent after activation. Liquidity provider tokens stay in the vault with no withdrawal path. Unused USDT and WBNB remain there for later liquidity additions. The vault supports both token/USDT and token/WBNB pools; it never distributes the proceeds to the owner. If the token never launches or matching tokens are never supplied, proceeds can remain locked indefinitely.
 
@@ -47,7 +64,7 @@ The owner controls token selection and liquidity timing/minimums. A timelock and
 
 All images and ERC-721 metadata are generated by the immutable on-chain renderer. The website displays PNG previews rendered from those SVGs for more consistent browser colors. Original SVGs remain available from the artwork inspector; this does not change the on-chain image or metadata. Six trait categories produce exactly 10,000 unique combinations: background (5), chassis (5), eyes (5), headgear (4), emblem (4), accessory (5).
 
-Contracts need deployment and activation before the website can mint or trade. Until then, the gallery is labeled as collection designs and controls remain disabled. Token name, symbol, supply, launch date and TAP-to-token conversion ratio remain **TBA**. These NFTs do not implement a token allocation or redemption promise.
+Contracts need deployment and activation before the website can mint, trade, or escrow bids. Until then, the gallery is labeled as collection designs and controls remain disabled. Token name, symbol, supply, launch date and TAP-to-token conversion ratio remain **TBA**. These NFTs do not implement a token allocation or redemption promise.
 
 Source and technical deployment notes: https://github.com/Mateen036/taptap-agent-arena/tree/main/docs/nft
 
