@@ -88,3 +88,7 @@ Browser cancellation and disconnect cancel pre-submission requests only. An in-f
 ## Later LP operation
 
 After token economics are decided, the owner calls `proposeToken`, waits two days, then `activateToken`. Deposit matching token units into the vault and review an owner-signed `addLiquidity` call with explicit desired amounts, nonzero minimums and a deadline of at most 30 minutes. Use `addLiquidity` for token/USDT or `addLiquidityBNB` for token/WBNB. Both asset approvals to the router are cleared after addition. LP tokens remain locked in the vault. These future actions are not part of this NFT deployment approval.
+
+## Website image previews
+
+Gallery, Mint and Market images use `/api/nft/preview/v1/ID.png`, a stateless Node route rendering the original SVG with a bundled monospace font. It returns cached, opaque 560×560 PNGs without session cookies. The original `/api/nft/art/ID.svg`, metadata and Solidity renderer are unchanged. The legacy Worker route redirects these image requests to the public Vercel image service. Explicit browser/OS image-inversion settings can still override any website.

@@ -12,7 +12,7 @@ test("Mint design controls, quantity bounds and persistent motion preference wor
   await expect(page.locator('[data-view="collection"]')).toHaveText(/Mint/);
   await expect(page.locator("#breadcrumb")).toHaveText("Mint");
   await page.getByRole("button", { name: "Preview design 42", exact: true }).click();
-  await expect(page.locator("#mint-feature-image")).toHaveAttribute("src", "/api/nft/art/42.svg");
+  await expect(page.locator("#mint-feature-image")).toHaveAttribute("src", "/api/nft/preview/v1/42.png");
   await expect(
     page.getByRole("button", { name: "Preview design 42", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");

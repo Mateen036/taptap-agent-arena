@@ -202,7 +202,7 @@
     designButtons.forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.mintDesign === String(id))),
     );
-    featureImage.src = "/api/nft/art/" + id + ".svg";
+    featureImage.src = "/api/nft/preview/v1/" + id + ".png";
     featureImage.alt = "Nib collection design " + id;
     document.getElementById("mint-feature-name").textContent =
       "NIB #" + String(id).padStart(5, "0");
