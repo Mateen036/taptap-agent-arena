@@ -1,0 +1,13 @@
+/* Language switch (EN / 中文) and Simplified Chinese typography. */
+.lang-switch{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:2px;gap:2px}
+.lang-switch button{appearance:none;background:transparent;border:0;border-radius:999px;color:#a8ad9f;cursor:pointer;font:500 9px var(--display);letter-spacing:.6px;line-height:1;min-width:34px;padding:6px 9px}
+.lang-switch button:hover{color:var(--text)}
+.lang-switch button:focus-visible{outline:2px solid var(--lime);outline-offset:1px}
+.lang-switch button.active,.lang-switch button[aria-pressed="true"]{background:var(--lime);color:#10110f}
+.lang-switch button[data-lang="zh"]{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",var(--font);letter-spacing:0}
+@media(max-width:700px){.lang-switch button{font-size:8px;min-width:28px;padding:5px 7px}}
+html[lang^="zh"] body,html[lang^="zh"] button,html[lang^="zh"] input,html[lang^="zh"] textarea,html[lang^="zh"] select{font-family:'DM Sans',"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",system-ui,sans-serif}
+html[lang^="zh"] h1,html[lang^="zh"] h2,html[lang^="zh"] h3,html[lang^="zh"] .eyebrow,html[lang^="zh"] .chip,html[lang^="zh"] .breadcrumb,html[lang^="zh"] .stat-label,html[lang^="zh"] .button,html[lang^="zh"] .network-label{font-family:'Space Grotesk',"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",system-ui,sans-serif}
+html[lang^="zh"] *{letter-spacing:normal!important;text-transform:none!important}
+html[lang^="zh"] h1,html[lang^="zh"] h2,html[lang^="zh"] h3{line-height:1.25;word-break:keep-all;overflow-wrap:anywhere}
+html[lang^="zh"] p,html[lang^="zh"] li,html[lang^="zh"] small{line-height:1.75;overflow-wrap:anywhere}

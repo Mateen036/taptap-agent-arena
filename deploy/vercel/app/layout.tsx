@@ -26,16 +26,19 @@ const jsonLd = {
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#11120f" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <link rel="stylesheet" href="/style.css" />
         <link rel="stylesheet" href="/motion.css" />
+        <link rel="stylesheet" href="/i18n.css" />
       </head>
       <body>
         {children}
+        <script src="/i18n-dict.js" defer />
+        <script src="/i18n.js" defer />
         <script src="/app.js" defer />
         <script src="/nft.js" defer />
         <script src="/utility.js" defer />
