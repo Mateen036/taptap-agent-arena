@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 const headers={'x-taptap-test':'local-browser-fixture'};
 const fixture=async(request:any,path:string,data:any={})=>{const r=await request.post('/__test/'+path,{headers,data,timeout:60000});expect(r.ok()).toBeTruthy();return r.json();};
+test.afterEach(async({request})=>{await fixture(request,'nft/stop');});
 test('collection bids stay hidden until the contract is configured, then place, list and cancel through the market tab',async({page,request})=>{
  test.setTimeout(150000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await fixture(request,'nft/start');await page.goto('/#marketplace');await expect(page.locator('#nft-listings')).toBeVisible();await page.waitForTimeout(1500);

@@ -29,6 +29,7 @@ const server=http.createServer(async(req,res)=>{
   else if(url.pathname==='/__test/nft/start'){
    if(!nftFixture)nftFixture=await nftChain();env.NFT_RPC_URL=nftFixture.rpc;env.NFT_COLLECTION=nftFixture.collection;env.NFT_MARKETPLACE=nftFixture.market;env.NFT_LP_VAULT=nftFixture.vault;if(b.collectionBids){const art=JSON.parse(fs.readFileSync('artifacts/NibCollectionBids.json','utf8'));env.NFT_COLLECTION_BIDS=await nftFixture.deploy(art,[nftFixture.collection,'0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F',nftFixture.vault]);}result={ready:true};
   }
+  else if(url.pathname==='/__test/nft/stop'){for(const k of ['NFT_RPC_URL','NFT_COLLECTION','NFT_MARKETPLACE','NFT_LP_VAULT','NFT_COLLECTION_BIDS'])delete (env as any)[k];result={stopped:true};}
   else if(url.pathname==='/__test/utility/activate'){
    if(!nftFixture)throw Error('Start real local NFT chain first');
    env.NFT_GAME_UTILITY='true';await db.prepare("INSERT INTO game_settings(key,value) VALUES('nft_utility_v2','active') ON CONFLICT(key) DO UPDATE SET value='active'").run();result={active:true};
