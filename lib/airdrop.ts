@@ -237,14 +237,18 @@ export async function issueVoucher(e:AirdropEnv,a:any,payload:any,now:number){
  const remainingNib:bigint=season.remaining,perNib:bigint=season.pointsPerNib;if(remainingNib===0n||remainingNib*perNib/E18===0n)fail(409,`Airdrop season ${want} pool is empty.`);
  const pending=await first(e,"SELECT * FROM airdrop_conversions WHERE wallet=? AND season=? AND status='pending'",a.wallet,want);
  if(pending)return {reused:true,conversion:voucherView(e,pending as Row)};
- const normalBal=pointBalance(a),rate=season.pointsPerNib;
+ const source=payload?.source;if(source!==undefined&&source!==null&&source!=='bonus'&&source!=='normal'&&source!=='all')fail(400,'source must be "bonus", "normal" or "all".');
+ const bonusOnly=source==='bonus';
+ if(bonusOnly&&want!==1)fail(409,'NFT bonus TAP converts in airdrop season 1 only.');
+ if(bonusOnly&&bonusBalance(a)<=0n)fail(409,'You have no NFT bonus TAP to convert.');
+ const normalBal=bonusOnly?0n:pointBalance(a),rate=season.pointsPerNib;
  // NFT bonus TAP is a separate balance: usable in season 1 only (and only if the holder leaves it on), ignored and forfeited for seasons 2+.
- const bonusAvail=want===1&&payload?.useBonus!==false?bonusBalance(a):0n,balance=normalBal+bonusAvail,all=payload?.points===undefined||payload?.points===null||payload.points==='all';
+ const bonusAvail=want===1&&payload?.useBonus!==false&&source!=='normal'?bonusBalance(a):0n,balance=normalBal+bonusAvail,all=payload?.points===undefined||payload?.points===null||payload.points==='all';
  let points:bigint;
  if(all)points=balance;
  else{try{points=exactPoints(typeof payload.points==='string'?payload.points:Number(payload.points));}catch{return fail(400,'Enter a whole number of TAP points.');}}
  if(points<=0n)fail(400,'Enter a positive number of TAP points.');
- if(points>balance)fail(409,want===1?'You do not have that many TAP points (normal plus NFT bonus).':'You do not have that many TAP points. NFT bonus TAP cannot be converted after season 1.');
+ if(points>balance)fail(409,bonusOnly?'You do not have that many NFT bonus TAP.':want===1?'You do not have that many TAP points (normal plus NFT bonus).':'You do not have that many TAP points. NFT bonus TAP cannot be converted after season 1.');
  if(points<rate)fail(400,`Convert at least ${rate} TAP (1 NIB).`);
  // Draw the bonus bucket first, then normal points.
  const bonusPart=points<bonusAvail?points:bonusAvail;let normalPart=points-bonusPart;

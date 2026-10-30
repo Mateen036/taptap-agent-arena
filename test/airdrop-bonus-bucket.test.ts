@@ -117,3 +117,21 @@ for(const backend of ['sqlite','postgres'] as const)test(`${backend}: concurrent
   assert.equal(twins.filter(r=>r.status===200).length>=1,true);assert.equal(Number((await db.prepare("SELECT COUNT(*) AS n FROM airdrop_conversions WHERE wallet=? AND status='pending'").bind(twin.wallet).first()).n),1);assert.deepEqual(await t.bal(twin.wallet),{points:0,bonus:0,earned:0});
  }finally{globalThis.fetch=oldFetch;await db.close();await c.close();}
 });
+for(const backend of ['sqlite','postgres'] as const)test(`${backend}: source option issues bonus-only and normal-only vouchers`,async()=>{
+ const signerKey=generatePrivateKey(),db=await databaseFixture(backend),c=await chain(signerKey),oldFetch=globalThis.fetch,t=setup(db,c,signerKey,oldFetch);
+ try{
+  const [a,b,n]=[await t.player('src-a'),await t.player('src-b'),await t.player('src-none')];
+  await c.air('openNextSeason');
+  await t.give(a.wallet,500,3000);await t.give(b.wallet,500,3000);await t.give(n.wallet,900,0);
+  assert.equal((await t.req('airdrop/voucher',{source:'nonsense'},a.user)).status,400);
+  assert.equal((await t.req('airdrop/voucher',{source:'bonus'},n.user)).status,409,'no bonus balance');assert.deepEqual(await t.bal(n.wallet),{points:900,bonus:0,earned:900});
+  assert.equal((await t.req('airdrop/voucher',{source:'bonus',points:3001},a.user)).status,409,'cannot exceed the bonus balance');assert.deepEqual(await t.bal(a.wallet),{points:500,bonus:3000,earned:500});
+  const part=await t.req('airdrop/voucher',{source:'bonus',points:1000},a.user);assert.equal(part.status,200,JSON.stringify(part.body));assert.equal(part.body.conversion.points,'1000');assert.equal(part.body.conversion.bonusPoints,'1000');assert.equal(part.body.conversion.normalPoints,'0');
+  assert.deepEqual(await t.bal(a.wallet),{points:500,bonus:2000,earned:500},'normal TAP untouched');
+  const all=await t.req('airdrop/voucher',{source:'bonus'},b.user);assert.equal(all.status,200,JSON.stringify(all.body));assert.equal(all.body.conversion.points,'3000');assert.equal(all.body.conversion.bonusPoints,'3000');assert.deepEqual(await t.bal(b.wallet),{points:500,bonus:0,earned:500});
+  await db.prepare('UPDATE airdrop_conversions SET deadline=1 WHERE id=?').bind(all.body.conversion.id).run();await t.req('airdrop',undefined,b.user);assert.deepEqual(await t.bal(b.wallet),{points:500,bonus:3000,earned:500},'an expired bonus voucher returns to the bonus balance');
+  const norm=await t.req('airdrop/voucher',{source:'normal'},b.user);assert.equal(norm.status,200,JSON.stringify(norm.body));assert.equal(norm.body.conversion.points,'500');assert.equal(norm.body.conversion.bonusPoints,'0');assert.deepEqual(await t.bal(b.wallet),{points:0,bonus:3000,earned:500});
+  await c.air('endSeason');await c.air('openNextSeason');
+  assert.equal((await t.req('airdrop/voucher',{source:'bonus',season:2},a.user)).status,409,'bonus converts in season 1 only');
+ }finally{globalThis.fetch=oldFetch;await db.close();await c.close();}
+});

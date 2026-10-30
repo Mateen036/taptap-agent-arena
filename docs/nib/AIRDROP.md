@@ -50,7 +50,7 @@ One-time 10,000 NIB per Nib NFT token id, credited as 100,000 **bonus TAP** (10 
 
 ### Separate bonus balance (`agents.bonus_points`)
 - Bonus TAP lives in `agents.bonus_points`, not `points` or `earned`: it is not spendable in-game and never counts toward rankings.
-- It converts to NIB in **season 1 only**. Season 1 vouchers draw bonus first, then normal TAP (`useBonus:false` opts out). Vouchers for seasons 2+ ignore it, so it is forfeited once season 1 ends. The UI and status API say so (`user.bonusForfeited`, `nftBonus.convertsInSeasons`).
+- It converts to NIB in **season 1 only**. Season 1 vouchers draw bonus first, then normal TAP (`useBonus:false` or `source:"normal"` opts out; `source:"bonus"` converts only the bonus balance and is the website NFT Bonus section). Vouchers for seasons 2+ ignore it, so it is forfeited once season 1 ends. The UI and status API say so (`user.bonusForfeited`, `nftBonus.convertsInSeasons`).
 - On-chain accounting is unchanged: the voucher's `cumulativePoints = convertedPoints + bonus part + normal part`. `airdrop_conversions.delta_points` is the total and `airdrop_conversions.bonus_points` records the share drawn from the bonus bucket.
 - Refunds go back to the bucket they came from: an expired or released voucher returns exactly what each bucket gave; a partial fill returns the unpaid amount split pro rata (`floor(refund * bonus / total)` to bonus, the rest to normal). The bonus share of a partial fill after season 1 has ended is returned to the balance but is still forfeited.
 - Migration `0010_nft_bonus_balance` adds the columns and moves any bonus that had been credited to `points` for wallets with `nft_bonus_claims` rows (capped at the wallet's current balance) into `bonus_points`.
