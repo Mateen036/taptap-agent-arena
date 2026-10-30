@@ -96,7 +96,7 @@ Gallery, Mint and Market images use `/api/nft/preview/v2/ID.png`, a stateless No
 
 ## Marketplace fee and bid release
 
-Buyer fee: 200 bps added to base price. Seller fee: 200 bps deducted from base price. Each rounds down to wei. The immutable recipient gets their sum at settlement. The default unsigned plan directs fees to the LP vault; a treasury can be selected before any deployment. The recipient must be chosen and reviewed before mainnet execution.
+Buyer fee: 200 bps added to base price. Seller fee: 200 bps deducted from base price. Each rounds down to wei. The immutable recipient gets their sum at settlement. The user selected the connected agent wallet `0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d` as the trading-fee treasury. The current unsigned plan fixes fees to that address. Use `--fee-recipient 0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d` when planning, previewing and verifying, and set production `NFT_FEE_RECIPIENT` to that same address after deployment verification. The CLI default remains the LP vault for plans without an explicit recipient. Exact mainnet transactions must still be reviewed before execution.
 
 Bids escrow the exact buyer total, bind the current NFT owner, and expire within 30 days. They require no listing or NFT approval to place. Acceptance requires current ownership, both Agent IDs, individual NFT approval, and exact bidder/price/deadline. NFT approval and acceptance use separate browser approvals. Cancellation/pruning credits the full deposit; refund withdrawal is a separate reviewed call, not an automatic expiry action. Refund and cancellation exits have no identity gate. Escrow and refund accounting are independent of trading fee accounting.
 
