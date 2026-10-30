@@ -29,7 +29,7 @@ for(const backend of ['sqlite','postgres'] as const)test(`${backend}: NFT bonus 
  const env:any={DB:db,BSC_RPC_URL:c.rpc,NIB_SIGNER_PRIVATE_KEY:signerKey,NIB_AIRDROP:c.airdrop,NIB_TOKEN:c.token};
  const req=async(path:string,body?:any,user='',e:any=env)=>{clearAirdropCache();const r=await handle(new Request('https://game.test/api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(user?{'oai-authenticated-user-id':user}:{})},body:body?JSON.stringify(body):undefined}),e);return {status:r.status,body:await r.json() as any};};
  async function player(user:string){const account=privateKeyToAccount(generatePrivateKey()),key=privateKeyToAccount(generatePrivateKey());const pair=await req('pair',{},user);const ch=await req('agent/challenge',{pairingCode:pair.body.pairingCode,wallet:account.address,sessionKey:key.address});const s=await req('agent/session',{challengeId:ch.body.challengeId,signature:await account.signTypedData(ch.body.typedData)});assert.equal(s.status,200,JSON.stringify(s.body));let nonce=0;return {wallet:account.address.toLowerCase(),address:account.address,user,async act(action:string,payload:any={}){const envelope={sessionId:s.body.sessionId,nonce,timestamp:Date.now(),action,payload},signature=await key.signTypedData(actionData('https://game.test',envelope) as any);const result=await req('agent/action',{...envelope,signature});if(result.body.nonce!==undefined)nonce=result.body.nonce;return result;}};}
- const agent=(w:string)=>db.prepare('SELECT points,earned FROM agents WHERE wallet=?').bind(w).first<any>();
+ const agent=(w:string)=>db.prepare('SELECT points,earned,bonus_points AS bonus FROM agents WHERE wallet=?').bind(w).first<any>().then(r=>({...r,bonus:Number(r.bonus)}));
  const total=async()=>Number((await db.prepare('SELECT COALESCE(SUM(amount),0) AS t FROM nft_bonus_claims').first<any>()).t);
  const give=(t:number,w:string)=>owners.set(t,w);
  const claim=(p:any)=>req('airdrop/nft-bonus',{},p.user);
@@ -47,31 +47,31 @@ for(const backend of ['sqlite','postgres'] as const)test(`${backend}: NFT bonus 
   const none=await claim(gamma);assert.equal(none.status,403);assert.equal((await agent(gamma.wallet)).points,0);assert.equal(await total(),0);
   // Claim: convertible balance only, earned and rankings untouched.
   const ok=await claim(alpha);assert.equal(ok.status,200,JSON.stringify(ok.body));assert.equal(ok.body.pointsCredited,'200000');assert.deepEqual(ok.body.claimed.map((x:any)=>x.tokenId),[1,2]);assert.equal(ok.body.estimatedNib,parseEther('20000').toString());
-  const a1=await agent(alpha.wallet);assert.equal(a1.points,200000);assert.equal(a1.earned,0,'bonus never counts as earned');
+  const a1=await agent(alpha.wallet);assert.equal(a1.bonus,200000,'credited to the separate bonus balance');assert.equal(a1.points,0,'ordinary points untouched');assert.equal(a1.earned,0,'bonus never counts as earned');
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE wallet=? AND kind='nft-bonus'").bind(alpha.wallet).first<any>()).n,1);
   // Once per token id: claiming again is refused, status shows claimed.
-  const again=await claim(alpha);assert.equal(again.status,409);assert.equal((await agent(alpha.wallet)).points,200000);
+  const again=await claim(alpha);assert.equal(again.status,409);assert.equal((await agent(alpha.wallet)).bonus,200000);
   const st2=await req('airdrop',undefined,alpha.user);assert.deepEqual(st2.body.nftBonus.user.owned.map((x:any)=>x.claimed),[true,true]);assert.equal(st2.body.nftBonus.user.claimableNow,0);assert.equal(st2.body.nftBonus.creditedPoints,'200000');
   // The bonus converts through the normal voucher flow.
-  const v=await req('airdrop/voucher',{},alpha.user);assert.equal(v.status,200,JSON.stringify(v.body));assert.equal(v.body.conversion.points,'200000');assert.equal(v.body.estimatedNib,parseEther('20000').toString());assert.equal((await agent(alpha.wallet)).points,0);
+  const v=await req('airdrop/voucher',{},alpha.user);assert.equal(v.status,200,JSON.stringify(v.body));assert.equal(v.body.conversion.points,'200000');assert.equal(v.body.conversion.bonusPoints,'200000');assert.equal(v.body.conversion.normalPoints,'0');assert.equal(v.body.estimatedNib,parseEther('20000').toString());assert.equal((await agent(alpha.wallet)).bonus,0);assert.equal((await agent(alpha.wallet)).points,0);
   // Transfer then reclaim: token 1 moves to gamma, who cannot claim it again; neither can the new owner of a claimed token via another path.
   give(1,gamma.wallet);const re=await claim(gamma);assert.equal(re.status,409);assert.match(re.body.error,/already claimed/);assert.equal((await agent(gamma.wallet)).points,0);assert.equal(await total(),200000);
   const sold=await req('airdrop',undefined,gamma.user);assert.deepEqual(sold.body.nftBonus.user.owned,[{tokenId:1,claimed:true}]);
   // Signed agent action mirrors the endpoint.
-  const act=await eta.act('airdrop-nft-bonus');assert.equal(act.status,200,JSON.stringify(act.body));assert.equal(act.body.airdrop.pointsCredited,'100000');assert.equal((await agent(eta.wallet)).points,100000);
+  const act=await eta.act('airdrop-nft-bonus');assert.equal(act.status,200,JSON.stringify(act.body));assert.equal(act.body.airdrop.pointsCredited,'100000');assert.equal((await agent(eta.wallet)).bonus,100000);assert.equal((await agent(eta.wallet)).points,0);
   const actState=await eta.act('airdrop-state');assert.equal(actState.body.airdrop.nftBonus.user.claimableNow,0);
   // Race: the same wallet claiming twice at once credits once.
-  const [r1,r2]=await Promise.all([claim(delta),claim(delta)]);assert.deepEqual([r1.status,r2.status].sort(),[200,409]);assert.equal((await agent(delta.wallet)).points,200000);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM nft_bonus_claims WHERE wallet=?').bind(delta.wallet).first<any>()).n,2);
+  const [r1,r2]=await Promise.all([claim(delta),claim(delta)]);assert.deepEqual([r1.status,r2.status].sort(),[200,409]);assert.equal((await agent(delta.wallet)).bonus,200000);assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM nft_bonus_claims WHERE wallet=?').bind(delta.wallet).first<any>()).n,2);
   // Cap: leave room for exactly one token; a two-NFT holder gets one, then the pool reports exhausted.
   const filler=async(roomPoints:bigint)=>{await db.prepare('DELETE FROM nft_bonus_claims WHERE token_id=9999999').run();const t=BigInt(await total());await db.prepare('INSERT INTO nft_bonus_claims(token_id,wallet,agent,amount,claimed_at) VALUES(?,?,?,?,?)').bind(9999999,'0xfiller','filler',Number(NFT_BONUS_CAP_POINTS-roomPoints-t),Date.now()).run();};
   await filler(100000n);
-  const partial=await claim(beta);assert.equal(partial.status,200,JSON.stringify(partial.body));assert.deepEqual(partial.body.claimed.map((x:any)=>x.tokenId),[3]);assert.equal((await agent(beta.wallet)).points,100000);assert.equal(await total(),Number(NFT_BONUS_CAP_POINTS));
-  const full=await claim(beta);assert.equal(full.status,409);assert.match(full.body.error,/exhausted/);assert.equal((await agent(beta.wallet)).points,100000);
+  const partial=await claim(beta);assert.equal(partial.status,200,JSON.stringify(partial.body));assert.deepEqual(partial.body.claimed.map((x:any)=>x.tokenId),[3]);assert.equal((await agent(beta.wallet)).bonus,100000);assert.equal(await total(),Number(NFT_BONUS_CAP_POINTS));
+  const full=await claim(beta);assert.equal(full.status,409);assert.match(full.body.error,/exhausted/);assert.equal((await agent(beta.wallet)).bonus,100000);
   const fs2=await req('airdrop',undefined,beta.user);assert.equal(fs2.body.nftBonus.remainingPoints,'0');assert.equal(fs2.body.nftBonus.available,false);
   // Cross-wallet race for the last slot: exactly one wins and the cap holds.
   await filler(100000n);
   const [e1,e2]=await Promise.all([claim(eps),claim(zeta)]);assert.deepEqual([e1.status,e2.status].sort(),[200,409]);assert.equal(await total(),Number(NFT_BONUS_CAP_POINTS),'cap is never exceeded');
-  assert.equal((await agent(eps.wallet)).points+(await agent(zeta.wallet)).points,100000);
+  assert.equal((await agent(eps.wallet)).bonus+(await agent(zeta.wallet)).bonus,100000);
   // Season 1 ended: no more claims.
   await filler(1_000_000n);await c.air('endSeason');
   const late=await claim(theta);assert.equal(late.status,409);assert.match(late.body.error,/season 1 is open/);assert.equal((await agent(theta.wallet)).points,0);

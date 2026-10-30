@@ -1,6 +1,7 @@
 'use strict';
 (()=>{
- let status=null,loading=false,busy=false,bonusBusy=false,last=0,timer=null,amount='';
+ let status=null,loading=false,busy=false,bonusBusy=false,last=0,timer=null,amount='',useBonus=true;
+ const maxPts=u=>useBonus?u.convertible:(u.normalConvertible??u.convertible);
  const active=()=>viewName==='convert';
  const nib=wei=>{try{const v=BigInt(wei||0),whole=v/10n**18n,frac=(v%10n**18n).toString().padStart(18,'0').slice(0,4).replace(/0+$/,'');return whole.toLocaleString('en-US')+(frac?'.'+frac:'');}catch{return '0';}};
  const link=(a,label)=>`<a class="text-button" href="https://bscscan.com/address/${encodeURIComponent(a)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`;
@@ -12,7 +13,7 @@
  }
  function pendingBlock(p){
   const claim=JSON.stringify({voucher:p.voucher,signature:p.signature},null,2);
-  return `<div class="notice" role="status"><strong>Voucher ready: ${esc(fmt(p.points))} TAP → claim before <span id="convert-clock">${esc(countdown(p.expiresAt))}</span></strong><p>Your agent must submit the claim from its wallet within 15 minutes. If it expires unclaimed, your TAP is returned automatically.</p></div>
+  return `<div class="notice" role="status"><strong>Voucher ready: ${esc(fmt(p.points))} TAP → claim before <span id="convert-clock">${esc(countdown(p.expiresAt))}</span></strong>${p.bonusPoints&&p.bonusPoints!=='0'?`<p class="tiny muted">${esc(fmt(p.normalPoints))} normal TAP + ${esc(fmt(p.bonusPoints))} NFT bonus TAP.</p>`:''}<p>Your agent must submit the claim from its wallet within 15 minutes. If it expires unclaimed, your TAP is returned automatically.</p></div>
   <button class="button primary full" id="convert-copy-prompt">Copy instruction for my agent ↗</button>
   <details><summary>Voucher and calldata (for agents)</summary><label class="tiny muted">Contract call</label><textarea class="pair-prompt" readonly aria-label="Claim transaction">${esc(JSON.stringify(p.transaction,null,2))}</textarea><label class="tiny muted">Signed voucher</label><textarea class="pair-prompt" readonly aria-label="Signed voucher">${esc(claim)}</textarea></details>`;
  }
@@ -23,7 +24,7 @@
   $('#convert-pool-caption').textContent=open?'of '+nib(s.pool)+' NIB · Season '+s.season+' · first come, first served':status.message;
   $('#convert-rate').innerHTML=open?esc(fmt(s.pointsPerNib))+' <small>TAP = 1 NIB</small>':'10 <small>TAP = 1 NIB</small>';
   $('#convert-mine').innerHTML=u?esc(fmt(u.balance))+' <small>TAP</small>':'—';
-  $('#convert-mine-caption').textContent=u?(u.estimatedNib!=='0'?'≈ '+nib(u.estimatedNib)+' NIB at the current rate':'Your TAP balance'):'Connect your agent to see your balance';
+  $('#convert-mine-caption').textContent=u?(u.bonusBalance&&u.bonusBalance!=='0'?'Normal TAP. Your NFT bonus ('+fmt(u.bonusBalance)+' TAP) is a separate balance below. ':'')+(u.estimatedNib!=='0'?'≈ '+nib(u.estimatedNib)+' NIB convertible now':'Your TAP balance'):'Connect your agent to see your balance';
   if(!u){root.innerHTML=`<p>${esc(status.message)}</p><button class="button primary" id="convert-connect">Connect agent</button>`;return;}
   const pending=u.pending;
   let html='';
@@ -31,11 +32,11 @@
   else if(!u.canConvert)html+=`<div class="notice error" role="status">${esc(u.access?.status==='nft_required'?'Hold at least one Nib NFT to convert TAP.':u.access?.status==='identity_required'?'This wallet must hold a Binance Agent ID to convert.':'Conversion is not available for this wallet right now.')}</div>`;
   if(pending)html+=pendingBlock(pending);
   else if(open&&u.canConvert){
-   html+=`<form id="convert-form" class="convert-form"><label for="convert-amount">TAP to convert</label><div class="convert-row"><input id="convert-amount" inputmode="numeric" autocomplete="off" placeholder="${esc(fmt(u.convertible))}" value="${esc(amount)}" aria-describedby="convert-estimate"><button type="button" class="button secondary" id="convert-max">Max</button></div><p id="convert-estimate" class="tiny muted"></p><button class="button primary full" id="convert-submit" ${busy?'disabled':''}>Get claim voucher</button></form>`;
+   html+=`<form id="convert-form" class="convert-form"><label for="convert-amount">TAP to convert</label>${u.bonusBalance&&u.bonusBalance!=='0'&&u.bonusConvertible!=='0'?`<label class="check"><input type="checkbox" id="convert-use-bonus" ${useBonus?'checked':''}> Include my NFT bonus TAP (${esc(fmt(u.bonusBalance))}). Season 1 only; it is used first.</label>`:''}<div class="convert-row"><input id="convert-amount" inputmode="numeric" autocomplete="off" placeholder="${esc(fmt(maxPts(u)))}" value="${esc(amount)}" aria-describedby="convert-estimate"><button type="button" class="button secondary" id="convert-max">Max</button></div><p id="convert-estimate" class="tiny muted"></p><button class="button primary full" id="convert-submit" ${busy?'disabled':''}>Get claim voucher</button></form>`;
   }
   html+=bonusBlock(status.nftBonus);
   html+=`<p class="tiny muted">Contracts: ${link(status.airdrop,'Airdrop '+short(status.airdrop))} · ${link(status.token,'NIB '+short(status.token))}. TAP is deducted when the voucher is issued and returned if it expires or the pool runs short.</p>`;
-  if(u.history?.length)html+=`<h3>Recent conversions</h3><div class="table">${u.history.map(h=>`<div class="row"><span>Season ${esc(h.season)}</span><span>${esc(fmt(h.points))} TAP</span><span>${esc(h.status)}${h.status==='settled'&&h.refundPoints&&h.refundPoints!=='0'?' · '+esc(fmt(h.refundPoints))+' TAP refunded':''}${h.status==='released'?' · TAP returned':''}</span></div>`).join('')}</div>`;
+  if(u.history?.length)html+=`<h3>Recent conversions</h3><div class="table">${u.history.map(h=>`<div class="row"><span>Season ${esc(h.season)}</span><span>${esc(fmt(h.points))} TAP${h.bonusPoints&&h.bonusPoints!=='0'?' ('+esc(fmt(h.bonusPoints))+' bonus)':''}</span><span>${esc(h.status)}${h.status==='settled'&&h.refundPoints&&h.refundPoints!=='0'?' · '+esc(fmt(h.refundPoints))+' TAP refunded':''}${h.status==='released'?' · TAP returned':''}</span></div>`).join('')}</div>`;
   root.innerHTML=html;
   estimate();
   if(pending)$('#convert-copy-prompt').onclick=()=>copy(agentPrompt(pending),'Instruction copied. Paste it to your agent.');
@@ -53,28 +54,31 @@
    const can=b.available&&mine.claimableNow>0;
    body+=`<button class="button primary full" id="convert-bonus" ${can&&!bonusBusy?'':'disabled'}>${can?`Claim NFT bonus · ${nib((BigInt(b.nibPerNft)*BigInt(mine.claimableNow)).toString())} NIB`:'Claim NFT bonus'}</button>`;
   }
-  body+=`<p class="tiny muted">Bonus pool left: ${esc(nib(b.remainingNib))} of ${esc(nib(b.capNib))} NIB. Claiming adds convertible TAP only. It does not count toward rankings. Each NFT can be claimed once, ever, even if it is sold.</p>`;
+  if(status.user?.bonusBalance&&status.user.bonusBalance!=='0'){const u2=status.user;body+=u2.bonusForfeited?`<div class="notice error" role="status"><strong>Your ${esc(fmt(u2.bonusBalance))} bonus TAP is forfeited.</strong><p>NFT bonus TAP converts in airdrop season 1 only. Season 1 has ended, so it can no longer be converted.</p></div>`:`<p><b>Your NFT bonus balance: ${esc(fmt(u2.bonusBalance))} TAP</b> (≈ ${esc(nib((BigInt(u2.bonusBalance)*10n**18n/BigInt(status.season?.pointsPerNib||10)).toString()))} NIB). It is separate from your TAP, not spendable in-game and not counted in rankings. It converts in season 1 only: convert it before season 1 ends or it is forfeited.</p>`;}
+  const rv=status.reservedForBonus;if(rv?.enforced)body+=`<p class="tiny muted">Reserved for NFT bonus holders: ${esc(nib(rv.nib))} NIB credited but not yet converted. While season 1 is open, normal conversions cannot dip into it (${esc(fmt(rv.normalCapacityPoints))} normal TAP can still convert now). Bonus conversions can use it.</p>`;
+  body+=`<p class="tiny muted">Bonus pool left: ${esc(nib(b.remainingNib))} of ${esc(nib(b.capNib))} NIB. Claiming credits a separate bonus balance that converts in season 1 only (forfeited afterwards). It is not spendable in-game and does not count toward rankings. Each NFT can be claimed once, ever, even if it is sold.</p>`;
   return `<h3>NFT holder bonus: ${esc(per)} per NFT</h3>`+body;
  }
  async function claimBonus(){
   if(bonusBusy)return;bonusBusy=true;render();
-  try{const r=await api('airdrop/nft-bonus',{});toast('Bonus credited: '+fmt(r.pointsCredited)+' TAP.');await refreshConvert(true);try{await window.refresh();}catch{}}
+  try{const r=await api('airdrop/nft-bonus',{});toast('Bonus credited: '+fmt(r.pointsCredited)+' bonus TAP (season 1 conversion only).');await refreshConvert(true);try{await window.refresh();}catch{}}
   catch(err){toast(err.message);}finally{bonusBusy=false;render();}
  }
  function estimate(){
   const input=$('#convert-amount'),out=$('#convert-estimate');if(!input||!out||!status?.user)return;
   amount=input.value.replace(/[^0-9]/g,'');if(input.value!==amount)input.value=amount;
-  const rate=BigInt(status.season?.pointsPerNib||10),n=BigInt(amount||status.user.convertible||0);
+  const rate=BigInt(status.season?.pointsPerNib||10),n=BigInt(amount||maxPts(status.user)||0);
   out.textContent=n<rate?'Minimum '+rate+' TAP (1 NIB).':'You receive about '+nib(n*10n**18n/rate)+' NIB.';
  }
  async function submit(e){
   e.preventDefault();if(busy)return;busy=true;$('#convert-submit').disabled=true;
-  try{const body=amount?{points:amount}:{};await api('airdrop/voucher',body);amount='';toast('Voucher issued. Hand it to your agent.');await refreshConvert(true);try{await window.refresh();}catch{}}
+  try{const body={...(amount?{points:amount}:{}),...(useBonus?{}:{useBonus:false})};await api('airdrop/voucher',body);amount='';toast('Voucher issued. Hand it to your agent.');await refreshConvert(true);try{await window.refresh();}catch{}}
   catch(err){toast(err.message);}finally{busy=false;render();}
  }
  document.addEventListener('input',e=>{if(e.target.id==='convert-amount')estimate();});
+document.addEventListener('change',e=>{if(e.target.id==='convert-use-bonus'){useBonus=e.target.checked;amount='';render();}});
  document.addEventListener('submit',e=>{if(e.target.id==='convert-form')submit(e);});
- document.addEventListener('click',e=>{if(e.target.closest('#convert-bonus'))claimBonus();if(e.target.closest('#convert-connect')&&typeof connect==='function')connect();if(e.target.closest('#convert-max')&&status?.user){amount=String(status.user.convertible);$('#convert-amount').value=amount;estimate();}});
+ document.addEventListener('click',e=>{if(e.target.closest('#convert-bonus'))claimBonus();if(e.target.closest('#convert-connect')&&typeof connect==='function')connect();if(e.target.closest('#convert-max')&&status?.user){amount=String(maxPts(status.user));$('#convert-amount').value=amount;estimate();}});
  window.addEventListener('taptap:view',()=>{if(active()){refreshConvert(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden){refreshConvert();const c=$('#convert-clock');if(c&&status?.user?.pending)c.textContent=countdown(status.user.pending.expiresAt);}},1000);}});
  window.addEventListener('taptap:state',()=>{if(active())refreshConvert(false);});
  if(active())refreshConvert(true);

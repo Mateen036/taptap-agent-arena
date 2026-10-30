@@ -57,12 +57,14 @@ export async function chainSnapshot(e:AirdropEnv,now:number,fresh=false){
  const value={currentSeason:Number(current),paused,seasons,open:seasons.find((s:ChainSeason)=>s.season===Number(current)&&s.status==='open')||null};
  cache.set(key,{at:now,value});return value;
 }
-type Row={id:string;wallet:string;season:number;delta_points:string;cumulative_points:string;base_converted:string;deadline:number;status:string;paid_points:string|null;refund_points:string|null;signature:string;created_at:number;settled_at:number|null};
+type Row={id:string;wallet:string;season:number;delta_points:string;bonus_points?:string;cumulative_points:string;base_converted:string;deadline:number;status:string;paid_points:string|null;refund_points:string|null;signature:string;created_at:number;settled_at:number|null};
 const exactOn=async(e:AirdropEnv)=>(await utilityPolicy(e)).active;
 /** Atomic agent balance change. All statements are guarded by the agent's new last_event, so they apply together or not at all. */
-async function applyPoints(e:AirdropEnv,a:any,exact:boolean,delta:bigint,kind:string,detail:string,extra:any[],now:number,guard?:{sql:string;args:any[]}){
- const next=pointBalance(a)+delta;if(next<0n)fail(409,'Not enough TAP points.');
- const fields=pointFields(next,earnedBalance(a),exact),entries=Object.entries(fields),event=crypto.randomUUID();
+const bonusBalance=(a:any)=>{try{return BigInt(a?.bonus_points??'0');}catch{return 0n;}};
+/** Bonus points live in their own column: never spendable in-game, never earned. bonusDelta moves only that bucket. */
+async function applyPoints(e:AirdropEnv,a:any,exact:boolean,delta:bigint,kind:string,detail:string,extra:any[],now:number,guard?:{sql:string;args:any[]},bonusDelta:bigint=0n){
+ const next=pointBalance(a)+delta,nextBonus=bonusBalance(a)+bonusDelta;if(next<0n||nextBonus<0n)fail(409,'Not enough TAP points.');
+ const fields:Record<string,any>={...pointFields(next,earnedBalance(a),exact),bonus_points:nextBonus.toString()},entries=Object.entries(fields),event=crypto.randomUUID();
  const res=await e.DB.batch([
   q(e,`UPDATE agents SET ${entries.map(([k])=>`${k}=?`).join(',')},version=version+1,last_event=? WHERE wallet=? AND version=?${guard?' AND '+guard.sql:''}`,...entries.map(([,v])=>v),event,a.wallet,a.version,...(guard?.args||[])),
   exact?q(e,'INSERT INTO ledger(id,wallet,kind,delta,delta_exact,detail,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',event,a.wallet,kind,legacyPoints(delta),delta.toString(),detail,now,a.wallet,event):q(e,'INSERT INTO ledger(id,wallet,kind,delta,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',event,a.wallet,kind,Number(delta),detail,now,a.wallet,event),
@@ -80,6 +82,8 @@ export function resolve(row:Pick<Row,'delta_points'|'base_converted'|'deadline'>
  if(!closed)return null;
  return {status:paid>0n?'settled':'released',paid,refund:delta-paid};
 }
+/** Bonus part of a refund. Proportional to how much of the voucher came from the bonus bucket; a full release returns it exactly. */
+export function refundBonus(row:Pick<Row,'delta_points'|'bonus_points'>,refund:bigint){const delta=BigInt(row.delta_points),bonus=BigInt(row.bonus_points??'0');return delta===0n||bonus===0n?0n:refund>=delta?bonus:refund*bonus/delta;}
 async function settleRow(e:AirdropEnv,row:Row,res:NonNullable<Resolution>,now:number){
  const mark=(event?:string)=>q(e,"UPDATE airdrop_conversions SET status=?,paid_points=?,refund_points=?,settled_at=? WHERE id=? AND status='pending'"+(event?' AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)':''),...[res.status,res.paid.toString(),res.refund.toString(),now,row.id,...(event?[row.wallet,event]:[])]);
  if(res.refund===0n){await mark().run();return;}
@@ -87,17 +91,19 @@ async function settleRow(e:AirdropEnv,row:Row,res:NonNullable<Resolution>,now:nu
   const a=await first(e,'SELECT * FROM agents WHERE wallet=?',row.wallet);
   if(!a){await mark().run();return;}
   try{
-   await applyPoints(e,a,await exactOn(e),res.refund,'convert-refund',res.status==='released'?'NIB conversion expired unclaimed · points returned':'NIB conversion partly filled · unpaid points returned',[(event:string)=>mark(event)],now,{sql:"EXISTS(SELECT 1 FROM airdrop_conversions WHERE id=? AND status='pending')",args:[row.id]});
+   // Return points to the bucket they came from: bonus share pro rata (exact on a full release), the rest to ordinary points.
+   const bonusRefund=refundBonus(row,res.refund);
+   await applyPoints(e,a,await exactOn(e),res.refund-bonusRefund,'convert-refund',(res.status==='released'?'NIB conversion expired unclaimed · points returned':'NIB conversion partly filled · unpaid points returned')+(bonusRefund>0n?` (${bonusRefund} NFT bonus)`:''),[(event:string)=>mark(event)],now,{sql:"EXISTS(SELECT 1 FROM airdrop_conversions WHERE id=? AND status='pending')",args:[row.id]},bonusRefund);
    return;
   }catch(err){if(attempt===2||!(err instanceof AirdropError)||err.status!==409)throw err;}
  }
 }
 /** Re-read on-chain convertedPoints and settle or refund any pending vouchers (all wallets when wallet is omitted, bounded). */
-export async function reconcile(e:AirdropEnv,now:number,wallet?:string){
+export async function reconcile(e:AirdropEnv,now:number,wallet?:string,season?:number){
  const c=client(e),{airdrop}=addresses(e);
  // Read chain time first: any claim mined before it is visible to the convertedPoints reads that follow.
  let chainTime:number;try{chainTime=Number((await c.getBlock()).timestamp);}catch{return 0;}// unreadable chain: change nothing
- const pending=wallet?await rows(e,"SELECT * FROM airdrop_conversions WHERE wallet=? AND status='pending'",wallet):await rows(e,"SELECT * FROM airdrop_conversions WHERE status='pending' AND deadline<? ORDER BY created_at ASC LIMIT 20",chainTime);
+ const pending=wallet?await rows(e,"SELECT * FROM airdrop_conversions WHERE wallet=? AND status='pending'",wallet):season?await rows(e,"SELECT * FROM airdrop_conversions WHERE status='pending' AND season=? ORDER BY created_at ASC LIMIT 50",season):await rows(e,"SELECT * FROM airdrop_conversions WHERE status='pending' AND deadline<? ORDER BY created_at ASC LIMIT 20",chainTime);
  let settled=0;
  for(const row of pending as Row[]){
   try{
@@ -112,10 +118,10 @@ const signerAccount=(e:AirdropEnv)=>{const k=e.NIB_SIGNER_PRIVATE_KEY;if(!k||!/^
 const voucherView=(e:AirdropEnv,row:Row)=>{
  const {airdrop}=addresses(e),message={wallet:row.wallet,season:String(row.season),cumulativePoints:row.cumulative_points,deadline:String(row.deadline),voucherId:row.id};
  const data=encodeFunctionData({abi:airdropAbi,functionName:'claim',args:[{wallet:row.wallet as `0x${string}`,season:BigInt(row.season),cumulativePoints:BigInt(row.cumulative_points),deadline:BigInt(row.deadline),voucherId:row.id as `0x${string}`},row.signature as `0x${string}`]});
- return {id:row.id,status:row.status,season:row.season,points:row.delta_points,voucher:message,signature:row.signature,deadline:row.deadline,expiresAt:row.deadline*1000,transaction:{chainId:56,from:row.wallet,to:airdrop,value:'0',data},
+ return {id:row.id,status:row.status,season:row.season,points:row.delta_points,bonusPoints:row.bonus_points??'0',normalPoints:(BigInt(row.delta_points)-BigInt(row.bonus_points??'0')).toString(),voucher:message,signature:row.signature,deadline:row.deadline,expiresAt:row.deadline*1000,transaction:{chainId:56,from:row.wallet,to:airdrop,value:'0',data},
   baw:`baw contract-call preview --binanceChainId 56 --from ${row.wallet} --to ${airdrop} --value 0 --inputData ${data} --json`};
 };
-const toRowView=(r:Row)=>({id:r.id,season:r.season,points:r.delta_points,status:r.status,paidPoints:r.paid_points,refundPoints:r.refund_points,createdAt:r.created_at,settledAt:r.settled_at,deadline:r.deadline});
+const toRowView=(r:Row)=>({id:r.id,season:r.season,points:r.delta_points,bonusPoints:r.bonus_points??'0',status:r.status,paidPoints:r.paid_points,refundPoints:r.refund_points,createdAt:r.created_at,settledAt:r.settled_at,deadline:r.deadline});
 const num=(v:bigint)=>v.toString();
 const seasonView=(s:ChainSeason)=>({season:s.season,status:s.status,allocation:num(s.allocation),pool:num(s.pool),paid:num(s.paid),remaining:num(s.remaining),pointsPerNib:num(s.pointsPerNib)});
 /** GET status. The user section appears only for a connected agent. */
@@ -125,10 +131,15 @@ export async function airdropStatus(e:AirdropEnv,a:any|null,now:number){
  const chain=await chainSnapshot(e,now),addr=addresses(e),open=chain.open;
  const out:any={chainId:56,airdrop:addr.airdrop,token:addr.token,tokenSymbol:'NIB',pointsPerNibDefault:10,paused:chain.paused,currentSeason:chain.currentSeason,open:!!open&&!chain.paused,season:open?seasonView(open):null,seasons:chain.seasons.map(seasonView),
   message:chain.paused?'Conversions are paused.':open?`Season ${open.season} is open, ${open.pointsPerNib.toString()} TAP = 1 NIB, first come first served.`:chain.currentSeason===0?'No airdrop season is open yet.':`Season ${chain.currentSeason} has ended. The next season has not opened yet.`};
+ try{
+  const s1=chain.seasons.find((s:ChainSeason)=>s.season===1),l=await bonusLiability(e),v=reserveView(s1,l),r=s1?.pointsPerNib||10n;
+  out.reservedForBonus={appliesToSeason:1,active:v.active,enforced:v.enforced,points:v.reserved.toString(),nib:(v.reserved*E18/r).toString(),bonusBalancesPoints:l.balances.toString(),pendingBonusPoints:l.pendingBonus.toString(),pendingNormalPoints:l.pendingNormal.toString(),normalCapacityPoints:v.capacity.toString(),normalCapacityNib:(v.capacity*E18/r).toString(),message:v.active?'While season 1 is open, normal conversions cannot push the remaining pool below the NFT bonus that holders have been credited but not yet converted. Bonus conversions can use the reserve.':'No reserve applies: season 1 is not open.'};
+ }catch{out.reservedForBonus=null;}
  if(a?.connected){
   const access=await gameAccessSnapshot(e,a.wallet),balance=pointBalance(a),pending=await first(e,"SELECT * FROM airdrop_conversions WHERE wallet=? AND status='pending'",a.wallet),history=await rows(e,'SELECT * FROM airdrop_conversions WHERE wallet=? ORDER BY created_at DESC LIMIT 10',a.wallet);
-  const rate=open?.pointsPerNib;
-  out.user={wallet:a.wallet,balance:balance.toString(),canConvert:access.canPlay===true&&!!open&&!chain.paused,access:{status:access.status,canPlay:access.canPlay},convertible:open&&access.canPlay?balance.toString():'0',estimatedNib:open&&rate?(balance*E18/rate).toString():'0',minPoints:rate?rate.toString():null,pending:pending?voucherView(e,pending as Row):null,history:history.map(r=>toRowView(r as Row))};
+  const rate=open?.pointsPerNib,bonus=bonusBalance(a),inS1=open?.season===1,canUse=!!open&&access.canPlay===true&&!chain.paused;
+  const bonusConvertible=canUse&&inS1?bonus:0n,normalConvertible=canUse?(inS1&&out.reservedForBonus?.enforced&&BigInt(out.reservedForBonus.normalCapacityPoints)<balance?BigInt(out.reservedForBonus.normalCapacityPoints):balance):0n,convertible=normalConvertible+bonusConvertible;
+  out.user={wallet:a.wallet,balance:balance.toString(),bonusBalance:bonus.toString(),bonusConvertible:bonusConvertible.toString(),bonusForfeited:bonus>0n&&!inS1&&(chain.currentSeason>1||chain.seasons[0]?.status==='ended'),bonusNote:'NFT bonus TAP is a separate balance. It converts to NIB in airdrop season 1 only and is ignored (forfeited) for seasons 2 and later.',canConvert:canUse,access:{status:access.status,canPlay:access.canPlay},normalConvertible:normalConvertible.toString(),convertible:convertible.toString(),estimatedNib:rate?(convertible*E18/rate).toString():'0',minPoints:rate?rate.toString():null,pending:pending?voucherView(e,pending as Row):null,history:history.map(r=>toRowView(r as Row))};
  }
  try{out.nftBonus=await nftBonusStatus(e,a,chain);}catch(err){out.nftBonus={available:false,error:err instanceof AirdropError?err.message:'The NFT bonus could not be read right now.'};}
  return out;
@@ -154,12 +165,12 @@ export async function nftBonusStatus(e:AirdropEnv,a:any|null,chain:Awaited<Retur
  const credited=await claimedTotal(e),remaining=NFT_BONUS_CAP_POINTS>credited?NFT_BONUS_CAP_POINTS-credited:0n,rate=chain.seasons[0]?.pointsPerNib||10n;
  const open=chain.currentSeason===1&&chain.seasons[0]?.status==='open'&&!chain.paused;
  const out:any={available:open&&remaining>=NFT_BONUS_POINTS,seasonOpen:open,collection:collectionAddress(e),pointsPerNft:NFT_BONUS_POINTS.toString(),nibPerNft:(NFT_BONUS_POINTS*E18/rate).toString(),capPoints:NFT_BONUS_CAP_POINTS.toString(),capNib:(NFT_BONUS_CAP_POINTS*E18/rate).toString(),creditedPoints:credited.toString(),remainingPoints:remaining.toString(),remainingNib:(remaining*E18/rate).toString(),
-  message:open?'NFT holders get a one-time bonus per NFT (token id), once ever. Bonus TAP is convertible only and does not count toward rankings.':'The NFT bonus can only be claimed while airdrop season 1 is open.'};
+  message:open?'NFT holders get a one-time bonus per NFT (token id), once ever. It goes to a separate bonus balance that converts to NIB in airdrop season 1 only and is forfeited afterwards. It is not spendable in-game and does not count toward rankings.':'The NFT bonus can only be claimed while airdrop season 1 is open.',bucket:'bonus_points',convertsInSeasons:[1],forfeitedAfterSeason:1};
  if(a?.connected){
   const {tokens,truncated}=await ownedTokens(e,a.wallet),claimed=await bonusClaimsFor(e,tokens),unclaimed=tokens.filter(t=>!claimed.has(t));
   const mine=await first(e,'SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM nft_bonus_claims WHERE wallet=?',a.wallet);
   const claimable=open?Math.min(unclaimed.length,Number(remaining/NFT_BONUS_POINTS)):0;
-  out.user={owned:tokens.map(t=>({tokenId:t,claimed:claimed.has(t)})),unclaimedCount:unclaimed.length,claimableNow:claimable,claimablePoints:(NFT_BONUS_POINTS*BigInt(claimable)).toString(),truncated,claimedByWalletPoints:bigSum(mine?.total).toString(),claimedByWalletCount:Number(mine?.n||0)};
+  out.user={bonusBalance:bonusBalance(a).toString(),owned:tokens.map(t=>({tokenId:t,claimed:claimed.has(t)})),unclaimedCount:unclaimed.length,claimableNow:claimable,claimablePoints:(NFT_BONUS_POINTS*BigInt(claimable)).toString(),truncated,claimedByWalletPoints:bigSum(mine?.total).toString(),claimedByWalletCount:Number(mine?.n||0)};
  }
  return out;
 }
@@ -181,8 +192,8 @@ export async function claimNftBonus(e:AirdropEnv,a:any,now:number){
   const take=fresh.slice(0,Number(room<BigInt(fresh.length)?room:BigInt(fresh.length))),total=NFT_BONUS_POINTS*BigInt(take.length);
   const current=await first(e,'SELECT * FROM agents WHERE wallet=?',a.wallet);if(!current)fail(409,'Pair a verified agent first.');
   try{
-   await applyPoints(e,current,exact,total,'nft-bonus',`NFT bonus · token${take.length>1?'s':''} #${take.join(', #')}`,take.map(t=>(event:string)=>q(e,'INSERT INTO nft_bonus_claims(token_id,wallet,agent,amount,claimed_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',t,a.wallet,current.name,Number(NFT_BONUS_POINTS),now,a.wallet,event)),now,
-    {sql:`(SELECT COALESCE(SUM(amount),0) FROM nft_bonus_claims)+? <= ? AND NOT EXISTS(SELECT 1 FROM nft_bonus_claims WHERE token_id IN (${take.map(()=>'?').join(',')}))`,args:[Number(total),Number(NFT_BONUS_CAP_POINTS),...take]});
+   await applyPoints(e,current,exact,0n,'nft-bonus',`NFT bonus +${total} bonus TAP (season 1 conversion only) · token${take.length>1?'s':''} #${take.join(', #')}`,take.map(t=>(event:string)=>q(e,'INSERT INTO nft_bonus_claims(token_id,wallet,agent,amount,claimed_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',t,a.wallet,current.name,Number(NFT_BONUS_POINTS),now,a.wallet,event)),now,
+    {sql:`(SELECT COALESCE(SUM(amount),0) FROM nft_bonus_claims)+? <= ? AND NOT EXISTS(SELECT 1 FROM nft_bonus_claims WHERE token_id IN (${take.map(()=>'?').join(',')}))`,args:[Number(total),Number(NFT_BONUS_CAP_POINTS),...take]},total);
   }catch(err){
    // A concurrent claim of the same token or the last of the pool: the whole batch rolled back or never applied. Re-read and retry, then give up cleanly.
    if(attempt<2)continue;
@@ -190,10 +201,27 @@ export async function claimNftBonus(e:AirdropEnv,a:any,now:number){
    fail(409,'These NFT bonuses were just claimed or the bonus pool filled up. Refresh and check your status.');
   }
   const after=await first(e,'SELECT * FROM agents WHERE wallet=?',a.wallet),rate=chain.seasons[0].pointsPerNib;
-  return {claimed:take.map(t=>({tokenId:t,points:NFT_BONUS_POINTS.toString()})),pointsCredited:total.toString(),estimatedNib:(total*E18/rate).toString(),balance:pointBalance(after).toString(),truncated,message:`Credited ${total} convertible TAP for ${take.length} NFT${take.length>1?'s':''}. Convert it from the Convert panel while season 1 is open.`};
+  return {claimed:take.map(t=>({tokenId:t,points:NFT_BONUS_POINTS.toString()})),pointsCredited:total.toString(),estimatedNib:(total*E18/rate).toString(),balance:pointBalance(after).toString(),bonusBalance:bonusBalance(after).toString(),truncated,message:`Credited ${total} bonus TAP for ${take.length} NFT${take.length>1?'s':''} to your separate bonus balance. It converts to NIB in airdrop season 1 only (alongside your normal TAP) and is forfeited if season 1 ends first. It is not spendable in-game and does not count toward rankings.`};
  }
  return fail(409,'Could not record the NFT bonus. Retry.');
 }
+/** Season 1 NFT-bonus liability, in points: bonus balances not yet converted plus the bonus share of vouchers still pending. */
+type Liability={balances:bigint;pendingBonus:bigint;pendingNormal:bigint};
+async function bonusLiability(e:AirdropEnv):Promise<Liability>{
+ const l=await first(e,"SELECT COALESCE(SUM(CAST(bonus_points AS bigint)),0) AS t FROM agents WHERE bonus_points<>'0'");
+ const p=await first(e,"SELECT COALESCE(SUM(CAST(bonus_points AS bigint)),0) AS b, COALESCE(SUM(CAST(delta_points AS bigint)-CAST(bonus_points AS bigint)),0) AS n FROM airdrop_conversions WHERE season=1 AND status='pending'");
+ return {balances:bigSum(l?.t),pendingBonus:bigSum(p?.b),pendingNormal:bigSum(p?.n)};
+}
+/** Off-chain reservation: while season 1 is open, normal vouchers may not push the on-chain remainder below the bonus liability. Bonus conversions may use the reserve. */
+function reserveView(s1:ChainSeason|undefined,l:Liability){
+ const active=!!s1&&s1.status==='open',remaining=active?s1!.remaining*s1!.pointsPerNib/E18:0n,liability=active?l.balances+l.pendingBonus:0n;
+ const reserved=liability<remaining?liability:remaining,used=active?l.pendingNormal+liability:0n;
+ return {active,enforced:active&&liability>0n,remainingPoints:remaining,liability,reserved,capacity:remaining>used?remaining-used:0n};
+}
+// Same rule, re-evaluated inside the agent UPDATE so concurrent issuers cannot jointly exceed it.
+const PENDING_BONUS="(SELECT COALESCE(SUM(CAST(bonus_points AS bigint)),0) FROM airdrop_conversions WHERE season=1 AND status='pending')",BONUS_BALANCES="(SELECT COALESCE(SUM(CAST(bonus_points AS bigint)),0) FROM agents WHERE bonus_points<>'0')";
+// No bonus outstanding: no reserve, so over-asking stays allowed (the chain partly fills it and the rest is refunded).
+const RESERVE_GUARD=`(${PENDING_BONUS}+${BONUS_BALANCES}=0 OR CAST(? AS bigint)-(SELECT COALESCE(SUM(CAST(delta_points AS bigint)),0) FROM airdrop_conversions WHERE season=1 AND status='pending')-${BONUS_BALANCES}-CAST(? AS bigint)>=0)`;
 /** Issue a voucher. Deducts the points and records the pending conversion in one atomic batch, then returns the signed voucher. */
 export async function issueVoucher(e:AirdropEnv,a:any,payload:any,now:number){
  if(!a||!a.connected)fail(409,'Pair a verified agent first.');
@@ -209,13 +237,26 @@ export async function issueVoucher(e:AirdropEnv,a:any,payload:any,now:number){
  const remainingNib:bigint=season.remaining,perNib:bigint=season.pointsPerNib;if(remainingNib===0n||remainingNib*perNib/E18===0n)fail(409,`Airdrop season ${want} pool is empty.`);
  const pending=await first(e,"SELECT * FROM airdrop_conversions WHERE wallet=? AND season=? AND status='pending'",a.wallet,want);
  if(pending)return {reused:true,conversion:voucherView(e,pending as Row)};
- const balance=pointBalance(a),rate=season.pointsPerNib;
+ const normalBal=pointBalance(a),rate=season.pointsPerNib;
+ // NFT bonus TAP is a separate balance: usable in season 1 only (and only if the holder leaves it on), ignored and forfeited for seasons 2+.
+ const bonusAvail=want===1&&payload?.useBonus!==false?bonusBalance(a):0n,balance=normalBal+bonusAvail,all=payload?.points===undefined||payload?.points===null||payload.points==='all';
  let points:bigint;
- if(payload?.points===undefined||payload?.points===null||payload.points==='all')points=balance;
+ if(all)points=balance;
  else{try{points=exactPoints(typeof payload.points==='string'?payload.points:Number(payload.points));}catch{return fail(400,'Enter a whole number of TAP points.');}}
  if(points<=0n)fail(400,'Enter a positive number of TAP points.');
- if(points>balance)fail(409,'You do not have that many TAP points.');
+ if(points>balance)fail(409,want===1?'You do not have that many TAP points (normal plus NFT bonus).':'You do not have that many TAP points. NFT bonus TAP cannot be converted after season 1.');
  if(points<rate)fail(400,`Convert at least ${rate} TAP (1 NIB).`);
+ // Draw the bonus bucket first, then normal points.
+ const bonusPart=points<bonusAvail?points:bonusAvail;let normalPart=points-bonusPart;
+ const reserveMsg=(cap:bigint)=>`Season 1 capacity is reserved for NFT bonus holders. At most ${cap} normal TAP can convert right now; NFT bonus TAP can still convert.`;
+ if(want===1&&normalPart>0n){
+  await reconcile(e,now,undefined,1).catch(()=>{});// settle claimed/expired season 1 vouchers so the reserve is measured against settled state
+  const view=reserveView(season,await bonusLiability(e));
+  if(view.enforced&&normalPart>view.capacity){
+   if(!all||bonusPart+view.capacity<rate)fail(409,reserveMsg(view.capacity));
+   normalPart=view.capacity;points=bonusPart+normalPart;
+  }
+ }
  const signer=signerAccount(e),c=client(e);
  let onchainSigner:string,base:bigint;
  try{[onchainSigner,base]=await Promise.all([c.readContract({address:addresses(e).airdrop,abi:airdropAbi,functionName:'signer'}),c.readContract({address:addresses(e).airdrop,abi:airdropAbi,functionName:'convertedPoints',args:[BigInt(want),a.wallet as `0x${string}`]})]);}
@@ -225,8 +266,15 @@ export async function issueVoucher(e:AirdropEnv,a:any,payload:any,now:number){
  const signature=await signer.signTypedData({domain:{name:'NibAirdrop',version:'1',chainId:56,verifyingContract:addresses(e).airdrop},types:voucherTypes,primaryType:'Voucher',message:{wallet:a.wallet as `0x${string}`,season:BigInt(want),cumulativePoints:cumulative,deadline:BigInt(deadline),voucherId:id}});
  const exact=access.required===true;
  try{
-  await applyPoints(e,a,exact,-points,'convert',`Converted ${points} TAP to NIB · airdrop season ${want}`,[(event:string)=>q(e,'INSERT INTO airdrop_conversions(id,wallet,season,delta_points,cumulative_points,base_converted,deadline,status,signature,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id,a.wallet,want,points.toString(),cumulative.toString(),base.toString(),deadline,'pending',signature,now,a.wallet,event)],now);
- }catch(err){if(err instanceof AirdropError)throw err;fail(409,'Another conversion is already pending for this wallet and season.');}
+  const guarded=want===1&&normalPart>0n;
+  await applyPoints(e,a,exact,-normalPart,'convert',`Converted ${points} TAP to NIB · airdrop season ${want}`+(bonusPart>0n?` (${bonusPart} NFT bonus + ${normalPart} normal)`:''),[(event:string)=>q(e,'INSERT INTO airdrop_conversions(id,wallet,season,delta_points,bonus_points,cumulative_points,base_converted,deadline,status,signature,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id,a.wallet,want,points.toString(),bonusPart.toString(),cumulative.toString(),base.toString(),deadline,'pending',signature,now,a.wallet,event)],now,
+   guarded?{sql:RESERVE_GUARD,args:[Number(reserveView(season,{balances:0n,pendingBonus:0n,pendingNormal:0n}).remainingPoints),Number(normalPart)]}:undefined,-bonusPart);
+ }catch(err){
+  if(want===1&&normalPart>0n){// a concurrent issuer may have taken the last reserve-free capacity
+   const view=reserveView(season,await bonusLiability(e));if(view.enforced&&normalPart>view.capacity)fail(409,reserveMsg(view.capacity));
+  }
+  if(err instanceof AirdropError)throw err;fail(409,'Another conversion is already pending for this wallet and season.');
+ }
  const row=await first(e,'SELECT * FROM airdrop_conversions WHERE id=?',id);if(!row)fail(409,'Your agent changed during this request. No conversion was recorded; refresh and retry.');
  return {reused:false,conversion:voucherView(e,row as Row),estimatedNib:(points*E18/rate).toString()};
 }
