@@ -18848,6 +18848,10 @@ async function watch() {
     try {
       const r = await action(s, "state"), competition = r.competition;
       if (await processNftIntent(s, r.nft?.intents || [], { action, baw, persist })) continue;
+      if (r.agent?.gameAccess?.required && !r.agent.gameAccess.canPlay) {
+        await wait2(5e3);
+        continue;
+      }
       const job = competition?.jobs.filter((j) => ["queued", "running"].includes(j.status)).sort((a2, b) => a2.created_at - b.created_at)[0];
       if (job) {
         try {

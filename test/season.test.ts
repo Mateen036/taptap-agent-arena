@@ -71,10 +71,10 @@ for(const backend of ['sqlite','postgres'] as const)test(`${backend}: concurrent
   assert.equal(accepted.filter(r=>r.status==='fulfilled').length,1);
   const entries=await db.prepare('SELECT * FROM arena_entries WHERE room_id=?').bind(created.match.id).all<any>();assert.equal(entries.results.length,2);
   await assert.rejects(seasonAction(env,a,'arena-join',{},now),/current arena round/);
-  await db.prepare("INSERT INTO game_settings(key,value) VALUES('season_phase','frozen')").run();
+  await db.prepare("INSERT INTO game_settings(key,value) VALUES('season_phase_v2','frozen')").run();
   now+=20000;await assert.rejects(seasonAction(env,a,'arena-tap',{entryId:entries.results.find(e=>e.wallet===a.wallet).id,taps:25},now),/closed/);
   assert.equal(Number((await db.prepare('SELECT SUM(score) AS n FROM arena_entries').first<any>()).n),0);
-  await db.prepare("DELETE FROM game_settings WHERE key='season_phase'").run();
+  await db.prepare("DELETE FROM game_settings WHERE key='season_phase_v2'").run();
   now=Date.parse('2026-10-29T23:59:30Z');await assert.rejects(seasonAction(env,a,'arena-join',{},now),/next daily round/);
   now=Date.parse('2026-10-30T00:00:01Z');const next:any=await seasonAction(env,a,'arena-join',{},now);assert.equal(next.entry.daily_day,'2026-10-30');assert.equal(next.entry.energy,400);
   now+=8*86400000;await assert.rejects(seasonAction(env,a,'duel-create',{},now),/closed/);

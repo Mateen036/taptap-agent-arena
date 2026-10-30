@@ -2472,3 +2472,28 @@ html[data-motion="paused"] .mascot-float,
 html[data-motion="paused"] .mint-feature {
   will-change: auto;
 }
+
+/* NFT access and exact TAP utility */
+.utility-access { display:flex; align-items:center; gap:20px; padding:24px 28px; margin:0 0 28px; border:1px solid var(--accent,#c7f77d); border-radius:20px; background:#1f251a; }
+.utility-access[hidden] { display:none; }
+.utility-access>div { flex:1; min-width:0; }
+.utility-access strong { font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
+.utility-access p { color:#b8beb0; font-size:14px; margin:6px 0; }
+.utility-access small { color:#929b89; font-size:11px; }
+.utility-symbol { font-size:42px; color:#c7f77d; }
+.utility-access.unlocked { border-color:#3b4b30; }
+.utility-panel { display:grid; grid-template-columns:1.1fr 1fr; gap:56px; margin:32px 0; padding:40px; overflow:hidden; background:radial-gradient(ellipse at 100% 0%,#32412455,transparent 65%),#191c16; }
+.utility-copy h2 { font-size:clamp(30px,3.3vw,48px); letter-spacing:-.04em; line-height:1.07; margin:24px 0; }
+.utility-copy p { color:#b4bbaa; line-height:1.7; }
+.utility-calculator { padding:28px; border:1px solid #3b4432; border-radius:16px; min-width:0; }
+.utility-number { display:flex; align-items:center; gap:14px; margin-top:12px; }
+.utility-number input { width:130px; margin:0; }
+.utility-number span { color:#aab39f; font-size:14px; }
+#utility-factor { display:block; color:#c7f77d; font-size:clamp(40px,5vw,72px); letter-spacing:-.06em; font-weight:700; line-height:1.2; margin:22px 0 8px; overflow-wrap:anywhere; }
+#utility-example { color:#bbc4b0; font-size:13px; overflow-wrap:anywhere; }
+.utility-presets { display:flex; gap:8px; margin:24px 0 12px; }
+.utility-presets button { border:1px solid #48523e; color:#bfcab3; border-radius:8px; background:transparent; padding:9px 14px; cursor:pointer; }
+.utility-presets button[aria-pressed="true"] { background:#c7f77d; color:#151a10; border-color:#c7f77d; }
+.exact-amount { overflow-wrap:anywhere; word-break:break-all; min-height:180px; font-size:13px; }
+#view-exact-points { width:fit-content; font-size:11px; }
+@media(max-width:700px) { .utility-access { align-items:flex-start; flex-wrap:wrap; gap:12px; padding:20px; }.utility-symbol { font-size:28px; }.utility-access>div { flex-basis:calc(100% - 45px); }.utility-access>.button { width:100%; }.utility-panel { grid-template-columns:1fr; gap:20px; padding:24px; }.utility-calculator { padding:20px; }.utility-presets { gap:6px; }.utility-presets button { flex:1; padding:9px; } }

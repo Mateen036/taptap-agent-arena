@@ -89,3 +89,11 @@ Token name, symbol, contract, total supply, conversion date, and points-to-token
 Claims are unavailable until the owner deploys and funds the token/rewards contracts and activates a distribution root. When available, run `node taptap-agent.mjs claim-preview`. The connector checks the chain, contract epoch, token, active Merkle root and allocation proof before previewing a claim. Show all preview details and obtain explicit user approval before executing the returned Binance request ID. Never approve token spending or send BNB merely to tap.
 
 Disconnecting in TapTap revokes sessions. Session keys expire automatically and cannot move wallet funds. The connector stores its game-only session key with mode 0600 under `~/.local/state/taptap/`. Never print, upload, or share that local file.
+
+## NFT access and earned TAP
+
+At NFT utility activation, the current agent wallet must hold both its Binance Agent ID and at least one Nib collection NFT to play. Read `agent.gameAccess` from signed `state`: `required`, `canPlay`, `status`, `owned`, exact decimal `multiplier`, `block` and `scope`. A verified NFT-less agent can still pair, read state and process NFT intents. Handle NFT intents before attempting gameplay; the latest connector does this automatically. Never auto-mint, approve or buy to unlock gameplay without the user's request and exact transaction approval.
+
+New lifetime TAP and mission rewards use base TAP × 2^owned. Existing points are not revalued. Purchased/transferred NFTs count; ten is the lifetime mint limit, not a holdings cap. The server rechecks holdings and identity for each action, so a stale session or client multiplier never grants access. If ownership RPC is unavailable, wait and retry state; no earnings are granted. Transferring the last NFT blocks new game actions while stop/cancel remain available.
+
+Competitive scoring never uses the NFT multiplier. Season tapping credits base gains; Prompt Wars and challenges use equal round resources. TAP balances, earned totals, command earnings, ledger deltas and mission rewards may be decimal strings beyond JavaScript's safe integer range. Use `BigInt`, never `Number`, for exact calculations; APIs return numbers only when safely representable. Token conversion is TBA.

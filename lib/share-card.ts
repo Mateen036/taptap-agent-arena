@@ -1,9 +1,10 @@
+import {displayPoints} from './points';
 import {ImageResponse} from 'next/og';
 import {createElement as h} from 'react';
 export function createPublicCard(kind:string,data:any,mascot:string|undefined,fonts:{regular:Buffer,bold:Buffer}){
  let name=kind==='profile'?data.name:kind==='match'?data.creator.name:kind==='season'?'Humans coach. Agents compete.':data.agent.name;
  if(!/^[\x20-\x7e\u00a0-\u024f]+$/.test(String(name)))name='Agent '+String(data.wallet||data.agent?.wallet||data.creator?.wallet||'').slice(0,10);
- const headline=kind==='profile'?Number(data.lifetimeTaps).toLocaleString()+' signed taps':kind==='match'?(data.status==='completed'?'The rivalry has a receipt.':'Your agent. My agent. Two minutes.'):kind==='season'?'Your agent has a job now.':Number(kind==='round'?data.score:data.earned).toLocaleString()+(kind==='round'?' round points':' TAP earned');
+ const headline=kind==='profile'?Number(data.lifetimeTaps).toLocaleString()+' signed taps':kind==='match'?(data.status==='completed'?'The rivalry has a receipt.':'Your agent. My agent. Two minutes.'):kind==='season'?'Your agent has a job now.':displayPoints(kind==='round'?data.score:data.earned)+(kind==='round'?' round points':' TAP earned');
  const label=kind==='profile'?'AGENT PROFILE':kind==='match'?data.status.toUpperCase()+' CHALLENGE':kind==='season'?'SEASON 0 / FIRST CONTACT':'SERVER-CONFIRMED RESULT';
  const detail=kind==='match'?data.players.map((p:any)=>(/^[\x20-\x7e\u00a0-\u024f]+$/.test(p.name)?p.name:'Agent '+p.wallet.slice(0,10))+' '+Number(p.score).toLocaleString()).join('  /  ')||'Equal resources. Signed agent actions.':kind==='season'?'BNB Chain · Agent ID wallets · Token TBA':kind==='profile'?(data.foundingAgent?'FOUNDING 100 · ':'')+'BNB Chain Agent ID holder':Number(kind==='round'?data.taps:data.done).toLocaleString()+' verified taps · '+(kind==='round'?data.rule.name:'Lifetime mission');
  const content=h('div',{style:{display:'flex',position:'relative',width:'100%',height:'100%',background:'#11150e',color:'#f4f4eb',padding:'58px 64px',fontFamily:'DM Sans',overflow:'hidden'}},

@@ -1,0 +1,3 @@
+import {defineConfig} from '@playwright/test';import fs from 'node:fs';
+const executablePath=process.env.TAPTAP_CHROMIUM_PATH||(fs.existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined);
+export default defineConfig({testDir:'./test/browser-utility',fullyParallel:false,workers:1,timeout:120000,retries:0,reporter:[['list']],use:{baseURL:'http://127.0.0.1:4177',headless:true,launchOptions:{executablePath,args:['--no-sandbox']},screenshot:'only-on-failure',trace:'retain-on-failure'},webServer:{command:'npx tsx scripts/browser-server.ts',url:'http://127.0.0.1:4177/api/health',reuseExistingServer:false,env:{TAPTAP_BROWSER_FIXTURE:'1',TAPTAP_TEST_PORT:'4177'},timeout:30000}});
