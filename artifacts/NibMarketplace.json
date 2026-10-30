@@ -410,7 +410,7 @@
   "storageLayout": {
     "storage": [
       {
-        "astId": 6169,
+        "astId": 6190,
         "contract": "NibMarketplace.sol:NibMarketplace",
         "label": "_status",
         "offset": 0,
@@ -455,7 +455,7 @@
         "label": "active",
         "offset": 0,
         "slot": "5",
-        "type": "t_struct(UintSet)7051_storage"
+        "type": "t_struct(UintSet)7072_storage"
       }
     ],
     "types": {
@@ -528,12 +528,12 @@
         ],
         "numberOfBytes": "128"
       },
-      "t_struct(Set)6359_storage": {
+      "t_struct(Set)6380_storage": {
         "encoding": "inplace",
         "label": "struct EnumerableSet.Set",
         "members": [
           {
-            "astId": 6354,
+            "astId": 6375,
             "contract": "NibMarketplace.sol:NibMarketplace",
             "label": "_values",
             "offset": 0,
@@ -541,7 +541,7 @@
             "type": "t_array(t_bytes32)dyn_storage"
           },
           {
-            "astId": 6358,
+            "astId": 6379,
             "contract": "NibMarketplace.sol:NibMarketplace",
             "label": "_positions",
             "offset": 0,
@@ -551,17 +551,17 @@
         ],
         "numberOfBytes": "64"
       },
-      "t_struct(UintSet)7051_storage": {
+      "t_struct(UintSet)7072_storage": {
         "encoding": "inplace",
         "label": "struct EnumerableSet.UintSet",
         "members": [
           {
-            "astId": 7050,
+            "astId": 7071,
             "contract": "NibMarketplace.sol:NibMarketplace",
             "label": "_inner",
             "offset": 0,
             "slot": "0",
-            "type": "t_struct(Set)6359_storage"
+            "type": "t_struct(Set)6380_storage"
           }
         ],
         "numberOfBytes": "64"

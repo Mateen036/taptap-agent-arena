@@ -15,7 +15,7 @@ Live target: https://taptap-agent-arena.vercel.app · Public source: https://git
 
 `npm run check`, `npm test`, `npm run test:browser`, `npm run test:browser:utility`, `npm run test:browser:bnb`, `npm run test:load`, `TAPTAP_LOAD_DB=postgres npm run test:load`, and `npm run build:vercel` verify the release. Browser tests use local synthetic wallets and a mocked identity RPC. Load tests are local single-connection integrity workloads, not production capacity benchmarks. See [verification evidence](docs/verification/README.md) and [owner handoff](docs/launch/HANDOFF.md).
 
-## Nib Foundry NFTs
+## Nib Collection NFTs
 
 10,000 original, fully on-chain robot NFTs. One free first mint per eligible wallet, then one USDT or the $1 equivalent in BNB per NFT, with ten lifetime mints per wallet. Agent ID gates minting and transfers. The zero-fee, noncustodial marketplace settles native BNB and NFT delivery atomically, with no USDT purchase approval. BNB mint quotes use Chainlink BNB/USD, a 1% spending ceiling and automatic refunds of unused BNB. Primary mint proceeds enter an LP-only vault; the future token remains TBA, with a two-day token-selection delay and permanently locked LP tokens.
 

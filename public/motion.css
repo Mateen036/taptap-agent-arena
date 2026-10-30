@@ -946,13 +946,13 @@ dialog::backdrop {
   color: #dfff7008;
   pointer-events: none;
 }
-.foundry-hero {
+.collection-hero {
   grid-template-columns: 1.15fr 1fr;
   gap: 25px;
   margin-bottom: 28px;
   align-items: stretch;
 }
-.foundry-preview.mint-showcase {
+.collection-preview.mint-showcase {
   position: relative;
   top: auto;
   overflow: hidden;
@@ -1036,7 +1036,7 @@ dialog::backdrop {
   background: #182013;
   will-change: transform;
 }
-.foundry-preview .mint-feature > img {
+.collection-preview .mint-feature > img {
   width: 100%;
   height: auto;
   aspect-ratio: 1;
@@ -1059,7 +1059,7 @@ dialog::backdrop {
   letter-spacing: 0.5px;
   color: #8b9e6c;
 }
-.foundry-preview .mint-ghost {
+.collection-preview .mint-ghost {
   position: absolute;
   top: 23%;
   width: 58%;
@@ -1462,7 +1462,7 @@ dialog::backdrop {
   .mint-showcase .mint-card-stack {
     height: 500px;
   }
-  .foundry-preview.mint-showcase {
+  .collection-preview.mint-showcase {
     min-height: 685px;
   }
 }
@@ -1545,10 +1545,10 @@ dialog::backdrop {
     left: 26%;
     font-size: 7px;
   }
-  .foundry-hero {
+  .collection-hero {
     gap: 18px;
   }
-  .foundry-preview.mint-showcase {
+  .collection-preview.mint-showcase {
     min-height: 640px;
     padding: 20px;
   }
@@ -1702,10 +1702,10 @@ dialog::backdrop {
   .stage-index {
     display: none;
   }
-  .foundry-hero {
+  .collection-hero {
     grid-template-columns: 1fr 1fr;
   }
-  .foundry-preview.mint-showcase {
+  .collection-preview.mint-showcase {
     position: relative;
     min-height: 640px;
   }
@@ -2213,11 +2213,11 @@ dialog::backdrop {
     top: 0;
     color: #dfff7005;
   }
-  .foundry-hero {
+  .collection-hero {
     grid-template-columns: 1fr;
     gap: 18px;
   }
-  .foundry-preview.mint-showcase {
+  .collection-preview.mint-showcase {
     min-height: 515px;
     padding: 18px;
     max-width: 520px;
@@ -2241,7 +2241,7 @@ dialog::backdrop {
     left: 8%;
     letter-spacing: -10px;
   }
-  .foundry-preview .mint-ghost {
+  .collection-preview .mint-ghost {
     width: 60%;
     top: 20%;
   }
@@ -2364,7 +2364,7 @@ dialog::backdrop {
   .nft-pagination .button {
     font-size: 10px;
   }
-  .foundry-preview .mint-feature > img {
+  .collection-preview .mint-feature > img {
     max-width: 100%;
   }
 }
@@ -2419,7 +2419,7 @@ dialog::backdrop {
   .agent-signal-card {
     bottom: 40px;
   }
-  .foundry-preview.mint-showcase {
+  .collection-preview.mint-showcase {
     min-height: 475px;
   }
   .mint-card-stack {

@@ -68,7 +68,7 @@ The server verifies the wallet holds SPACE ID Agent ID on BNB Chain at `0x60B926
 
 Tap batches are limited by elapsed server time, agent speed, available energy, and the remaining command target. A heartbeat accrues at most ten seconds of taps. Replays do not earn points. Offline time never generates points. Energy recharges at five units per second while idle. Do not run two connector processes for the same session.
 
-## Nib Foundry minting and marketplace
+## Nib Collection minting and marketplace
 
 Read `/nft-guide.md` before handling NFT actions. The game-only session can coordinate requests; it cannot move wallet funds. The latest `watch` runner separately prepares Binance main-wallet calls only for queued NFT tasks, then waits for the user to review the exact transaction and explicitly approve it in TapTap's transaction desk. Never treat game-session approval as NFT transaction approval.
 

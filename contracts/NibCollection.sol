@@ -18,7 +18,7 @@ interface INibVault { function paymentToken() external view returns (IERC20); }
 
 /// @notice Immutable economics: 10,000 NFTs; first mint per wallet free; ten lifetime mints.
 /// @dev Registry ownership is an eligibility gate. It cannot prove that an AI authored a transaction.
-contract NibFoundry is ERC721Enumerable, Ownable2Step, Pausable, ReentrancyGuard {
+contract NibCollection is ERC721Enumerable, Ownable2Step, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     uint256 public constant MAX_SUPPLY = 10_000;
     uint256 public constant WALLET_LIMIT = 10;
@@ -39,7 +39,7 @@ contract NibFoundry is ERC721Enumerable, Ownable2Step, Pausable, ReentrancyGuard
     event MintAvailability(bool open);
 
     constructor(address registry_, address payment_, address vault_, address renderer_, address owner_, address feed_)
-        ERC721("Nib Foundry", "NIB") Ownable(owner_)
+        ERC721("Nib Collection", "NIB") Ownable(owner_)
     {
         require(registry_.code.length > 0 && payment_.code.length > 0, "Missing registry/payment");
         require(vault_.code.length > 0 && renderer_.code.length > 0, "Missing vault/renderer");

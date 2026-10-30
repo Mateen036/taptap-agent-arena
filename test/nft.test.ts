@@ -1,13 +1,13 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {parseEther,encodeFunctionData,keccak256,toHex} from 'viem';import {generatePrivateKey,privateKeyToAccount} from 'viem/accounts';
-import {nftChain} from './helpers/nft-chain';import {databaseFixture} from './helpers/database';import {nftSvg,nftTraits} from '../lib/nft-art';import {handle} from '../lib/api';import {actionData,AGENT_ID_REGISTRY} from '../lib/protocol';import {NFT_PAYMENT,NFT_ROUTER,nftAbi,nftCall} from '../lib/nft-protocol';import {validateNftTransaction,processNftIntent} from '../agent/nft-runner';
+import {nftChain} from './helpers/nft-chain';import {databaseFixture} from './helpers/database';import {nftSvg,nftTraits,nftMetadata} from '../lib/nft-art';import {handle} from '../lib/api';import {actionData,AGENT_ID_REGISTRY} from '../lib/protocol';import {NFT_PAYMENT,NFT_ROUTER,nftAbi,nftCall} from '../lib/nft-protocol';import {validateNftTransaction,processNftIntent} from '../agent/nft-runner';
 import {nftDeploymentPlan,normalizeRuntime,NFT_CREATE2,NFT_MULTICALL,deploymentAbi} from '../scripts/nft-deploy';
-test('Nib Foundry: on-chain artwork, gated minting, market settlement, signed approval flow, and LP-only proceeds',async t=>{
- const f=await nftChain(),nft=f.art('NibFoundry').abi,market=f.art('NibMarketplace').abi,vault=f.art('NibLPVault').abi;
+test('Nib Collection: on-chain artwork, gated minting, market settlement, signed approval flow, and LP-only proceeds',async t=>{
+ const f=await nftChain(),nft=f.art('NibCollection').abi,market=f.art('NibMarketplace').abi,vault=f.art('NibLPVault').abi;
  try{
  await t.test('all 10,000 designs are unique; deployed renderer matches original SVG and metadata',async()=>{
-  const traits=new Set<string>(),svgs=new Set<string>();for(let id=1;id<=10000;id++){traits.add(nftTraits(id).indexes.join(','));svgs.add(keccak256(toHex(nftSvg(id))));}assert.equal(traits.size,10000);assert.equal(svgs.size,10000);
-  for(const id of [1,7,42,69,420,1337,8888,10000]){assert.equal(await f.read(f.renderer,f.art('NibRenderer').abi,'svg',[BigInt(id)]),nftSvg(id));const uri=await f.read(f.renderer,f.art('NibRenderer').abi,'tokenURI',[BigInt(id)]);const metadata=JSON.parse(Buffer.from(uri.split(',')[1],'base64').toString());assert.equal(metadata.attributes.length,6);assert.equal(Buffer.from(metadata.image.split(',')[1],'base64').toString(),nftSvg(id));}
-  for(const name of ['NibFoundry','NibLPVault','NibMarketplace','NibRenderer'])assert.ok((f.art(name).deployedBytecode.length-2)/2<=24576,name+' runtime fits mainnet size limit');
+  assert.equal(await f.read(f.collection,nft,'name'),'Nib Collection');const traits=new Set<string>(),svgs=new Set<string>();for(let id=1;id<=10000;id++){traits.add(nftTraits(id).indexes.join(','));svgs.add(keccak256(toHex(nftSvg(id))));}assert.equal(traits.size,10000);assert.equal(svgs.size,10000);
+  for(const id of [1,7,42,69,420,1337,8888,10000]){assert.equal(await f.read(f.renderer,f.art('NibRenderer').abi,'svg',[BigInt(id)]),nftSvg(id));const uri=await f.read(f.renderer,f.art('NibRenderer').abi,'tokenURI',[BigInt(id)]);const metadata=JSON.parse(Buffer.from(uri.split(',')[1],'base64').toString());assert.equal(metadata.name,nftMetadata(id).name);assert.equal(metadata.attributes.length,6);assert.doesNotMatch(JSON.stringify(metadata),/foundry/i);assert.doesNotMatch(nftSvg(id),/foundry/i);assert.equal(Buffer.from(metadata.image.split(',')[1],'base64').toString(),nftSvg(id));}
+  for(const name of ['NibCollection','NibLPVault','NibMarketplace','NibRenderer'])assert.ok((f.art(name).deployedBytecode.length-2)/2<=24576,name+' runtime fits mainnet size limit');
  });
  await t.test('first mint free per wallet, exact payments, ten lifetime mints, eligibility, pause and replay protection',async()=>{
   const id=f.intent();await f.write(f.collection,nft,'mint',[1n,0n,await f.deadline(),id],1);assert.equal(await f.read(f.collection,nft,'ownerOf',[1n]),f.accounts[1].address);assert.equal(await f.read(NFT_PAYMENT,f.m.MockToken.abi,'balanceOf',[f.vault]),0n);
@@ -88,7 +88,7 @@ test('Nib Foundry: on-chain artwork, gated minting, market settlement, signed ap
  });
  await t.test('supply boundary rejects crossing 10,000 and cannot mint token 10,001',async()=>{
   // Test-only boundary setup; only the counter is advanced, never production state.
-  const slot=f.art('NibFoundry').storageLayout.storage.find((s:any)=>s.label==='minted').slot;
+  const slot=f.art('NibCollection').storageLayout.storage.find((s:any)=>s.label==='minted').slot;
   await f.provider.request({method:'evm_setAccountStorageAt',params:[f.collection,'0x'+BigInt(slot).toString(16).padStart(64,'0'),'0x'+9999n.toString(16).padStart(64,'0')]});
   await f.write(NFT_PAYMENT,f.m.MockToken.abi,'approve',[f.collection,parseEther('1')],6);
   await assert.rejects(f.write(f.collection,nft,'mint',[2n,parseEther('1'),await f.deadline(),f.intent()],6));

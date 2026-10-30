@@ -37,7 +37,7 @@ export async function nftGameHolding(e:NftEnv,wallet:string):Promise<{owned:numb
  const {c,config}=await chain(e);
  try{const block=await c.getBlockNumber({cacheTime:0});const [held,identity]=await Promise.all([c.readContract({address:config.collection as `0x${string}`,abi:nftAbi,functionName:'balanceOf',args:[wallet as `0x${string}`],blockNumber:block}),c.readContract({address:AGENT_ID_REGISTRY,abi:identityAbi,functionName:'balanceOf',args:[wallet as `0x${string}`],blockNumber:block})]);if(held>10000n)fail(503,'Collection holdings exceed the verified supply.');return {owned:Number(held),block:block.toString(),identityEligible:identity>0n};}catch(error){if(error instanceof NftError)throw error;return fail(503,'NFT ownership verification is unavailable. No points were awarded.');}
 }
-const asset=(id:number)=>({id,name:'Nib Foundry #'+String(id).padStart(5,'0'),image:'/api/nft/preview/v1/'+id+'.png',originalImage:'/api/nft/art/'+id+'.svg',traits:nftTraits(id)});
+const asset=(id:number)=>({id,name:'Nib #'+String(id).padStart(5,'0'),image:'/api/nft/preview/v2/'+id+'.png',originalImage:'/api/nft/art/v2/'+id+'.svg',traits:nftTraits(id)});
 const serializeIntent=(v:any)=>({...v,payload:JSON.parse(v.payload),transaction:JSON.parse(v.transaction),summary:JSON.parse(v.summary),preview:v.preview?JSON.parse(v.preview):null,txDigest:digest(JSON.parse(v.transaction))});
 export async function nftIntents(e:NftEnv,wallet:string,now:number){
  await q(e,"UPDATE nft_intents SET status='expired',error='The request expired. Queue a fresh request.',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','awaiting_approval','approved') AND expires_at<=?",now,wallet,now).run();
@@ -47,7 +47,7 @@ async function listing(c:any,market:string,id:number){const [l,available]=await 
 export async function nftSnapshot(e:NftEnv,wallet:string|null,url:URL,now:number){
  const page=Math.max(0,Math.min(833,Number(url.searchParams.get('page'))||0)),offset=Math.floor(page)*12;
  const gallery=Array.from({length:Math.min(12,10000-offset)},(_,i)=>asset(offset+i+1));
- const base={name:'Nib Foundry',supply:10000,walletLimit:10,freePerWallet:1,paidPrice:'1',paidPriceCurrency:'USD',mintPaymentSymbols:['USDT','BNB'],marketPaymentSymbol:'BNB',paymentToken:NFT_PAYMENT,priceFeed:NFT_PRICE_FEED,chainId:56,artMode:'fully-onchain',gallery,galleryPage:Math.floor(page),galleryPages:834,token:'TBA',marketFeeBps:0};
+ const base={name:'Nib Collection',supply:10000,walletLimit:10,freePerWallet:1,paidPrice:'1',paidPriceCurrency:'USD',mintPaymentSymbols:['USDT','BNB'],marketPaymentSymbol:'BNB',paymentToken:NFT_PAYMENT,priceFeed:NFT_PRICE_FEED,chainId:56,artMode:'fully-onchain',gallery,galleryPage:Math.floor(page),galleryPages:834,token:'TBA',marketFeeBps:0};
  if(!nftConfig(e))return {...base,status:'awaiting_deployment',configured:false,notice:'The art and agent flows are ready. Mainnet contracts need deployment and activation before minting or trading.',minted:0,mintOpen:false,listings:[],owned:[],wallet:null,intents:wallet?await nftIntents(e,wallet,now):[]};
  const {c,config}=await chain(e);
  const [minted,open,paused,count,volume,sales,funds,token,added,locked,wrappedFunds,bnbAdded,bnbLocked]=await Promise.all([read(c,config.collection,nftAbi,'minted'),read(c,config.collection,nftAbi,'mintOpen'),read(c,config.collection,nftAbi,'paused'),read(c,config.market,nftMarketAbi,'activeCount'),read(c,config.market,nftMarketAbi,'volume'),read(c,config.market,nftMarketAbi,'completedSales'),read(c,NFT_PAYMENT,nftPaymentAbi,'balanceOf',[config.vault]),read(c,config.vault,nftVaultAbi,'liquidityToken'),read(c,config.vault,nftVaultAbi,'paymentAdded'),read(c,config.vault,nftVaultAbi,'lpTokensLocked'),read(c,NFT_WBNB,nftPaymentAbi,'balanceOf',[config.vault]),read(c,config.vault,nftVaultAbi,'bnbAdded'),read(c,config.vault,nftVaultAbi,'lpTokensLockedBNB')]);
@@ -88,7 +88,7 @@ async function queue(e:NftEnv,a:any,b:any,now:number){
     if(cost===0n)fail(409,'Your first mint requires no USDT approval.');tx=nftCall(wallet,NFT_PAYMENT,nftPaymentAbi,'approve',[config.collection,cost]);summary={title:'Approve exact mint payment',payment:formatUnits(cost,18),currency:'USDT',spender:config.collection,scope:'USDT allowance for this mint amount only. This transaction does not mint.'};
    }else{
     const allowance=await read(c,NFT_PAYMENT,nftPaymentAbi,'allowance',[wallet,config.collection]);if(BigInt(allowance)<cost)fail(409,'Approve the exact USDT payment first, then request the mint.');
-    tx=nftCall(wallet,config.collection,nftAbi,'mint',[BigInt(quantity),cost,deadline,keccak256(toHex(id))]);summary={title:'Mint '+quantity+' Nib Foundry NFT'+(quantity===1?'':'s'),payment:formatUnits(cost,18),currency:'USDT',quantity,scope:'NFTs minted to your agent wallet; primary sale payment goes directly to the LP vault.'};
+    tx=nftCall(wallet,config.collection,nftAbi,'mint',[BigInt(quantity),cost,deadline,keccak256(toHex(id))]);summary={title:'Mint '+quantity+' Nib Collection NFT'+(quantity===1?'':'s'),payment:formatUnits(cost,18),currency:'USDT',quantity,scope:'NFTs minted to your agent wallet; primary sale payment goes directly to the LP vault.'};
    }
   }
  }else if(['nft-approval','list','buy','cancel'].includes(kind)){
