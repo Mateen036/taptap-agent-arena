@@ -38,3 +38,6 @@ Index the `Converted(wallet, season, pointsConverted, nibPaid, totalPointsConver
 
 ### Hardening
 Signer key in a secret store (separate from deployer key), per-wallet and global rate limits, log every signature. A leaked signer can drain the open season FCFS; mitigations are `pause()`, `endSeason()`, `setSigner()`.
+
+## Deployment (via baw agent wallet, owner = treasury 0x0D96…eC0d)
+`npx tsx scripts/nib-deploy.ts plan|preview|execute|verify --step N`. Uses the CREATE2 factory so addresses are known up front. Signer key lives only in `/workspace/secrets/nib_signer.txt` (chmod 600); only its address is ever printed. `execute` refuses to run without `--approve-deployment`, an unexpired preview, matching calldata hash, and on-chain preconditions (step 2 needs step 1 deployed, step 3 needs the funded token). Run `verify` after step 3.
