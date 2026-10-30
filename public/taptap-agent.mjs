@@ -18523,6 +18523,12 @@ function strategyDecision(e, now) {
 
 // lib/nft-protocol.ts
 var NFT_PAYMENT = "0x55d398326f99059fF775485246999027B3197955";
+var NFT_BUYER_FEE_BPS = 200;
+var NFT_SELLER_FEE_BPS = 200;
+function marketQuote(price) {
+  const buyerFee = price * BigInt(NFT_BUYER_FEE_BPS) / 10000n, sellerFee = price * BigInt(NFT_SELLER_FEE_BPS) / 10000n;
+  return { buyerFee, sellerFee, buyerTotal: price + buyerFee, sellerProceeds: price - sellerFee };
+}
 var nativeMintBudget = (quote) => (quote * 101n + 99n) / 100n;
 var nftAbi = parseAbi([
   "function MAX_SUPPLY() view returns(uint256)",
@@ -18558,6 +18564,27 @@ var nftMarketAbi = parseAbi([
   "function available(uint256) view returns(bool)",
   "function completedSales() view returns(uint256)",
   "function volume() view returns(uint256)",
+  "function BUYER_FEE_BPS() view returns(uint256)",
+  "function SELLER_FEE_BPS() view returns(uint256)",
+  "function feeRecipient() view returns(address)",
+  "function feesCollected() view returns(uint256)",
+  "function quote(uint256) pure returns(uint256 buyerFee,uint256 sellerFee,uint256 buyerTotal,uint256 sellerProceeds)",
+  "function bidCount() view returns(uint256)",
+  "function bidAt(uint256) view returns(uint256)",
+  "function bidderBidCount(address) view returns(uint256)",
+  "function bidderBidAt(address,uint256) view returns(uint256)",
+  "function sellerBidCount(address) view returns(uint256)",
+  "function sellerBidAt(address,uint256) view returns(uint256)",
+  "function bids(uint256) view returns(uint256 tokenId,address bidder,address seller,uint256 price,uint256 expiresAt)",
+  "function bidderTokenBid(address,uint256) view returns(uint256)",
+  "function bidAvailable(uint256) view returns(bool)",
+  "function refunds(address) view returns(uint256)",
+  "function escrowedBNB() view returns(uint256)",
+  "function totalRefunds() view returns(uint256)",
+  "function placeBid(uint256,uint256,uint256,address) payable",
+  "function cancelBid(uint256)",
+  "function acceptBid(uint256,address,uint256,uint256)",
+  "function withdrawRefund(uint256,address)",
   "function list(uint256,uint256,uint256)",
   "function cancel(uint256,uint256)",
   "function buy(uint256,uint256,uint256,address,uint256) payable"
@@ -18572,29 +18599,36 @@ var same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 function validateNftTransaction(intent, contracts, wallet) {
   const tx = intent.transaction, p = intent.payload;
   if (tx.chainId !== 56 || !same(tx.from, wallet) || typeof tx.value !== "string" || !/^(0|[1-9][0-9]*)$/.test(tx.value) || !/^0x[0-9a-f]+$/i.test(tx.data)) throw Error("NFT transaction envelope does not match this wallet.");
-  if (!["mint-approval", "nft-approval", "mint", "list", "cancel", "buy"].includes(intent.kind)) throw Error("Unsupported NFT transaction kind.");
   const nativeMint = intent.kind === "mint" && p.currency === "BNB";
-  const expectedValue = nativeMint ? p.costRaw : intent.kind === "buy" ? p.priceRaw : "0";
-  if (tx.value !== expectedValue) throw Error("Native BNB value differs from the exact request.");
+  const isBid = intent.kind === "bid", isBuy = intent.kind === "buy";
+  const expectedValue = nativeMint ? p.costRaw : isBid || isBuy ? marketQuote(BigInt(p.priceRaw)).buyerTotal.toString() : "0";
+  if (tx.value !== expectedValue || (isBid || isBuy) && p.buyerTotalRaw !== expectedValue) throw Error("Native BNB value differs from the exact request including fees.");
   if (nativeMint && nativeMintBudget(BigInt(p.quotedCostRaw)).toString() !== p.costRaw) throw Error("BNB mint quote ceiling changed.");
-  const approval = intent.kind === "mint-approval";
-  const abi2 = approval ? nftPaymentAbi : ["nft-approval", "mint"].includes(intent.kind) ? nftAbi : nftMarketAbi;
-  const destination = approval ? NFT_PAYMENT : ["nft-approval", "mint"].includes(intent.kind) ? contracts.collection : contracts.market;
+  const approval = intent.kind === "mint-approval", onCollection = ["nft-approval", "mint"].includes(intent.kind);
+  const abi2 = approval ? nftPaymentAbi : onCollection ? nftAbi : nftMarketAbi;
+  const destination = approval ? NFT_PAYMENT : onCollection ? contracts.collection : contracts.market;
   if (!same(tx.to, destination)) throw Error("NFT transaction targets an unexpected contract.");
   const decoded = decodeFunctionData({ abi: abi2, data: tx.data }), args2 = decoded.args || [], name = decoded.functionName;
-  const expected = { "mint-approval": "approve", "nft-approval": "approve", mint: nativeMint ? "mintBNB" : "mint", list: "list", cancel: "cancel", buy: "buy" };
-  if (name !== expected[intent.kind]) throw Error("NFT transaction function does not match the requested action.");
+  const expected = { "mint-approval": "approve", "nft-approval": "approve", mint: nativeMint ? "mintBNB" : "mint", list: "list", cancel: "cancel", buy: "buy", bid: "placeBid", "cancel-bid": "cancelBid", "accept-bid": "acceptBid", "withdraw-bid-refund": "withdrawRefund" };
+  if (!expected[intent.kind] || name !== expected[intent.kind]) throw Error("NFT transaction function does not match the requested action.");
   if (approval) {
-    if (!same(args2[0], intent.kind === "mint-approval" ? contracts.collection : contracts.market) || String(args2[1]) !== String(p.costRaw || p.priceRaw)) throw Error("USDT approval exceeds or differs from the exact request.");
+    if (!same(args2[0], contracts.collection) || String(args2[1]) !== String(p.costRaw)) throw Error("USDT approval exceeds or differs from the exact request.");
   } else if (intent.kind === "nft-approval") {
     if (!same(args2[0], contracts.market) || Number(args2[1]) !== p.tokenId) throw Error("Unexpected NFT approval.");
   } else if (intent.kind === "mint") {
     if (Number(args2[0]) !== p.quantity || String(args2[1]) !== p.costRaw || Number(args2[2]) !== Math.floor(intent.expires_at / 1e3) || args2[3] !== keccak256(toHex(intent.id))) throw Error("Mint quote or operation ID changed.");
+  } else if (intent.kind === "cancel-bid") {
+    if (String(args2[0]) !== p.bidId || !same(p.bidder, wallet)) throw Error("Cancellation bid changed.");
+  } else if (intent.kind === "accept-bid") {
+    if (String(args2[0]) !== p.bidId || !same(args2[1], p.bidder) || String(args2[2]) !== p.priceRaw || !same(p.seller, wallet) || Number(args2[3]) !== Math.floor(intent.expires_at / 1e3)) throw Error("Bid acceptance terms changed.");
+  } else if (intent.kind === "withdraw-bid-refund") {
+    if (String(args2[0]) !== p.amountRaw || !same(args2[1], wallet) || !same(p.recipient, wallet)) throw Error("Refund amount or recipient changed.");
   } else {
     if (Number(args2[0]) !== p.tokenId) throw Error("Unexpected NFT token ID.");
-    if (intent.kind === "list" && (String(args2[1]) !== p.priceRaw || Number(args2[2]) !== Math.floor(intent.created_at / 1e3) + p.days * 86400)) throw Error("Listing terms changed.");
+    if (["list", "bid"].includes(intent.kind) && (String(args2[1]) !== p.priceRaw || Number(args2[2]) !== Math.floor(intent.created_at / 1e3) + p.days * 86400)) throw Error("Listing or bid terms changed.");
+    if (isBid && !same(args2[3], p.seller)) throw Error("Bid target owner changed.");
     if (intent.kind === "cancel" && String(args2[1]) !== p.listingId) throw Error("Cancellation listing changed.");
-    if (intent.kind === "buy" && (String(args2[1]) !== p.listingId || String(args2[2]) !== p.priceRaw || !same(args2[3], p.seller) || Number(args2[4]) !== Math.floor(intent.expires_at / 1e3))) throw Error("Purchase price, seller, or expiry changed.");
+    if (isBuy && (String(args2[1]) !== p.listingId || String(args2[2]) !== p.priceRaw || !same(args2[3], p.seller) || Number(args2[4]) !== Math.floor(intent.expires_at / 1e3))) throw Error("Purchase price, seller, or expiry changed.");
   }
   return true;
 }

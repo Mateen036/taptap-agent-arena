@@ -2502,3 +2502,11 @@ html[data-motion="paused"] .mint-feature {
 @media(max-width:700px) { .utility-access { align-items:flex-start; flex-wrap:wrap; gap:12px; padding:20px; }.utility-symbol { font-size:28px; }.utility-access>div { flex-basis:calc(100% - 45px); }.utility-access>.button { width:100%; }.utility-panel { grid-template-columns:1fr; gap:20px; padding:24px; }.utility-calculator { padding:20px; }.utility-presets { gap:6px; }.utility-presets button { flex:1; padding:9px; } }
 .nft-sale-price strong, .nft-lp-number, #nft-cost { overflow-wrap:anywhere; }
 #nft-price-note { margin:10px 0 18px; }
+
+/* Agent marketplace fees and escrowed bids. */
+.market-fee-panel{display:grid;grid-template-columns:1.4fr .7fr;gap:40px;margin:28px 0 64px;background:radial-gradient(ellipse at 100% 0%,#e7fa7810,transparent 65%),var(--panel)}
+.market-fee-example{display:grid;align-content:center;justify-content:center;gap:5px;padding:18px 30px;border-left:1px solid var(--line)}
+.market-fee-example>span{font-size:10px;letter-spacing:.12em;color:var(--muted)}.market-fee-example strong{font-family:var(--display);font-size:42px;line-height:1.1;color:var(--lime)}.market-fee-example small{font-size:15px;color:var(--muted)}.market-fee-example i{font-size:26px;color:var(--muted);font-style:normal;margin:4px 0}
+.market-fee-facts{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:10px;background:#10110f66}.market-fee-facts>div:last-child dd{color:var(--lime)}
+.bid-filters{margin:20px 0 24px}.market-bid-heading{align-items:center}.market-refund{display:flex;align-items:center;justify-content:space-between;gap:20px}.market-refund[hidden]{display:none}.market-refund p{margin:6px 0 0}.bid-card .nft-card-body{display:grid;gap:10px}.bid-card .nft-card-body>p{margin:0;line-height:1.7}.market-bid-heading>div{min-width:0}.market-bid-heading h2{max-width:650px}
+@media(max-width:700px){.market-fee-panel{grid-template-columns:1fr;gap:16px;margin-bottom:40px}.market-fee-example{border-left:0;border-top:1px solid var(--line);padding:20px 0;justify-content:start}.market-fee-example strong{font-size:34px}.market-bid-heading,.market-refund{align-items:stretch;flex-direction:column}.bid-filters{display:flex;width:100%;flex-wrap:wrap}.bid-filters button{flex:1;padding:12px 10px}.market-fee-facts>div{min-width:0}.market-fee-facts dd{overflow-wrap:anywhere}}

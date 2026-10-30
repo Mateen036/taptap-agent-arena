@@ -1226,7 +1226,7 @@
   "storageLayout": {
     "storage": [
       {
-        "astId": 4761,
+        "astId": 5635,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_name",
         "offset": 0,
@@ -1234,7 +1234,7 @@
         "type": "t_string_storage"
       },
       {
-        "astId": 4763,
+        "astId": 5637,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_symbol",
         "offset": 0,
@@ -1242,7 +1242,7 @@
         "type": "t_string_storage"
       },
       {
-        "astId": 4767,
+        "astId": 5641,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_owners",
         "offset": 0,
@@ -1250,7 +1250,7 @@
         "type": "t_mapping(t_uint256,t_address)"
       },
       {
-        "astId": 4771,
+        "astId": 5645,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_balances",
         "offset": 0,
@@ -1258,7 +1258,7 @@
         "type": "t_mapping(t_address,t_uint256)"
       },
       {
-        "astId": 4775,
+        "astId": 5649,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_tokenApprovals",
         "offset": 0,
@@ -1266,7 +1266,7 @@
         "type": "t_mapping(t_uint256,t_address)"
       },
       {
-        "astId": 4781,
+        "astId": 5655,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_operatorApprovals",
         "offset": 0,
@@ -1274,7 +1274,7 @@
         "type": "t_mapping(t_address,t_mapping(t_address,t_bool))"
       },
       {
-        "astId": 5704,
+        "astId": 6578,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_ownedTokens",
         "offset": 0,
@@ -1282,7 +1282,7 @@
         "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
       },
       {
-        "astId": 5708,
+        "astId": 6582,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_ownedTokensIndex",
         "offset": 0,
@@ -1290,7 +1290,7 @@
         "type": "t_mapping(t_uint256,t_uint256)"
       },
       {
-        "astId": 5711,
+        "astId": 6585,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_allTokens",
         "offset": 0,
@@ -1298,7 +1298,7 @@
         "type": "t_array(t_uint256)dyn_storage"
       },
       {
-        "astId": 5715,
+        "astId": 6589,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_allTokensIndex",
         "offset": 0,
@@ -1306,7 +1306,7 @@
         "type": "t_mapping(t_uint256,t_uint256)"
       },
       {
-        "astId": 3935,
+        "astId": 4809,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_owner",
         "offset": 0,
@@ -1314,7 +1314,7 @@
         "type": "t_address"
       },
       {
-        "astId": 4083,
+        "astId": 4957,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_pendingOwner",
         "offset": 0,
@@ -1322,7 +1322,7 @@
         "type": "t_address"
       },
       {
-        "astId": 6080,
+        "astId": 6954,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_paused",
         "offset": 20,
@@ -1330,7 +1330,7 @@
         "type": "t_bool"
       },
       {
-        "astId": 6190,
+        "astId": 7064,
         "contract": "NibCollection.sol:NibCollection",
         "label": "_status",
         "offset": 0,

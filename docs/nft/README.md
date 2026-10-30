@@ -15,7 +15,7 @@ The collection owner can pause or reopen minting; the vault owner controls futur
 | `NibRenderer` | Immutable deterministic SVG and ERC-721 JSON metadata |
 | `NibLPVault` | Receives USDT and wrapped BNB mint proceeds; two-day future-token selection; adds liquidity through immutable PancakeSwap V2 router; LP tokens cannot be withdrawn |
 | `NibCollection` | ERC-721 enumerable collection, immutable economics and identity registry, per-wallet cap, replay-resistant mint intent IDs |
-| `NibMarketplace` | Noncustodial fixed-price native BNB market; exact listing versions; atomic payment/delivery; zero fees |
+| `NibMarketplace` | Noncustodial fixed-price native BNB market; exact listing versions; atomic payment/delivery; fixed 2% buyer and 2% seller fees; owner-bound BNB bids, full-deposit cancellation credit and separate withdrawal |
 
 The vault requires matching future tokens before LP creation. Its selected token becomes permanent after activation. Funds can remain locked indefinitely if token launch or matching deposits never happen. The timelock and locked LP tokens do not guarantee token quality, price, or protection from owner economic actions. Token economics and TAP conversion stay TBA.
 
@@ -74,6 +74,7 @@ After receipt and runtime verification, set these public-address environment var
 - `NFT_COLLECTION`: verified `NibCollection` address.
 - `NFT_MARKETPLACE`: verified `NibMarketplace` address.
 - `NFT_LP_VAULT`: verified `NibLPVault` address.
+- `NFT_FEE_RECIPIENT`: optional, must match the marketplace’s immutable recipient; defaults to the LP vault. For a treasury, supply the same public address to deployment planning, preview, and verification with `--fee-recipient ADDRESS`, then set this environment variable. Changing the recipient changes the marketplace’s CREATE2 address and requires a new preview. Trading fees never increase primary mint prices.
 
 Redeploy the exact GitHub commit. The API verifies chain 56, payment token, registry, price, cap, wallet limit, vault/router/WBNB, Chainlink BNB/USD feed and native-market/collection links before enabling NFT actions. Missing configuration shows an honest deployment-pending gallery with disabled minting/trading. Incorrect contracts fail closed. Apply the additive Drizzle migrations through the existing build pipeline.
 
@@ -92,3 +93,11 @@ After token economics are decided, the owner calls `proposeToken`, waits two day
 ## Website image previews
 
 Gallery, Mint and Market images use `/api/nft/preview/v2/ID.png`, a stateless Node route rendering the original SVG with a bundled monospace font. It returns cached, opaque 560×560 PNGs without session cookies. The original `/api/nft/art/ID.svg`, metadata and Solidity renderer are unchanged. The legacy Worker route redirects these image requests to the public Vercel image service. Explicit browser/OS image-inversion settings can still override any website.
+
+## Marketplace fee and bid release
+
+Buyer fee: 200 bps added to base price. Seller fee: 200 bps deducted from base price. Each rounds down to wei. The immutable recipient gets their sum at settlement. The default unsigned plan directs fees to the LP vault; a treasury can be selected before any deployment. The recipient must be chosen and reviewed before mainnet execution.
+
+Bids escrow the exact buyer total, bind the current NFT owner, and expire within 30 days. They require no listing or NFT approval to place. Acceptance requires current ownership, both Agent IDs, individual NFT approval, and exact bidder/price/deadline. NFT approval and acceptance use separate browser approvals. Cancellation/pruning credits the full deposit; refund withdrawal is a separate reviewed call, not an automatic expiry action. Refund and cancellation exits have no identity gate. Escrow and refund accounting are independent of trading fee accounting.
+
+No contracts were deployed or wallet funds spent by this release. Existing inactive contract settings must remain unset until a new exact deployment preview, approval, receipt and runtime verification are complete.
