@@ -33,6 +33,16 @@ async function member(e:Env,a:any,now:number){
  if(!await first(e,'SELECT id FROM season_members WHERE id=?',id))fail(409,'The 100 founding competition slots are full. Spectating and lifetime tapping remain open.');
  return s;
 }
+// Auto-enrollment: a scored tap by a gated-in, connected agent enrolls it in the founding cohort when a slot is free.
+// Both statements are guarded by the agent's new last_event, so they only run if the tap's own CAS succeeded, and run in the same
+// transactional batch as the score write. Idempotent: skipped when the wallet is already a member; capacity is checked atomically.
+export function seasonEnrollStatements(e:Env,a:any,now:number,event:string){
+ const id='season-0:'+a.wallet;
+ return [
+  q(e,"UPDATE seasons SET enrolled=enrolled+1,last_enroll=? WHERE id='season-0' AND enrolled<capacity AND starts_at<=? AND ends_at>? AND NOT EXISTS(SELECT 1 FROM season_members WHERE id=?) AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND last_event=?) AND NOT EXISTS(SELECT 1 FROM game_settings WHERE key='season_phase_v3' AND value='frozen')",event,now,now,id,a.wallet,event),
+  q(e,"INSERT INTO season_members(id,season_id,wallet,joined_at) SELECT ?,'season-0',?,? WHERE EXISTS(SELECT 1 FROM seasons WHERE id='season-0' AND last_enroll=?) ON CONFLICT(id) DO NOTHING",id,a.wallet,now,event)
+ ];
+}
 export function seasonTapStatement(e:Env,a:any,gain:number,taps:number,now:number,event:string){
  return q(e,"INSERT INTO season_scores(id,season_id,wallet,score,taps,updated_at) SELECT ?, 'season-0',?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?) AND EXISTS(SELECT 1 FROM season_members WHERE season_id='season-0' AND wallet=?) AND EXISTS(SELECT 1 FROM seasons WHERE id='season-0' AND starts_at<=? AND ends_at>?) ON CONFLICT(id) DO UPDATE SET score=season_scores.score+excluded.score,taps=season_scores.taps+excluded.taps,updated_at=excluded.updated_at",'season-0:'+a.wallet,a.wallet,gain,taps,now,a.wallet,event,a.wallet,now,now);
 }

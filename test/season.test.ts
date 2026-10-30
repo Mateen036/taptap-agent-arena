@@ -80,3 +80,30 @@ for(const backend of ['sqlite','postgres'] as const)test(`${backend}: concurrent
   now+=8*86400000;await assert.rejects(seasonAction(env,a,'duel-create',{},now),/closed/);
  }finally{await db.close();}
 });
+
+for(const backend of ['sqlite','postgres'] as const)test(`${backend}: scored taps auto-enroll agents in the founding cohort once, atomically, and respect capacity`,async()=>{
+ const db=await databaseFixture(backend),env:any={DB:db,BSC_RPC_URL:'https://identity.test'},oldFetch=globalThis.fetch,oldNow=Date.now;let now=Date.parse('2026-10-29T12:00:00Z');Date.now=()=>now;
+ globalThis.fetch=async(_url:any,options:any)=>{const b=JSON.parse(options.body);return Response.json({jsonrpc:'2.0',id:b.id,result:b.method==='eth_chainId'?'0x38':b.method==='eth_getCode'?'0x':'0x'+1n.toString(16).padStart(64,'0')});};
+ const req=async(path:string,body?:any,user='')=>{const r=await handle(new Request('https://game.test/api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(user?{'oai-authenticated-user-id':user}:{})},body:body?JSON.stringify(body):undefined}),env);return {status:r.status,body:await r.json()};};
+ async function player(user:string){const account=privateKeyToAccount(generatePrivateKey()),key=privateKeyToAccount(generatePrivateKey());const pair=await req('pair',{},user);const c=await req('agent/challenge',{pairingCode:pair.body.pairingCode,wallet:account.address,sessionKey:key.address});const s=await req('agent/session',{challengeId:c.body.challengeId,signature:await account.signTypedData(c.body.typedData)});assert.equal(s.status,200,JSON.stringify(s.body));let nonce=0;return {wallet:account.address.toLowerCase(),user,async act(action:string,payload:any={}){const envelope={sessionId:s.body.sessionId,nonce,timestamp:now,action,payload},signature=await key.signTypedData(actionData('https://game.test',envelope) as any);const result=await req('agent/action',{...envelope,signature});if(result.body.nonce!==undefined)nonce=result.body.nonce;return {...result,envelope,signature};}};}
+ try{
+ const a=await player('auto-a'),b=await player('auto-b'),c=await player('auto-c');
+ const enrolled=async()=>(await db.prepare("SELECT enrolled FROM seasons WHERE id='season-0'").first<any>()).enrolled;
+ const members=async()=>(await db.prepare('SELECT COUNT(*) AS n FROM season_members').first<any>()).n;
+ const tap=async(p:any,n:number)=>{const cmd=await req('commands',{prompt:'Tap '+n+' times'},p.user);assert.equal(cmd.status,201,JSON.stringify(cmd.body));assert.equal((await p.act('start',{commandId:cmd.body.id})).status,200);now+=2000;const r=await p.act('tap',{commandId:cmd.body.id,taps:n});assert.equal(r.status,200,JSON.stringify(r.body));return r;};
+ await req('bootstrap',undefined,a.user);
+ assert.equal(await members(),0);
+ await tap(a,10);
+ assert.equal(await members(),1);assert.equal(await enrolled(),1);
+ let boot=await req('bootstrap',undefined,a.user);assert.equal(boot.body.competition.member,true);assert.equal(boot.body.competition.seasonScore,10);
+ await tap(a,10);assert.equal(await members(),1);assert.equal(await enrolled(),1);
+ boot=await req('bootstrap',undefined,a.user);assert.equal(boot.body.competition.seasonScore,20);
+ assert.equal((await a.act('season-join',{})).status,200);assert.equal(await members(),1);assert.equal(await enrolled(),1);
+ assert.equal((await b.act('season-join',{})).status,200);assert.equal(await members(),2);await tap(b,10);assert.equal(await members(),2);assert.equal(await enrolled(),2);
+ await db.prepare("UPDATE seasons SET capacity=2 WHERE id='season-0'").run();
+ await tap(c,10);assert.equal(await members(),2);assert.equal(await enrolled(),2);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM season_scores WHERE wallet=?').bind(c.wallet).first<any>()).n,0);
+ assert.equal((await db.prepare('SELECT taps FROM agents WHERE wallet=?').bind(c.wallet).first<any>()).taps,10);
+ const lb=(await req('season')).body.leaderboard.map((v:any)=>v.wallet).sort();assert.deepEqual(lb,[a.wallet,b.wallet].sort());
+ }finally{globalThis.fetch=oldFetch;Date.now=oldNow;await db.close();}
+});

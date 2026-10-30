@@ -5,7 +5,7 @@ import {exactPoints,pointBalance,earnedBalance,pointFields,publicPoints,legacyPo
 import {capacity,power,speed,energyAt,upgradeCost,parseCommand,tickPlan,missions,MAX_POINTS,canonical} from './game';
 import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
 import {NftError,nftRoute,nftAction,NFT_ACTIONS,nftIntents,nftArtResponse,type NftEnv} from './nft';
-import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,track} from './season';
+import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,seasonEnrollStatements,track} from './season';
 type Env=NftEnv&{DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string;NFT_GAME_UTILITY?:string;_utilityPolicy?:UtilityPolicy};
 class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
 function fail(status:number,message:string):never{throw new HttpError(status,message)}
@@ -164,7 +164,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  const plan=tickPlan(a,command,b.payload.taps,now,multiplier),gain=exactPoints(plan.gain),complete=plan.complete||plan.energy===0,commandEarned=exactPoints(command.earned_exact??command.earned)+gain;
  await cas(env,a,{...pointFields(pointBalance(a)+gain,earnedBalance(a)+gain,exact),taps:a.taps+plan.taps,energy:plan.energy,updated_at:now,runs:a.runs+(plan.complete?1:0)},'tap',exact?gain:Number(gain),`${plan.taps} verified agent taps${exact?' · '+a._gameAccess.owned+' NFTs · '+displayPoints(a._gameAccess.multiplier)+'x · block '+a._gameAccess.block:''}`,[
  exact?stmt(env,'UPDATE commands SET done=done+?,earned=?,earned_exact=?,last_tick=?,status=?,finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',plan.taps,legacyPoints(commandEarned),commandEarned.toString(),plan.lastTick,plan.complete?'completed':complete?'paused':'running',complete?now:null,command.id,...guard(a)):stmt(env,'UPDATE commands SET done=done+?,earned=earned+?,last_tick=?,status=?,finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',plan.taps,Number(gain),plan.lastTick,plan.complete?'completed':complete?'paused':'running',complete?now:null,command.id,...guard(a)),
- seasonTapStatement(env,a,plan.baseGain,plan.taps,now,a._event)]);
+ ...seasonEnrollStatements(env,a,now,a._event),seasonTapStatement(env,a,plan.baseGain,plan.taps,now,a._event)]);
  if(plan.complete)await track(env,a.user_id,'run_completed',now).catch(()=>{});
  }else if(b.action==='stop'){
  if(command.status!=='running')fail(409,'Command is not running.');await cas(env,a,{updated_at:now},'pause',0,'Agent paused command',[
