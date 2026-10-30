@@ -45,6 +45,17 @@ async function snapshot(e:Env,a:any,accessOverride?:any){
  const claimed=await stmt(e,'SELECT mission FROM mission_claims WHERE wallet=?',a.wallet).all<any>();
  return {wallet:a.wallet,name:a.name,points:exact?publicPoints(pointBalance(a)):a.points,earned:exact?publicPoints(earnedBalance(a)):a.earned,taps:a.taps,runs:a.runs,power:power(a),capacity:capacity(a),speed:speed(a),energy:energyAt(a,Date.now(),!!c),levels:[a.power_level,a.tank_level,a.speed_level],connected:!!a.connected,updatedAt:a.updated_at,claimed:claimed.results.map((x:any)=>x.mission),upgrades:[0,1,2].map(i=>({cost:upgradeCost(a,i),level:a[['power_level','tank_level','speed_level'][i]]})),commands:commandRows.results.map(v=>({...v,earned:exact?publicPoints(v.earned_exact??v.earned):v.earned})),logs:logs.results.map(v=>({...v,delta:exact?publicPoints(v.delta_exact??v.delta):v.delta})),sessionOnline:!!session,runnerOnline:!!session&&Date.now()-session.last_seen_at<15000,sessionExpiresAt:session?.expires_at||null,lastSeenAt:session?.last_seen_at||null,gameAccess:access,missions:missions.map((m,i)=>({...m,baseReward:m.reward,reward:exact&&access.canPlay?publicPoints(BigInt(m.reward)*BigInt(access.multiplier)):m.reward,progress:Math.min(m.goal,a[m.key]),claimed:claimed.results.some((v:any)=>v.mission===i)}))};
 }
+/** Shared by the browser endpoints and the signed agent actions (command-create, mission-claim). */
+async function queueCommand(env:Env,a:any,prompt:any,now:number){
+ await requireGameAccess(env,a);let target;try{target=parseCommand(prompt);}catch(e){fail(400,(e as Error).message);}
+ const recent=await first(env,'SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND created_at>?',a.wallet,now-60000);if(recent.n>=10)fail(429,'Maximum 10 commands per minute.');const pending=await first(env,"SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND status IN ('queued','running','paused')",a.wallet);if(pending.n>=10)fail(409,'Finish or cancel existing commands first.');
+ const commandId=id();await stmt(env,'INSERT INTO commands(id,wallet,prompt,target,created_at) VALUES(?,?,?,?,?)',commandId,a.wallet,String(prompt).trim(),target,now).run();await track(env,a.user_id,'command_queued',now).catch(()=>{});return {id:commandId,target,status:'queued'};
+}
+async function claimMission(env:Env,a:any,index:any,now:number){
+ await requireGameAccess(env,a);if(!Number.isInteger(index)||!missions[index])fail(400,'Invalid mission.');const m=missions[index];if(a[m.key]<m.goal)fail(409,'Complete this mission first.');if(await first(env,'SELECT id FROM mission_claims WHERE wallet=? AND mission=?',a.wallet,index))fail(409,'Reward already claimed.');const exact=a._gameAccess?.required===true,reward=BigInt(m.reward)*(exact?BigInt(a._gameAccess.multiplier):1n);if(!exact&&pointBalance(a)+reward>BigInt(MAX_POINTS))fail(409,'Point limit reached.');
+ await cas(env,a,pointFields(pointBalance(a)+reward,earnedBalance(a)+reward,exact),'mission',exact?reward:Number(reward),m.name,[stmt(env,'INSERT INTO mission_claims(id,wallet,mission,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id(),a.wallet,index,now,...guard(a))]);return reward;
+}
+export const EARN_ACTIONS=['command-create','mission-claim'];
 export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
@@ -146,7 +157,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  return json({sessionId:sid,nonce:0,expiresAt:c.expires_at,wallet:c.wallet});
  }
  if(path==='/agent/action'&&request.method==='POST'){
- const b=await body(request);if(!['state','start','tap','stop',...SEASON_ACTIONS,...NFT_ACTIONS,...AIRDROP_ACTIONS,...NIB_MARKET_ACTIONS].includes(b.action)||!Number.isSafeInteger(b.nonce)||b.nonce<0||!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.payload!=='object'||b.payload===null||Array.isArray(b.payload))fail(400,'Invalid action envelope or expired timestamp.');
+ const b=await body(request);if(!['state','start','tap','stop',...EARN_ACTIONS,...SEASON_ACTIONS,...NFT_ACTIONS,...AIRDROP_ACTIONS,...NIB_MARKET_ACTIONS].includes(b.action)||!Number.isSafeInteger(b.nonce)||b.nonce<0||!Number.isSafeInteger(b.timestamp)||Math.abs(now-b.timestamp)>60000||typeof b.payload!=='object'||b.payload===null||Array.isArray(b.payload))fail(400,'Invalid action envelope or expired timestamp.');
  const s=await first(env,'SELECT * FROM sessions WHERE id=? AND revoked=0 AND expires_at>?',String(b.sessionId),now);if(!s)fail(401,'Agent session expired or revoked. Pair your agent again.');
  let valid=false;try{valid=await verifyTypedData({address:s.session_key,...actionData(url.origin,b),signature:b.signature} as any);}catch{}if(!valid)fail(403,'Invalid agent command signature.');if(s.nonce!==b.nonce)return json({error:'Nonce mismatch. Resynchronize before sending another command.',nonce:s.nonce},409);
  if(now-s.verified_at>300000){await eligible(s.wallet,env);await stmt(env,'UPDATE sessions SET verified_at=? WHERE id=?',now,s.id).run();}
@@ -158,6 +169,11 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(NIB_MARKET_ACTIONS.includes(b.action)){const result=await nibMarketAction(env,a,b.action,b.payload,now);return json({nonce:nextNonce,...result,serverTime:now});}
  if(AIRDROP_ACTIONS.includes(b.action)){const result=await airdropAction(env,a,b.action,b.payload,now);return json({nonce:nextNonce,...result,serverTime:now});}
  if(SEASON_ACTIONS.includes(b.action)){const result=await seasonAction(env,a,b.action,b.payload,now);return json({nonce:nextNonce,...result,serverTime:now});}
+ if(b.action==='command-create'){
+ if(frozen?.value==='frozen')fail(409,'Season is frozen for token allocation.');const raw=b.payload.target??b.payload.taps;const target=raw===undefined?10000:Number(raw);if(!Number.isSafeInteger(target)||target<1||target>10000)fail(400,'Choose between 1 and 10,000 taps per command.');
+ const command=await queueCommand(env,a,'Tap '+target+' times (agent)',now);return json({nonce:nextNonce,command,agent:await snapshot(env,await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet)),serverTime:now});}
+ if(b.action==='mission-claim'){
+ if(frozen?.value==='frozen')fail(409,'Season is frozen for token allocation.');const reward=await claimMission(env,a,b.payload.index,now);return json({nonce:nextNonce,claimed:Number(b.payload.index),reward:reward.toString(),agent:await snapshot(env,await first(env,'SELECT * FROM agents WHERE wallet=?',s.wallet)),serverTime:now});}
  if(['start','tap'].includes(b.action))await requireGameAccess(env,a);
  const command=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.payload.commandId),s.wallet);if(!command)fail(404,'Command not found.');
  if(frozen?.value==='frozen'&&['start','tap'].includes(b.action))fail(409,'Season is frozen for token allocation.');
@@ -179,9 +195,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  }catch(e){const status=e instanceof HttpError||e instanceof SeasonError||e instanceof NftError||e instanceof AirdropError||e instanceof NibMarketError?e.status:409;return json({error:e instanceof Error?e.message:'Action failed',nonce:nextNonce},status);}
  }
  if(path==='/commands'&&request.method==='POST'){
- const a=await own(env,request),b=await body(request);await requireGameAccess(env,a);let target;try{target=parseCommand(b.prompt);}catch(e){fail(400,(e as Error).message);}
- const recent=await first(env,'SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND created_at>?',a.wallet,now-60000);if(recent.n>=10)fail(429,'Maximum 10 commands per minute.');const pending=await first(env,"SELECT COUNT(*) AS n FROM commands WHERE wallet=? AND status IN ('queued','running','paused')",a.wallet);if(pending.n>=10)fail(409,'Finish or cancel existing commands first.');
- const commandId=id();await stmt(env,'INSERT INTO commands(id,wallet,prompt,target,created_at) VALUES(?,?,?,?,?)',commandId,a.wallet,b.prompt.trim(),target,now).run();await track(env,a.user_id,'command_queued',now).catch(()=>{});return json({id:commandId,target,status:'queued'},201);
+ const a=await own(env,request),b=await body(request);return json(await queueCommand(env,a,b.prompt,now),201);
  }
  if(path==='/commands/cancel'&&request.method==='POST'){
  const a=await own(env,request),b=await body(request),c=await first(env,'SELECT * FROM commands WHERE id=? AND wallet=?',String(b.id),a.wallet);if(!c)fail(404,'Command not found.');if(!['queued','running','paused'].includes(c.status))fail(409,'Command is already finished.');
@@ -192,13 +206,12 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  const a=await own(env,request),b=await body(request);await requireGameAccess(env,a);if(![0,1,2].includes(b.index))fail(400,'Invalid upgrade.');if(await active(env,a.wallet))fail(409,'Pause your agent before upgrading.');const key=['power_level','tank_level','speed_level'][b.index];if(a[key]>=20)fail(409,'Maximum upgrade level reached.');const price=upgradeCost(a,b.index);if(pointBalance(a)<BigInt(price))fail(409,'Not enough TAP points.');const energy=energyAt(a,now);await cas(env,a,{[key]:a[key]+1,...pointFields(pointBalance(a)-BigInt(price),earnedBalance(a),a._gameAccess?.required===true),energy:energy+(b.index===1?1000:0),updated_at:now},'upgrade',-price,['Multitap','Energy tank','Agent overclock'][b.index]+' upgraded');return json({ok:true});
  }
  if(path==='/missions/claim'&&request.method==='POST'){
- const a=await own(env,request),b=await body(request);await requireGameAccess(env,a);if(!Number.isInteger(b.index)||!missions[b.index])fail(400,'Invalid mission.');const m=missions[b.index];if(a[m.key]<m.goal)fail(409,'Complete this mission first.');if(await first(env,'SELECT id FROM mission_claims WHERE wallet=? AND mission=?',a.wallet,b.index))fail(409,'Reward already claimed.');const exact=a._gameAccess?.required===true,reward=BigInt(m.reward)*(exact?BigInt(a._gameAccess.multiplier):1n);if(!exact&&pointBalance(a)+reward>BigInt(MAX_POINTS))fail(409,'Point limit reached.');
- await cas(env,a,pointFields(pointBalance(a)+reward,earnedBalance(a)+reward,exact),'mission',exact?reward:Number(reward),m.name,[stmt(env,'INSERT INTO mission_claims(id,wallet,mission,created_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',id(),a.wallet,b.index,now,...guard(a))]);return json({ok:true});
+ const a=await own(env,request),b=await body(request);await claimMission(env,a,b.index,now);return json({ok:true});
  }
  if(path==='/disconnect'&&request.method==='POST'){
  const a=await own(env,request);await body(request);await cas(env,a,{connected:0,updated_at:now},'disconnect',0,'Agent sessions revoked',[
  stmt(env,'UPDATE sessions SET revoked=1 WHERE wallet=? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)',a.wallet,...guard(a)),
- stmt(env,"UPDATE nft_intents SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','awaiting_approval','approved') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a)),
+ stmt(env,"UPDATE nft_intents SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','agent_preparing','awaiting_approval','approved') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a)),
  stmt(env,"UPDATE agent_jobs SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a)),
  stmt(env,"UPDATE arena_matches SET status='cancelled',version=version+1 WHERE creator=? AND status='open' AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",a.wallet,...guard(a)),
  stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running','paused') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a))]);return json({ok:true});

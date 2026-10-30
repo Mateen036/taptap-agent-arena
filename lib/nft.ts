@@ -41,8 +41,8 @@ export async function nftGameHolding(e:NftEnv,wallet:string):Promise<{owned:numb
 const asset=(id:number)=>({id,name:'Nib #'+String(id).padStart(5,'0'),image:'/api/nft/preview/v2/'+id+'.png',originalImage:'/api/nft/art/v2/'+id+'.svg',traits:nftTraits(id)});
 const serializeIntent=(v:any)=>({...v,payload:JSON.parse(v.payload),transaction:JSON.parse(v.transaction),summary:JSON.parse(v.summary),preview:v.preview?JSON.parse(v.preview):null,txDigest:digest(JSON.parse(v.transaction))});
 export async function nftIntents(e:NftEnv,wallet:string,now:number){
- await q(e,"UPDATE nft_intents SET status='expired',error='The request expired. Queue a fresh request.',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','awaiting_approval','approved') AND expires_at<=?",now,wallet,now).run();
- return (await rows(e,'SELECT * FROM nft_intents WHERE wallet=? ORDER BY CASE WHEN status IN (\'queued\',\'preparing\',\'awaiting_approval\',\'approved\',\'executing\',\'app_confirmation\',\'needs_receipt\',\'broadcast\') THEN 0 ELSE 1 END,created_at DESC LIMIT 20',wallet)).map(serializeIntent);
+ await q(e,"UPDATE nft_intents SET status='expired',error='The request expired. Queue a fresh request.',finished_at=? WHERE wallet=? AND status IN ('queued','preparing','agent_preparing','awaiting_approval','approved') AND expires_at<=?",now,wallet,now).run();
+ return (await rows(e,'SELECT * FROM nft_intents WHERE wallet=? ORDER BY CASE WHEN status IN (\'queued\',\'preparing\',\'agent_preparing\',\'awaiting_approval\',\'approved\',\'executing\',\'app_confirmation\',\'needs_receipt\',\'broadcast\') THEN 0 ELSE 1 END,created_at DESC LIMIT 20',wallet)).map(serializeIntent);
 }
 function quoteDisplay(price:bigint){const q=marketQuote(price);return {buyerFeeRaw:q.buyerFee.toString(),sellerFeeRaw:q.sellerFee.toString(),buyerTotalRaw:q.buyerTotal.toString(),sellerProceedsRaw:q.sellerProceeds.toString(),buyerFee:formatUnits(q.buyerFee,18),sellerFee:formatUnits(q.sellerFee,18),buyerTotal:formatUnits(q.buyerTotal,18),sellerProceeds:formatUnits(q.sellerProceeds,18)};}
 const listingView=(id:number,l:any,available:boolean)=>({tokenId:id,listingId:String(l[0]),seller:String(l[1]).toLowerCase(),priceRaw:String(l[2]),price:formatUnits(BigInt(l[2]),18),...quoteDisplay(BigInt(l[2])),expiresAt:Number(l[3])*1000,available,...asset(id)});
@@ -84,8 +84,18 @@ export async function nftSnapshot(e:NftEnv,wallet:string|null,url:URL,now:number
  const bids=(await Promise.all(bidIds.map(id=>bid(c,config.market,BigInt(id))))).filter(Boolean).map((v:any)=>rar(v));
  return {...base,gallery:gallery.map(rar),sort,sortOptions:MARKET_SORTS,rarity:{method:'Each trait value scores minted supply ÷ number of minted Nibs with that value; the six scores are summed. Rank 1 is rarest. Ties share a rank. Recomputed as supply is minted.',minted:mintedCount,traits:traitFrequencies(mintedCount)},recentSales:salesResult.items.map(v=>rar(v)).map(v=>({...v,...asset(v.tokenId)})),salesIndex:salesResult.index,marketTruncated:truncated,bids,bidSlots:selectedCount,bidView,bidPage:bidOffset/12,feeRecipient:String(feeRecipient),feeDestination:String(feeRecipient).toLowerCase()===config.vault.toLowerCase()?'LP vault':'Project treasury',status:open&&!paused?'live':'paused',configured:true,bnbPriceRaw,bnbQuoteBufferBps:100,contracts:config,minted:Number(minted),mintOpen:open&&!paused,listings,marketPage:marketOffset/12,marketSlots:sorted.length,marketActive:Number(count),owned,wallet:mine,intents:wallet?await nftIntents(e,wallet,now):[],lp:{wrappedBNB:NFT_WBNB,bnbBalance:formatUnits(BigInt(wrappedFunds),18),bnbAdded:formatUnits(BigInt(bnbAdded),18),lockedBNBRaw:String(bnbLocked),balance:formatUnits(BigInt(funds),18),paymentAdded:formatUnits(BigInt(added),18),lockedRaw:String(locked),token:String(token),tokenConfigured:String(token)!=='0x0000000000000000000000000000000000000000',vault:config.vault,router:NFT_ROUTER},market:{completedSales:Number(sales),volume:formatUnits(BigInt(volume),18),feesCollected:formatUnits(BigInt(feesCollected),18),escrowedBNB:formatUnits(BigInt(escrowed),18),bidCount:Number(bidSlots)}};
 }
-async function queue(e:NftEnv,a:any,b:any,now:number){
- const {c,config}=await chain(e),kind=String(b.kind),wallet=a.wallet as `0x${string}`,payload:any={};let tx:NftTransaction,summary:any;
+async function queue(e:NftEnv,a:any,b:any,now:number,agent=false){
+ const {c,config}=await chain(e),wallet=a.wallet as `0x${string}`,payload:any={};let kind=String(b.kind),tx:NftTransaction,summary:any;
+ if(agent){// Agent-started requests may omit values the chain already fixes; the agent still validates the exact transaction locally.
+  b={...b};if(kind==='buy'&&b.tokenId!==undefined&&(!b.listingId||!b.priceRaw)){const l=await listing(c,config.market,nftTokenId(b.tokenId));b.listingId=l.listingId;b.priceRaw=l.priceRaw;}
+  if(kind==='accept-bid'&&b.bidId!==undefined&&(!b.priceRaw||!b.bidder)){const o=await bid(c,config.market,bidId(String(b.bidId)));if(o){b.priceRaw=o.priceRaw;b.bidder=o.bidder;}}
+  if(kind==='withdraw-bid-refund'&&!b.amountRaw)b.amountRaw=String(await read(c,config.market,nftMarketAbi,'refunds',[wallet]));
+  // A listing or bid acceptance needs a per-NFT approval first. Prepare that single exact approval instead (the agent then repeats the original request).
+  if(kind==='list'||kind==='accept-bid'){
+   let tokenId:number|null=null;if(kind==='list')tokenId=nftTokenId(b.tokenId);else{const o=await bid(c,config.market,bidId(String(b.bidId)));if(o&&o.seller===wallet)tokenId=o.tokenId;}
+   if(tokenId!==null&&String(await read(c,config.collection,nftAbi,'getApproved',[BigInt(tokenId)])).toLowerCase()!==config.market.toLowerCase()){payload.followUp=kind;kind='nft-approval';b={kind,tokenId};}
+  }
+ }
  if(!['cancel-bid','withdraw-bid-refund'].includes(kind)&&BigInt(await read(c,AGENT_ID_REGISTRY,identityAbi,'balanceOf',[wallet]))===0n)fail(403,'This wallet needs a Binance Agent ID on BNB Chain.');
  const id=crypto.randomUUID(),expires=now+20*60000,deadline=BigInt(Math.floor(expires/1000));
  if(kind==='mint'||kind==='mint-approval'){
@@ -157,8 +167,9 @@ async function queue(e:NftEnv,a:any,b:any,now:number){
   }
   summary.currency='BNB';
  }else fail(400,'Unsupported NFT task. Marketplace purchases use BNB and need no USDT approval.');
+ if(agent)payload.origin='agent';
  if(['list','buy','bid','accept-bid'].includes(kind))summary.feeRecipient=String(await read(c,config.market,nftMarketAbi,'feeRecipient'));
- const result=await e.DB.batch([q(e,"INSERT INTO nft_intents(id,wallet,kind,payload,\"transaction\",summary,created_at,expires_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND status IN ('queued','preparing','awaiting_approval','approved','executing','app_confirmation','needs_receipt','broadcast'))<4 AND (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND created_at>?)<12 AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?)",id,wallet,kind,canonical(payload),canonical(tx!),canonical({...summary!,networkFee:'BNB network gas is additional, including on a free mint.'}),now,expires,wallet,wallet,now-60000,wallet,a.version)]);
+ const result=await e.DB.batch([q(e,"INSERT INTO nft_intents(id,wallet,kind,payload,\"transaction\",summary,status,created_at,expires_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND status IN ('queued','preparing','agent_preparing','awaiting_approval','approved','executing','app_confirmation','needs_receipt','broadcast'))<4 AND (SELECT COUNT(*) FROM nft_intents WHERE wallet=? AND created_at>?)<12 AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?)",id,wallet,kind,canonical(payload),canonical(tx!),canonical({...summary!,networkFee:'BNB network gas is additional, including on a free mint.'}),agent?'agent_preparing':'queued',now,expires,wallet,wallet,now-60000,wallet,a.version)]);
  if(!result[0].meta.changes)fail(429,'Finish or cancel existing NFT requests before adding another.');return serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id));
 }
 export async function nftReceipt(e:NftEnv,a:any,intentId:string,hash:any,now:number){
@@ -188,12 +199,12 @@ export async function nftRoute(request:Request,e:NftEnv,a:any,body:()=>Promise<a
   if(action==='approve'){
    if(b.requestId!==i.preview_request_id||b.txDigest!==digest(JSON.parse(i.transaction)))fail(409,'The preview changed. Review the current transaction first.');
    const r=await q(e,"UPDATE nft_intents SET status='approved',approved_at=? WHERE id=? AND wallet=? AND status='awaiting_approval' AND preview_expires_at>? AND expires_at>?",now,id,a.wallet,now+5000,now).run();if(!r.meta.changes)fail(409,'Preview expired or request changed. Ask your agent for a fresh preview.');
-  }else{const r=await q(e,"UPDATE nft_intents SET status='cancelled',finished_at=? WHERE id=? AND wallet=? AND status IN ('queued','preparing','awaiting_approval','approved')",now,id,a.wallet).run();if(!r.meta.changes)fail(409,'A submitted transaction cannot be cancelled from this queue.');}
+  }else{const r=await q(e,"UPDATE nft_intents SET status='cancelled',finished_at=? WHERE id=? AND wallet=? AND status IN ('queued','preparing','agent_preparing','awaiting_approval','approved')",now,id,a.wallet).run();if(!r.meta.changes)fail(409,'A submitted transaction cannot be cancelled from this queue.');}
   return json({ok:true});
  }
  return null;
 }
-export const NFT_ACTIONS=['nft-state','nft-claim','nft-preview','nft-execute','nft-broadcast','nft-fail','nft-confirm'];
+export const NFT_ACTIONS=['nft-state','nft-request','nft-claim','nft-preview','nft-execute','nft-broadcast','nft-fail','nft-confirm'];
 export function nftPreviewForReview(preview:any){return {
  requestId:preview.requestId,expiresAt:preview.expiresAt,
  parsedTransaction:preview.parsedTransaction||preview.parsedTx||preview.transaction||null,
@@ -205,25 +216,28 @@ export function nftPreviewForReview(preview:any){return {
 export async function nftAction(e:NftEnv,a:any,action:string,p:any,now:number){
  if(action!=='nft-state')snapshotCache.clear();
  if(action==='nft-state')return {intents:await nftIntents(e,a.wallet,now)};
+ if(action==='nft-request'){const b=typeof p==='object'&&p?p:{};return {intent:await queue(e,a,b,now,true),contracts:configured(e)};}
  const id=typeof p.intentId==='string'?p.intentId:'',i=await first(e,'SELECT * FROM nft_intents WHERE id=? AND wallet=?',id,a.wallet);if(!i)fail(404,'NFT request not found.');
  if(action==='nft-confirm')return nftReceipt(e,a,id,p.transactionHash,now);
  if(action==='nft-fail'){
-  const uncertain=p.uncertain===true;if(!['queued','preparing','awaiting_approval','approved','executing','app_confirmation','broadcast','needs_receipt'].includes(i.status))fail(409,'NFT request already finished.');if(!uncertain&&!['queued','preparing','awaiting_approval','approved'].includes(i.status))fail(409,'A submitted transaction requires a verified receipt or uncertain-submission recovery.');
+  const uncertain=p.uncertain===true;if(!['queued','preparing','agent_preparing','awaiting_approval','approved','executing','app_confirmation','broadcast','needs_receipt'].includes(i.status))fail(409,'NFT request already finished.');if(!uncertain&&!['queued','preparing','agent_preparing','awaiting_approval','approved'].includes(i.status))fail(409,'A submitted transaction requires a verified receipt or uncertain-submission recovery.');
   if(uncertain&& !['executing','app_confirmation','broadcast','needs_receipt'].includes(i.status))fail(409,'Nothing has been submitted.');
   const error=uncertain?'Submission status uncertain. Recover the transaction hash; do not execute again.':p.code==='expired'?'Preview expired. Queue a fresh request.':p.code==='wallet'?'Binance wallet refused the operation. Check its app and agent output.':'Agent could not prepare this request. Check wallet balance, gas, eligibility and approvals.';
   await q(e,"UPDATE nft_intents SET status=?,error=?,finished_at=? WHERE id=? AND wallet=? AND status=?",uncertain?'needs_receipt':'failed',error,uncertain?null:now,id,a.wallet,i.status).run();return {ok:true};
  }
  if(action==='nft-claim'){
-  if(i.expires_at<=now)fail(409,'Request expired.');if(!['queued','preparing'].includes(i.status))fail(409,'Request is not queued.');await q(e,"UPDATE nft_intents SET status='preparing' WHERE id=? AND wallet=? AND status='queued'",id,a.wallet).run();return {intent:serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id)),contracts:configured(e)};
+  if(i.expires_at<=now)fail(409,'Request expired.');if(!['queued','preparing','agent_preparing'].includes(i.status))fail(409,'Request is not queued.');if(i.status!=='agent_preparing')await q(e,"UPDATE nft_intents SET status='preparing' WHERE id=? AND wallet=? AND status='queued'",id,a.wallet).run();return {intent:serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id)),contracts:configured(e)};
  }
  if(action==='nft-preview'){
-  if(i.status!=='preparing'||i.expires_at<=now)fail(409,'Request is no longer being prepared.');const preview=p.preview;
+  if(!['preparing','agent_preparing'].includes(i.status)||i.expires_at<=now)fail(409,'Request is no longer being prepared.');const preview=p.preview;
   if(!preview||typeof preview.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(preview.requestId)||!Number.isSafeInteger(preview.expiresAt)||preview.expiresAt<=now||preview.expiresAt>now+10*60000||canonical(p.transaction)!==i.transaction||JSON.stringify(preview).length>10000)fail(400,'Invalid or mismatched transaction preview.');
   const safe=nftPreviewForReview(preview);
-  await q(e,"UPDATE nft_intents SET status='awaiting_approval',preview=?,preview_request_id=?,preview_expires_at=? WHERE id=? AND wallet=? AND status='preparing'",canonical(safe),preview.requestId,Math.min(preview.expiresAt,i.expires_at),id,a.wallet).run();return {ok:true};
+  await q(e,"UPDATE nft_intents SET status='awaiting_approval',preview=?,preview_request_id=?,preview_expires_at=? WHERE id=? AND wallet=? AND status IN ('preparing','agent_preparing')",canonical(safe),preview.requestId,Math.min(preview.expiresAt,i.expires_at),id,a.wallet).run();return {ok:true};
  }
  if(action==='nft-execute'){
-  const result=await q(e,"UPDATE nft_intents SET status='executing' WHERE id=? AND wallet=? AND status='approved' AND preview_request_id=? AND preview_expires_at>? AND expires_at>? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?)",id,a.wallet,p.requestId,now,now,a.wallet,a.version).run();if(!result.meta.changes)fail(409,'Transaction is not approved, expired, or already executing.');return {intent:serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id)),contracts:configured(e)};
+  // Agent-started requests (payload.origin='agent') are approved by the user in chat; the connector only runs `execute --approve` after that yes.
+  const agentOrigin=(()=>{try{return JSON.parse(i.payload).origin==='agent';}catch{return false;}})();
+  const result=await q(e,`UPDATE nft_intents SET status='executing' WHERE id=? AND wallet=? AND status IN ('approved'${agentOrigin?",'awaiting_approval'":''}) AND preview_request_id=? AND preview_expires_at>? AND expires_at>? AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND connected=1 AND version=?)`,id,a.wallet,p.requestId,now,now,a.wallet,a.version).run();if(!result.meta.changes)fail(409,'Transaction is not approved, expired, or already executing.');return {intent:serializeIntent(await first(e,'SELECT * FROM nft_intents WHERE id=?',id)),contracts:configured(e)};
  }
  if(action==='nft-broadcast'){
   if(!['executing','app_confirmation','needs_receipt','broadcast'].includes(i.status))fail(409,'Transaction was not approved for execution.');

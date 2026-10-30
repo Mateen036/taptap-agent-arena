@@ -1773,7 +1773,7 @@ function weierstrass(curveDef) {
   function normalizeS(s) {
     return isBiggerThanHalfOrder(s) ? modN2(-s) : s;
   }
-  const slcNum = (b, from15, to) => bytesToNumberBE(b.slice(from15, to));
+  const slcNum = (b, from16, to) => bytesToNumberBE(b.slice(from16, to));
   class Signature {
     constructor(r, s, recovery) {
       aInRange("r", r, _1n4, CURVE_ORDER);
@@ -3700,7 +3700,56 @@ function formatEther(wei, unit = "wei") {
 function formatGwei(wei, unit = "wei") {
   return format(wei, exponents.gwei - exponents[unit]);
 }
-var exponents, InvalidDecimalsError;
+function from(value, decimals = 0) {
+  if (!Number.isInteger(decimals) || decimals < 0)
+    throw new InvalidDecimalsError({ decimals });
+  if (!/^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(value))
+    throw new InvalidDecimalNumberError({ value });
+  let [integer = "", fraction = "0"] = value.split(".");
+  const negative = integer.startsWith("-");
+  if (negative)
+    integer = integer.slice(1);
+  if (integer === "")
+    integer = "0";
+  fraction = fraction.replace(/(0+)$/, "");
+  if (decimals === 0) {
+    if (fraction.length > 0 && Number.parseInt(fraction[0], 10) >= 5)
+      integer = `${BigInt(integer) + 1n}`;
+    fraction = "";
+  } else if (fraction.length > decimals) {
+    const left = fraction.slice(0, decimals);
+    const roundDigit = Number.parseInt(fraction.slice(decimals, decimals + 1), 10);
+    if (roundDigit >= 5) {
+      const carried = carry(left);
+      if (carried.length > decimals) {
+        fraction = carried.slice(1);
+        integer = `${BigInt(integer) + 1n}`;
+      } else {
+        fraction = carried;
+      }
+    } else {
+      fraction = left;
+    }
+  } else {
+    fraction = fraction.padEnd(decimals, "0");
+  }
+  return BigInt(`${negative ? "-" : ""}${integer}${fraction}`);
+}
+function carry(digits) {
+  const out = digits.split("");
+  let i = out.length - 1;
+  while (i >= 0) {
+    const d = Number.parseInt(out[i], 10) + 1;
+    if (d < 10) {
+      out[i] = String(d);
+      return out.join("");
+    }
+    out[i] = "0";
+    i--;
+  }
+  return `1${out.join("")}`;
+}
+var exponents, InvalidDecimalNumberError, InvalidDecimalsError;
 var init_Value = __esm({
   "node_modules/viem/_esm/utils/unit/Value.js"() {
     exponents = {
@@ -3709,6 +3758,17 @@ var init_Value = __esm({
       szabo: 12,
       finney: 15,
       ether: 18
+    };
+    InvalidDecimalNumberError = class extends Error {
+      constructor({ value }) {
+        super(`Value \`${value}\` is not a valid decimal number.`);
+        Object.defineProperty(this, "name", {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: "Value.InvalidDecimalNumberError"
+        });
+      }
     };
     InvalidDecimalsError = class extends Error {
       constructor({ decimals }) {
@@ -6764,12 +6824,12 @@ var init_request = __esm({
     init_base();
     init_utils4();
     HttpRequestError = class extends BaseError {
-      constructor({ body, cause, details, headers, status, url }) {
+      constructor({ body, cause, details, headers, status: status2, url }) {
         super("HTTP request failed.", {
           cause,
           details,
           metaMessages: [
-            status && `Status: ${status}`,
+            status2 && `Status: ${status2}`,
             `URL: ${getUrl(url)}`,
             body && `Request body: ${stringify(body)}`
           ].filter(Boolean),
@@ -6801,7 +6861,7 @@ var init_request = __esm({
         });
         this.body = body;
         this.headers = headers;
-        this.status = status;
+        this.status = status2;
         this.url = url;
       }
     };
@@ -7925,7 +7985,7 @@ function assert(value) {
   if (value.BYTES_PER_ELEMENT !== 1 || value.constructor.name !== "Uint8Array")
     throw new InvalidBytesTypeError(value);
 }
-function from(value) {
+function from2(value) {
   if (value instanceof Uint8Array)
     return value;
   if (typeof value === "string")
@@ -8119,7 +8179,7 @@ function assert2(value, options = {}) {
 function concat2(...values) {
   return `0x${values.reduce((acc, x) => acc + x.replace("0x", ""), "")}`;
 }
-function from2(value) {
+function from3(value) {
   if (value instanceof Uint8Array)
     return fromBytes(value);
   if (Array.isArray(value))
@@ -10865,8 +10925,8 @@ init_toHex();
 function createFilterRequestScope(client, { method }) {
   const requestMap = {};
   if (client.transport.type === "fallback")
-    client.transport.onResponse?.(({ method: method_, response: id, status, transport }) => {
-      if (status === "success" && method === method_)
+    client.transport.onResponse?.(({ method: method_, response: id, status: status2, transport }) => {
+      if (status2 === "success" && method === method_)
         requestMap[id] = transport.request;
     });
   return ((id) => requestMap[id] || client.request);
@@ -11557,14 +11617,14 @@ async function prepareTransactionRequest(client, args2) {
     return false;
   })();
   const fillResult = attemptFill ? await getAction(client, fillTransaction, "fillTransaction")({ ...request2, nonce }).then((result) => {
-    const { chainId: chainId2, from: from15, gas: gas2, gasPrice, nonce: nonce2, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, type: type2, ...rest } = result.transaction;
+    const { chainId: chainId2, from: from16, gas: gas2, gasPrice, nonce: nonce2, maxFeePerBlobGas, maxFeePerGas, maxPriorityFeePerGas, type: type2, ...rest } = result.transaction;
     const feeToken = "feeToken" in rest ? rest.feeToken : void 0;
     const hasFilledFeePayerSignature = "feePayerSignature" in rest && rest.feePayerSignature !== null && typeof rest.feePayerSignature !== "undefined";
     const shouldUseFilledFeeToken = typeof feeToken !== "undefined" && feeToken !== null && (!("feeToken" in request2) || hasFilledFeePayerSignature);
     supportsFillTransaction.set(client.uid, true);
     return {
       ...request2,
-      ...from15 ? { from: from15 } : {},
+      ...from16 ? { from: from16 } : {},
       ...type2 && !request2.type ? { type: type2 } : {},
       ...typeof chainId2 !== "undefined" ? { chainId: chainId2 } : {},
       ...typeof gas2 !== "undefined" ? { gas: gas2 } : {},
@@ -13219,8 +13279,8 @@ async function getNftTokenUri(client, { nft }) {
   throw new EnsAvatarUnsupportedNamespaceError({ namespace: nft.namespace });
 }
 function getNftMetadataUri({ nft, uri }) {
-  const tokenId = nft.namespace === "erc1155" ? numberToHex(BigInt(nft.tokenID), { size: 32 }).slice(2) : nft.tokenID;
-  return uri.replace(/(?:0x)?{id}/, tokenId);
+  const tokenId2 = nft.namespace === "erc1155" ? numberToHex(BigInt(nft.tokenID), { size: 32 }).slice(2) : nft.tokenID;
+  return uri.replace(/(?:0x)?{id}/, tokenId2);
 }
 
 // node_modules/viem/_esm/utils/ens/avatar/parseAvatarRecord.js
@@ -14241,7 +14301,7 @@ var SignatureErc8010_exports = {};
 __export(SignatureErc8010_exports, {
   InvalidWrappedSignatureError: () => InvalidWrappedSignatureError,
   assert: () => assert6,
-  from: () => from9,
+  from: () => from10,
   magicBytes: () => magicBytes,
   suffixParameters: () => suffixParameters,
   unwrap: () => unwrap,
@@ -14301,7 +14361,7 @@ init_Bytes();
 init_Hex();
 function keccak2562(value, options = {}) {
   const { as = typeof value === "string" ? "Hex" : "Bytes" } = options;
-  const bytes = keccak_256(from(value));
+  const bytes = keccak_256(from2(value));
   if (as === "Bytes")
     return bytes;
   return fromBytes(bytes);
@@ -14333,7 +14393,7 @@ function assert3(publicKey, options = {}) {
   }
   throw new InvalidError({ publicKey });
 }
-function from3(value) {
+function from4(value) {
   const publicKey = (() => {
     if (validate2(value))
       return fromHex2(value);
@@ -14448,7 +14508,7 @@ var InvalidSerializedSizeError = class extends BaseError3 {
     super(`Value \`${publicKey}\` is an invalid public key size.`, {
       metaMessages: [
         "Expected: 33 bytes (compressed + prefix), 64 bytes (uncompressed) or 65 bytes (uncompressed + prefix).",
-        `Received ${size3(from2(publicKey))} bytes.`
+        `Received ${size3(from3(publicKey))} bytes.`
       ]
     });
     Object.defineProperty(this, "name", {
@@ -14498,7 +14558,7 @@ function checksum2(address) {
   checksum.set(address, result);
   return result;
 }
-function from4(address, options = {}) {
+function from5(address, options = {}) {
   const { checksum: checksumVal = false } = options;
   assert4(address);
   if (checksumVal)
@@ -14507,7 +14567,7 @@ function from4(address, options = {}) {
 }
 function fromPublicKey(publicKey, options = {}) {
   const address = keccak2562(`0x${toHex2(publicKey).slice(4)}`).substring(26);
-  return from4(`0x${address}`, options);
+  return from5(`0x${address}`, options);
 }
 function validate3(address, options = {}) {
   const { strict = true } = options ?? {};
@@ -15374,7 +15434,7 @@ function encodePacked(types, values) {
   }
   encodePacked2.encode = encode4;
 })(encodePacked || (encodePacked = {}));
-function from5(parameters) {
+function from6(parameters) {
   if (Array.isArray(parameters) && typeof parameters[0] === "string")
     return parseAbiParameters(parameters);
   if (typeof parameters === "string")
@@ -15475,7 +15535,7 @@ init_Hex();
 init_Bytes();
 init_Errors();
 init_Hex();
-function from6(value, options) {
+function from7(value, options) {
   const { as } = options;
   const encodable = getEncodable2(value);
   const cursor = create(new Uint8Array(encodable.length));
@@ -15486,7 +15546,7 @@ function from6(value, options) {
 }
 function fromHex3(hex, options = {}) {
   const { as = "Hex" } = options;
-  return from6(hex, { as });
+  return from7(hex, { as });
 }
 function getEncodable2(bytes) {
   if (Array.isArray(bytes))
@@ -15621,9 +15681,9 @@ function extract2(value) {
     return void 0;
   if (typeof value.s === "undefined")
     return void 0;
-  return from7(value);
+  return from8(value);
 }
-function from7(signature) {
+function from8(signature) {
   const signature_ = (() => {
     if (typeof signature === "string")
       return fromHex4(signature);
@@ -15687,7 +15747,7 @@ var InvalidSerializedSizeError2 = class extends BaseError3 {
     super(`Value \`${signature}\` is an invalid signature size.`, {
       metaMessages: [
         "Expected: 64 bytes or 65 bytes.",
-        `Received ${size3(from2(signature))} bytes.`
+        `Received ${size3(from3(signature))} bytes.`
       ]
     });
     Object.defineProperty(this, "name", {
@@ -15755,7 +15815,7 @@ var InvalidVError = class extends BaseError3 {
 };
 
 // node_modules/ox/_esm/core/Authorization.js
-function from8(authorization, options = {}) {
+function from9(authorization, options = {}) {
   if (typeof authorization.chainId === "string")
     return fromRpc3(authorization);
   return { ...authorization, ...options.signature };
@@ -15807,14 +15867,14 @@ function recoverPublicKey2(options) {
   const { payload, signature } = options;
   const { r, s, yParity } = signature;
   const signature_ = new secp256k1.Signature(BigInt(r), BigInt(s)).addRecoveryBit(yParity);
-  const point = signature_.recoverPublicKey(from2(payload).substring(2));
-  return from3(point);
+  const point = signature_.recoverPublicKey(from3(payload).substring(2));
+  return from4(point);
 }
 var fromSeedDomain = fromString("ox.secp256k1.fromSeed.v1");
 
 // node_modules/ox/_esm/erc8010/SignatureErc8010.js
 var magicBytes = "0x8010801080108010801080108010801080108010801080108010801080108010";
-var suffixParameters = from5("(uint256 chainId, address delegation, uint256 nonce, uint8 yParity, uint256 r, uint256 s), address to, bytes data");
+var suffixParameters = from6("(uint256 chainId, address delegation, uint256 nonce, uint8 yParity, uint256 r, uint256 s), address to, bytes data");
 function assert6(value) {
   if (typeof value === "string") {
     if (slice3(value, -32) !== magicBytes)
@@ -15822,7 +15882,7 @@ function assert6(value) {
   } else
     assert5(value.authorization);
 }
-function from9(value) {
+function from10(value) {
   if (typeof value === "string")
     return unwrap(value);
   return value;
@@ -15833,7 +15893,7 @@ function unwrap(wrapped) {
   const suffix = slice3(wrapped, -suffixLength - 64, -64);
   const signature = slice3(wrapped, 0, -suffixLength - 64);
   const [auth, to, data] = decode(suffixParameters, suffix);
-  const authorization = from8({
+  const authorization = from9({
     address: auth.delegation,
     chainId: Number(auth.chainId),
     nonce: auth.nonce,
@@ -15852,7 +15912,7 @@ function wrap(value) {
   assert6(value);
   const self = recoverAddress2({
     payload: getSignPayload(value.authorization),
-    signature: from7(value.authorization)
+    signature: from8(value.authorization)
   });
   const suffix = encode2(suffixParameters, [
     {
@@ -15890,6 +15950,12 @@ var InvalidWrappedSignatureError = class extends BaseError3 {
 init_Value();
 function formatUnits(value, decimals) {
   return format(value, decimals);
+}
+
+// node_modules/viem/_esm/utils/unit/parseUnits.js
+init_Value();
+function parseUnits(value, decimals) {
+  return from(value, decimals);
 }
 
 // node_modules/viem/_esm/utils/formatters/proof.js
@@ -16275,14 +16341,14 @@ async function simulateBlocks(client, parameters) {
         const gasUsed = BigInt(call2.gasUsed);
         const maxUsedGas = call2.maxUsedGas === void 0 ? void 0 : BigInt(call2.maxUsedGas);
         const logs = call2.logs?.map((log) => formatLog(log));
-        const status = call2.status === "0x1" ? "success" : "failure";
-        const result2 = abi2 && status === "success" && data !== "0x" ? decodeFunctionResult({
+        const status2 = call2.status === "0x1" ? "success" : "failure";
+        const result2 = abi2 && status2 === "success" && data !== "0x" ? decodeFunctionResult({
           abi: abi2,
           data,
           functionName
         }) : null;
         const error = (() => {
-          if (status === "success")
+          if (status2 === "success")
             return void 0;
           let error2;
           if (data === "0x")
@@ -16305,8 +16371,8 @@ async function simulateBlocks(client, parameters) {
           // only present when reported by the node, so existing consumers
           // (and snapshots) are unaffected on nodes that omit it.
           ...maxUsedGas === void 0 ? {} : { maxUsedGas },
-          status,
-          ...status === "success" ? {
+          status: status2,
+          ...status2 === "success" ? {
             result: result2
           } : {
             error
@@ -16431,7 +16497,7 @@ function getAmbiguousTypes2(sourceParameters, targetParameters, args2) {
 }
 
 // node_modules/ox/_esm/core/AbiItem.js
-function from10(abiItem, options = {}) {
+function from11(abiItem, options = {}) {
   const { prepare: prepare2 = true } = options;
   const item = (() => {
     if (Array.isArray(abiItem))
@@ -16606,8 +16672,8 @@ function encode3(...parameters) {
   const { bytecode, args: args2 } = options;
   return concat2(bytecode, abiConstructor.inputs?.length && args2?.length ? encode2(abiConstructor.inputs, args2) : "0x");
 }
-function from11(abiConstructor) {
-  return from10(abiConstructor);
+function from12(abiConstructor) {
+  return from11(abiConstructor);
 }
 function fromAbi2(abi2) {
   const item = abi2.find((item2) => item2.type === "constructor");
@@ -16617,8 +16683,8 @@ function fromAbi2(abi2) {
 }
 
 // node_modules/ox/_esm/core/AbiEvent.js
-function from12(abiEvent, options = {}) {
-  return from10(abiEvent, options);
+function from13(abiEvent, options = {}) {
+  return from11(abiEvent, options);
 }
 function getSelector2(abiItem) {
   return getSignatureHash(abiItem);
@@ -16661,8 +16727,8 @@ function encodeData2(...parameters) {
   const data = args2.length > 0 ? encode2(item.inputs, args2) : void 0;
   return data ? concat2(selector, data) : selector;
 }
-function from13(abiFunction, options = {}) {
-  return from10(abiFunction, options);
+function from14(abiFunction, options = {}) {
+  return from11(abiFunction, options);
 }
 function fromAbi3(abi2, name, options) {
   const item = fromAbi(abi2, name, options);
@@ -16693,22 +16759,22 @@ var getBalanceCode = "0x6080604052348015600e575f80fd5b5061016d8061001c5f395ff3fe
 var staticCallCode = "0x608060405234801561000f575f5ffd5b5060043610610029575f3560e01c8063fd00430c1461002d575b5f5ffd5b6100476004803603810190610042919061012b565b610049565b005b80825f375f5f825f865afa610060573d5f5f3e3d5ffd5b3d5f5f3e3d5ff35b5f5ffd5b5f5ffd5b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f61009982610070565b9050919050565b6100a98161008f565b81146100b3575f5ffd5b50565b5f813590506100c4816100a0565b92915050565b5f5ffd5b5f5ffd5b5f5ffd5b5f5f83601f8401126100eb576100ea6100ca565b5b8235905067ffffffffffffffff811115610108576101076100ce565b5b602083019150836001820283011115610124576101236100d2565b5b9250929050565b5f5f5f6040848603121561014257610141610068565b5b5f61014f868287016100b6565b935050602084013567ffffffffffffffff8111156101705761016f61006c565b5b61017c868287016100d6565b9250925050925092509256fea2646970667358221220635ed99185cacf3f2acba6921f23687c969cec2bbaf5f9ad599f507e6e105e6964736f6c63430008230033";
 var assetProbeGas = 1000000n;
 var staticCallAddressBase = 0x00000000000000000000000000000000deadbeefn;
-var transferEventSelector = getSelector2(from12("event Transfer(address indexed from, address indexed to, uint256 value)"));
-var balanceOfFunction = from13("function balanceOf(address) returns (uint256)");
-var decimalsFunction = from13("function decimals() returns (uint256)");
-var tokenUriFunction = from13("function tokenURI(uint256) returns (string)");
-var symbolFunction = from13("function symbol() returns (string)");
-var staticCallFunction = from13("function query(address target, bytes data)");
+var transferEventSelector = getSelector2(from13("event Transfer(address indexed from, address indexed to, uint256 value)"));
+var balanceOfFunction = from14("function balanceOf(address) returns (uint256)");
+var decimalsFunction = from14("function decimals() returns (uint256)");
+var tokenUriFunction = from14("function tokenURI(uint256) returns (string)");
+var symbolFunction = from14("function symbol() returns (string)");
+var staticCallFunction = from14("function query(address target, bytes data)");
 async function simulateCalls(client, parameters) {
   const { blockNumber, blockTag, calls, stateOverrides, traceAssetChanges, traceTransfers, validation } = parameters;
   const account = parameters.account ? parseAccount(parameters.account) : void 0;
   if (traceAssetChanges && !account)
     throw new BaseError("`account` is required when `traceAssetChanges` is true");
-  const getBalanceData = account ? encode3(from11("constructor(bytes, bytes)"), {
+  const getBalanceData = account ? encode3(from12("constructor(bytes, bytes)"), {
     bytecode: deploylessCallViaBytecodeBytecode,
     args: [
       getBalanceCode,
-      encodeData2(from13("function getBalance(address)"), [account.address])
+      encodeData2(from14("function getBalance(address)"), [account.address])
     ]
   }) : void 0;
   const blockTag_ = blockTag ?? client.experimental_blockTag ?? "latest";
@@ -16943,7 +17009,7 @@ var SignatureErc6492_exports = {};
 __export(SignatureErc6492_exports, {
   InvalidWrappedSignatureError: () => InvalidWrappedSignatureError2,
   assert: () => assert7,
-  from: () => from14,
+  from: () => from15,
   magicBytes: () => magicBytes2,
   universalSignatureValidatorAbi: () => universalSignatureValidatorAbi,
   universalSignatureValidatorBytecode: () => universalSignatureValidatorBytecode,
@@ -17003,19 +17069,19 @@ function assert7(wrapped) {
   if (slice3(wrapped, -32) !== magicBytes2)
     throw new InvalidWrappedSignatureError2(wrapped);
 }
-function from14(wrapped) {
+function from15(wrapped) {
   if (typeof wrapped === "string")
     return unwrap2(wrapped);
   return wrapped;
 }
 function unwrap2(wrapped) {
   assert7(wrapped);
-  const [to, data, signature] = decode(from5("address, bytes, bytes"), wrapped);
+  const [to, data, signature] = decode(from6("address, bytes, bytes"), wrapped);
   return { data, signature, to };
 }
 function wrap2(value) {
   const { data, signature, to } = value;
-  return concat2(encode2(from5("address, bytes, bytes"), [
+  return concat2(encode2(from6("address, bytes, bytes"), [
     to,
     data,
     signature
@@ -18467,8 +18533,8 @@ init_keccak256();
 
 // agent/connector.ts
 import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+import fs2 from "node:fs";
+import path2 from "node:path";
 import os from "node:os";
 
 // lib/game.ts
@@ -18633,8 +18699,8 @@ function validateNftTransaction(intent, contracts, wallet) {
   return true;
 }
 function developerMode(baw2) {
-  const status = baw2(["wallet", "status"]);
-  if (status.status !== "CONNECTED") throw Error("Sign in to Binance before an NFT transaction.");
+  const status2 = baw2(["wallet", "status"]);
+  if (status2.status !== "CONNECTED") throw Error("Sign in to Binance before an NFT transaction.");
   const settings = baw2(["wallet", "settings"]), raw = settings.devMode?.expiresAt, n = Number(raw), expiry = typeof raw === "string" && !/^\d+$/.test(raw) ? Date.parse(raw) : n < 1e12 ? n * 1e3 : n;
   if (!settings.devMode?.enabled || !Number.isFinite(expiry) || expiry < Date.now()) throw Error("Enable Developer Mode in Binance Agentic Wallet settings.");
   const addresses = baw2(["wallet", "address"]).addresses;
@@ -18655,7 +18721,7 @@ function findOrderHash(value, order, depth = 0) {
 }
 async function processNftIntent(s, intents, bridge) {
   const { action: action2, baw: baw2, persist: persist2 } = bridge;
-  const work = intents.filter((i) => ["queued", "preparing", "approved", "executing", "broadcast", "app_confirmation"].includes(i.status)).sort((a, b) => (a.status === "approved" ? -1 : 0) - (b.status === "approved" ? -1 : 0) || a.created_at - b.created_at);
+  const work = intents.filter((i) => i.payload?.origin !== "agent" && ["queued", "preparing", "approved", "executing", "broadcast", "app_confirmation"].includes(i.status)).sort((a, b) => (a.status === "approved" ? -1 : 0) - (b.status === "approved" ? -1 : 0) || a.created_at - b.created_at);
   s.nftPreviews ??= {};
   s.nftExecutions ??= {};
   for (const intent of work) {
@@ -18758,6 +18824,670 @@ async function processNftIntent(s, intents, bridge) {
   return false;
 }
 
+// agent/do.ts
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+import path from "node:path";
+var NIB_AIRDROP = "0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5";
+var NIB_TOKEN = "0x1F11d9feAF354aD31861B4fa26759349e2860cFb";
+var NIB_MARKET = "0x775377BAdf400F070024b2C806A2573461b5dCb7";
+var NIB_COLLECTION = "0x7374f0379F5b2689B906D47Da708B394F1910B23";
+var airdropAbi = parseAbi(["function claim((address wallet,uint256 season,uint256 cumulativePoints,uint256 deadline,bytes32 voucherId) v,bytes signature) returns (uint256 points,uint256 nib)"]);
+var marketAbi = parseAbi(["function placeBid(uint256 nibAmount,uint256 bnbAmount,uint256 expiresAt) payable returns (uint256)", "function cancelBid(uint256 id)", "function acceptBid(uint256 id,uint256 nibAmount,uint256 minBnbOut,uint256 deadline)"]);
+var erc20Abi2 = parseAbi(["function approve(address,uint256) returns (bool)"]);
+var HEX = /^0x[0-9a-fA-F]*$/;
+var same2 = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+var MAX_NIB_PER_BID = 10n ** 9n * 10n ** 18n;
+var DoError = class extends Error {
+};
+var fail = (m) => {
+  throw new DoError(m);
+};
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["usdt", "once", "json", "background", "approve", "all", "convert", "help"]);
+function parseDoArgs(argv) {
+  const flags = {}, positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      const key = a.slice(2);
+      if (BOOLEAN_FLAGS.has(key)) {
+        flags[key] = true;
+        continue;
+      }
+      const v = argv[i + 1];
+      if (v === void 0 || v.startsWith("--")) fail("Missing value for --" + key);
+      flags[key] = v;
+      i++;
+    } else positional.push(a);
+  }
+  return { cmd: positional[0] || "", rest: positional.slice(1), flags };
+}
+var decimal = (v, name) => {
+  const t = String(v ?? "").trim();
+  if (!/^\d{1,12}(\.\d{1,18})?$/.test(t)) fail(name + " must be a plain decimal number such as 0.01.");
+  return t;
+};
+var tokenId = (v) => {
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n < 1 || n > 1e4) fail("Give an NFT number from 1 to 10000, for example: nft-buy 42");
+  return n;
+};
+var bidId = (v) => {
+  const t = String(v ?? "");
+  if (!/^[1-9][0-9]{0,77}$/.test(t)) fail("Give a numeric bid id.");
+  return t;
+};
+function normalizeExpiry(preview, fallbackMs = 18e4) {
+  const n = Number(preview?.expiresAt);
+  return Number.isFinite(n) && n > 0 ? n < 1e12 ? n * 1e3 : n : Date.now() + fallbackMs;
+}
+function listOf(v) {
+  return Array.isArray(v) ? v : v && typeof v === "object" ? Object.values(v) : [];
+}
+function summarizePreview(label, tx, preview, extra = []) {
+  const lines = ["", "=== " + label + " ==="];
+  for (const e of extra) lines.push(e);
+  lines.push("From:      " + tx.from, "Contract:  " + tx.to + (preview?.parsedTx?.transactionType ? " (" + preview.parsedTx.transactionType + ")" : ""), "BNB sent:  " + formatUnits(BigInt(tx.value || "0"), 18) + " BNB (plus network gas)");
+  const sim = preview?.simulationResult || {}, bal = listOf(sim.balanceChanges);
+  lines.push("Token/BNB changes: " + (bal.length ? JSON.stringify(bal) : "none reported"));
+  const auth = listOf(sim.authorityChanges).length + listOf(preview?.authorityChanges).length, allow = listOf(sim.allowanceChanges).concat(listOf(preview?.allowanceChanges));
+  lines.push("Allowance changes: " + (allow.length ? JSON.stringify(allow) : "none"), "Authority changes: " + (auth ? "REVIEW \u2014 authority changes reported" : "none"));
+  const risks = listOf(preview?.risks?.riskDetails).concat(listOf(preview?.risks?.riskBehaviors));
+  lines.push("Binance risks: " + (risks.length ? JSON.stringify(risks) : "none flagged") + (preview?.requireConfirmation ? " \xB7 extra confirmation in the Binance app is required" : ""));
+  if (sim.simulationErrorDetail) lines.push("Simulation warning: " + JSON.stringify(sim.simulationErrorDetail));
+  const exp = normalizeExpiry(preview);
+  lines.push("Preview expires: " + new Date(exp).toISOString() + " (about " + Math.max(0, Math.round((exp - Date.now()) / 6e4)) + " min)");
+  return lines.join("\n");
+}
+function validateServerTx(tx, e) {
+  if (!tx || tx.chainId !== 56 || !same2(tx.from, e.wallet) || typeof tx.value !== "string" || !/^(0|[1-9][0-9]*)$/.test(tx.value) || typeof tx.data !== "string" || !HEX.test(tx.data)) fail("The transaction does not match this wallet or chain. Refusing.");
+  const value = BigInt(tx.value), now = Math.floor((e.nowMs ?? Date.now()) / 1e3);
+  if (e.kind === "airdrop-claim") {
+    if (!same2(tx.to, NIB_AIRDROP) || value !== 0n) fail("Conversion must call the NIB airdrop contract " + NIB_AIRDROP + " with 0 BNB.");
+    const d2 = decodeFunctionData({ abi: airdropAbi, data: tx.data });
+    if (d2.functionName !== "claim") fail("Unexpected function for a conversion.");
+    const v = d2.args[0];
+    if (!same2(v.wallet, e.wallet)) fail("Voucher is for a different wallet.");
+    if (Number(v.deadline) <= now) fail("Voucher already expired. Run the command again.");
+    return { points: BigInt(v.cumulativePoints) };
+  }
+  if (e.kind === "nib-approve") {
+    if (!same2(tx.to, NIB_TOKEN) || value !== 0n) fail("Approval must target the NIB token with 0 BNB.");
+    const d2 = decodeFunctionData({ abi: erc20Abi2, data: tx.data });
+    if (d2.functionName !== "approve" || !same2(d2.args[0], NIB_MARKET)) fail("Approval spender must be the NIB pre-market only.");
+    const amount = BigInt(d2.args[1]);
+    if (amount <= 0n || amount > MAX_NIB_PER_BID) fail("Approval must be an exact, bounded NIB amount (no unlimited approvals).");
+    if (e.amountRaw !== void 0 && amount !== e.amountRaw) fail("Approval amount differs from the amount being sold.");
+    return { amount };
+  }
+  if (!same2(tx.to, NIB_MARKET)) fail("Pre-market calls must go to " + NIB_MARKET + ".");
+  const d = decodeFunctionData({ abi: marketAbi, data: tx.data }), args2 = d.args || [];
+  if (e.kind === "nib-bid") {
+    if (d.functionName !== "placeBid") fail("Unexpected function for a bid.");
+    const nib = BigInt(args2[0]), bnb = BigInt(args2[1]), expires = BigInt(args2[2]);
+    if (e.nibRaw !== void 0 && nib !== e.nibRaw) fail("Bid NIB amount differs from the request.");
+    if (e.bnbRaw !== void 0 && bnb !== e.bnbRaw) fail("Bid BNB amount differs from the request.");
+    if (value < bnb || value > bnb + bnb * 205n / 10000n) fail("The BNB sent must be the bid plus the 2% buyer fee only.");
+    if (expires !== 0n && Number(expires) <= now) fail("Bid expiry is in the past.");
+    return { nib, bnb, value };
+  }
+  if (e.kind === "nib-cancel") {
+    if (d.functionName !== "cancelBid" || value !== 0n || String(args2[0]) !== e.bidId) fail("Cancellation does not match the requested bid.");
+    return {};
+  }
+  if (e.kind === "nib-accept") {
+    if (d.functionName !== "acceptBid" || value !== 0n) fail("Unexpected function for accepting a bid.");
+    if (e.bidId !== void 0 && String(args2[0]) !== e.bidId) fail("Accepted bid differs from the request.");
+    const amount = BigInt(args2[1]), minOut = BigInt(args2[2]), deadline = Number(args2[3]);
+    if (e.amountRaw !== void 0 && amount !== e.amountRaw) fail("Sell amount differs from the preview.");
+    if (minOut <= 0n) fail("The accept call has no minimum-BNB guard.");
+    if (deadline <= now || deadline > now + 1800) fail("Accept deadline is outside the expected window.");
+    return { amount, minOut };
+  }
+  return fail("Unknown validation kind.");
+}
+function loadJournal(file) {
+  try {
+    const j = JSON.parse(fs.readFileSync(file, "utf8"));
+    return { previews: j.previews || {}, executions: j.executions || {} };
+  } catch {
+    return { previews: {}, executions: {} };
+  }
+}
+function saveJournal(file, j) {
+  const cutoff = Date.now() - 3 * 864e5;
+  for (const [k, v] of Object.entries(j.previews)) if (v.createdAt < cutoff && !j.executions[k]) delete j.previews[k];
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 448 });
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(j), { mode: 384 });
+  fs.renameSync(tmp, file);
+}
+async function act(ctx, kind, payload = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await ctx.rawAction(ctx.s, kind, payload);
+    } catch (error) {
+      if (attempt < 4 && error?.status === 409 && /Nonce mismatch/.test(error.message)) {
+        await ctx.sleep(300 + attempt * 400);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+function previewTx(ctx, tx) {
+  const wallet = developerMode(ctx.baw);
+  if (!same2(wallet, ctx.s.wallet)) fail("The connected Binance wallet differs from the paired game wallet.");
+  const preview = ctx.baw(["contract-call", "preview", "--binanceChainId", "56", "--from", ctx.s.wallet, "--to", tx.to, "--value", tx.value, "--inputData", tx.data]);
+  if (!preview?.requestId) fail("Binance did not return a usable preview.");
+  return preview;
+}
+var BIG_KEYS = ["bnbRaw", "nibRaw", "amountRaw"];
+var freezeExpect = (e) => e && Object.fromEntries(Object.entries(e).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v]));
+var reviveExpect = (e) => ({ ...e, ...Object.fromEntries(BIG_KEYS.filter((k) => typeof e?.[k] === "string").map((k) => [k, BigInt(e[k])])) });
+function remember(ctx, entry) {
+  const j = loadJournal(ctx.journalFile);
+  j.previews[entry.requestId] = { ...entry, expect: freezeExpect(entry.expect), createdAt: Date.now() };
+  saveJournal(ctx.journalFile, j);
+}
+function finishPreview(ctx, entry, tx, preview, extra, nextHint) {
+  const expiresAt = normalizeExpiry(preview);
+  remember(ctx, { ...entry, tx, expiresAt });
+  ctx.out(summarizePreview(entry.label, tx, preview, extra));
+  ctx.out("\nrequestId: " + entry.requestId + '\nAsk the user to confirm. Only after a clear "yes" run:\n  node taptap-agent.mjs execute ' + entry.requestId + " --approve" + (nextHint ? "\n" + nextHint : ""));
+  return { requestId: entry.requestId, expiresAt };
+}
+async function nftPrepare(ctx, label, values, nextHint, e) {
+  let r;
+  try {
+    r = await act(ctx, "nft-request", values);
+  } catch (error) {
+    if (values.kind === "mint" && values.currency === "USDT" && /Approve the exact USDT/.test(error.message)) {
+      ctx.out("USDT allowance is short, so step 1 is an exact-amount approval for this mint only.");
+      return nftPrepare(ctx, "Approve exact USDT for the mint (step 1 of 2)", { kind: "mint-approval", quantity: values.quantity, currency: "USDT" }, "After it confirms, run the same mint command again for step 2.");
+    }
+    throw error;
+  }
+  const intent = r.intent, contracts = r.contracts;
+  if (!same2(contracts.collection, ctx.collection || NIB_COLLECTION)) fail("The site reports an unexpected NFT collection contract. Refusing.");
+  validateNftTransaction(intent, contracts, ctx.s.wallet);
+  const claimed = await act(ctx, "nft-claim", { intentId: intent.id });
+  validateNftTransaction(claimed.intent, claimed.contracts, ctx.s.wallet);
+  if (txDigest(claimed.intent.transaction) !== txDigest(intent.transaction)) fail("The transaction changed between request and claim. Refusing.");
+  const tx = claimed.intent.transaction, preview = previewTx(ctx, tx);
+  const exp = normalizeExpiry(preview);
+  await act(ctx, "nft-preview", { intentId: intent.id, transaction: tx, preview: { ...preview, expiresAt: exp } });
+  const sm = intent.summary || {};
+  const facts = [sm.title ? "What:      " + sm.title : "", sm.payment && sm.payment !== "0" && !sm.salePrice ? "You pay:   " + sm.payment + " " + (sm.currency || "") + " (plus network gas; any unused BNB is refunded)" : "", sm.salePrice ? "Price:     " + sm.salePrice + " BNB" + (sm.buyerFee !== void 0 ? " (buyer fee 2%: " + sm.buyerFee + " \xB7 you pay " + sm.buyerTotal + ", seller receives " + sm.sellerProceeds + ")" : "") : "", sm.scope ? "Scope:     " + sm.scope : ""].filter(Boolean);
+  if (intent.payload?.followUp) facts.push("This is the one-time approval for this NFT. After it confirms, run the same " + intent.payload.followUp + " command again.");
+  return finishPreview(ctx, { requestId: preview.requestId, type: "nft", label: sm.title || label, intentId: intent.id, kind: intent.kind }, tx, preview, facts, nextHint);
+}
+async function airdropVoucher(ctx, payload, label) {
+  const state = await act(ctx, "airdrop-state");
+  const a = state.airdrop;
+  if (!a.open) fail(a.message || "No airdrop season is open.");
+  const r = await act(ctx, "airdrop-voucher", payload), c = r.airdrop?.conversion;
+  if (!c) fail("The site returned no voucher.");
+  const claimTx = c.transaction;
+  const check = validateServerTx(claimTx, { kind: "airdrop-claim", wallet: ctx.s.wallet });
+  const preview = previewTx(ctx, claimTx);
+  void check;
+  const nib = r.airdrop.estimatedNib ? formatUnits(BigInt(r.airdrop.estimatedNib), 18) : formatUnits(BigInt(c.points) * 10n ** 18n / BigInt(a.season?.pointsPerNib || 10), 18);
+  const facts = ["What:      Convert " + c.points + " TAP to about " + nib + " NIB (bonus TAP " + c.bonusPoints + ", normal TAP " + c.normalPoints + ")", "Season:    " + c.season + " \xB7 " + (a.season?.pointsPerNib || 10) + " TAP = 1 NIB", "Note:      the TAP is deducted now and returned automatically if this voucher expires unclaimed (valid until " + new Date(c.expiresAt).toISOString() + ")." + (r.airdrop.reused ? " (reusing your pending voucher)" : "")];
+  return finishPreview(ctx, { requestId: preview.requestId, type: "airdrop", label, voucherId: c.id, expect: { kind: "airdrop-claim" } }, claimTx, preview, facts);
+}
+function convertPayload(rest) {
+  const w = (rest[0] || "all").toLowerCase();
+  if (w === "all" || w === "everything") return { payload: {}, label: "Convert all my TAP (bonus first, then normal) to NIB" };
+  if (w === "bonus") return { payload: { source: "bonus" }, label: "Convert my NFT bonus to NIB" };
+  if (w === "normal") {
+    const p = rest[1];
+    return { payload: { source: "normal", ...p && p !== "all" ? { points: String(Number(p)) } : {} }, label: "Convert normal TAP to NIB" };
+  }
+  if (/^\d+$/.test(w)) return { payload: { points: w }, label: "Convert " + w + " TAP to NIB" };
+  return fail("Use: do convert all | bonus | normal [points] | <points>");
+}
+async function nibBid(ctx, f) {
+  const payload = {};
+  for (const k of ["bnb", "price", "nib"]) if (f[k] !== void 0) payload[k] = decimal(f[k], "--" + k);
+  if (Object.keys(payload).length < 2) fail("Give two of --bnb, --price, --nib. Example: do nib-bid --bnb 0.01 --price 0.00001");
+  if (f.hours !== void 0) payload.expiresInHours = Number(f.hours);
+  const r = await act(ctx, "nib-bid-place", payload), m = r.nibMarket;
+  const expect = { kind: "nib-bid", wallet: ctx.s.wallet };
+  if (payload.nib) expect.nibRaw = parseUnits(payload.nib, 18);
+  if (payload.bnb) expect.bnbRaw = parseUnits(payload.bnb, 18);
+  validateServerTx(m.transaction, expect);
+  const preview = previewTx(ctx, m.transaction), sm = m.summary;
+  const facts = ["What:      Bid for " + sm.wants + " at " + sm.pricePerNibBnb + " BNB per NIB (" + sm.bnbForNib + " BNB + 2% fee " + sm.buyerFee2pct + ")", "Escrowed:  " + sm.totalEscrowedBnb + " BNB locked in the pre-market until a holder accepts or you cancel (cancelling refunds it all)", "Market:    your bid is " + sm.marketContext.yourBidIs, "Expires:   " + sm.expires];
+  return finishPreview(ctx, { requestId: preview.requestId, type: "tx", label: "NIB pre-market bid", expect }, m.transaction, preview, facts);
+}
+async function nibAccept(ctx, which, f) {
+  const payload = { id: which === "top" ? "top" : bidId(which), nib: f.nib ? f.nib === "max" ? "max" : decimal(f.nib, "--nib") : "max" };
+  if (f["min-price"] !== void 0) payload.minPrice = decimal(f["min-price"], "--min-price");
+  const r = await act(ctx, "nib-bid-accept", payload), m = r.nibMarket, sm = m.summary, first = m.steps[0];
+  const amount = parseUnits(sm.selling.replace(" NIB", ""), 18);
+  const approving = m.steps.length > 1;
+  const expect = approving ? { kind: "nib-approve", wallet: ctx.s.wallet, amountRaw: amount } : { kind: "nib-accept", wallet: ctx.s.wallet, bidId: sm.bidId, amountRaw: amount };
+  validateServerTx(first.transaction, expect);
+  const preview = previewTx(ctx, first.transaction);
+  const facts = ["What:      " + (approving ? "Step 1 of 2 \xB7 approve exactly " + sm.selling + " for the pre-market, then accept the bid" : "Sell " + sm.selling + " to bid #" + sm.bidId), "Bid:       #" + sm.bidId + " from " + sm.buyer + " at " + sm.pricePerNibBnb + " BNB per NIB" + (sm.partialFill ? " (partial fill)" : ""), "You get:   " + sm.youReceiveBnb + " BNB (gross " + sm.grossBnb + " minus 2% seller fee " + sm.sellerFee2pct + "), at least " + sm.minimumAcceptedBnb + " BNB enforced"];
+  return finishPreview(ctx, { requestId: preview.requestId, type: "tx", label: approving ? "Approve NIB for the pre-market (exact amount)" : "Accept NIB bid #" + sm.bidId, expect }, first.transaction, preview, facts, approving ? "After the approval confirms, run the same `do nib-accept` command again for step 2 (the accept is time-limited to 10 minutes)." : void 0);
+}
+async function nibCancel(ctx, id) {
+  const r = await act(ctx, "nib-bid-cancel", { id: bidId(id) }), m = r.nibMarket;
+  const expect = { kind: "nib-cancel", wallet: ctx.s.wallet, bidId: id };
+  validateServerTx(m.transaction, expect);
+  const preview = previewTx(ctx, m.transaction);
+  return finishPreview(ctx, { requestId: preview.requestId, type: "tx", label: "Cancel NIB bid #" + id, expect }, m.transaction, preview, ["What:      Cancel bid #" + id + " and refund " + m.summary.refundBnb + " BNB (no fee)"]);
+}
+async function earnMax(ctx, f) {
+  const s = ctx.s;
+  let r = await act(ctx, "state"), a = r.agent;
+  const access = a.gameAccess;
+  if (access?.required && !access.canPlay) fail("This wallet cannot earn yet: it needs a Nib NFT. Tell the user, and offer: node taptap-agent.mjs do mint");
+  const minutes = f.minutes !== void 0 ? Number(f.minutes) : void 0, end = Math.min(s.expiresAt, minutes ? Date.now() + minutes * 6e4 : Infinity), once = f.once === true;
+  const big = (v) => {
+    try {
+      return BigInt(String(v));
+    } catch {
+      return 0n;
+    }
+  };
+  const startPoints = big(a.points), startTaps = a.taps;
+  let stopped = false, lastLog = 0, claimed = [];
+  const onStop = () => {
+    stopped = true;
+  };
+  process.once("SIGINT", onStop);
+  process.once("SIGTERM", onStop);
+  const claimMissions = async () => {
+    try {
+      for (const [i, m] of (a.missions || []).entries()) if (!m.claimed && m.progress >= m.goal && !claimed.includes(i)) {
+        await act(ctx, "mission-claim", { index: i });
+        claimed.push(i);
+        ctx.out("Claimed mission: " + m.name);
+      }
+    } catch (e) {
+      if (!/already claimed|Complete this mission/.test(e.message)) ctx.out("Mission claim skipped: " + e.message);
+    }
+  };
+  await claimMissions();
+  const MIN_START = () => Math.min(a.capacity || 1e3, 500);
+  let cmd;
+  ctx.out("Earning TAP with the signed game session until " + (minutes ? minutes + " minutes" : "the session ends") + (once ? " or the tank is empty" : "") + " (" + new Date(end).toISOString() + "). Ctrl+C stops safely.");
+  try {
+    while (!stopped && Date.now() < end) {
+      try {
+        cmd = a.commands.find((c) => c.status === "running");
+        if (!cmd) {
+          if (a.energy < (once ? 1 : MIN_START())) {
+            if (once && a.taps > startTaps) break;
+            if (once && a.energy < 1 && a.taps === startTaps) {
+              ctx.out("Energy is empty. Recharge is 5 per second while idle.");
+              break;
+            }
+            await ctx.sleep(Math.min(15e3, Math.max(2e3, (MIN_START() - a.energy) * 200)));
+            r = await act(ctx, "state");
+            a = r.agent;
+            continue;
+          }
+          cmd = a.commands.filter((c) => ["queued", "paused"].includes(c.status)).sort((x, y) => x.created_at - y.created_at)[0];
+          if (!cmd) {
+            const created = await act(ctx, "command-create", { target: 1e4 });
+            a = created.agent;
+            cmd = created.command;
+          }
+          const started = await act(ctx, "start", { commandId: cmd.id });
+          a = started.agent;
+          cmd = a.commands.find((c) => c.status === "running");
+          if (!cmd) {
+            await ctx.sleep(2e3);
+            continue;
+          }
+        }
+        await ctx.sleep(5e3);
+        if (stopped) break;
+        const res = await act(ctx, "tap", { commandId: cmd.id, taps: Math.max(1, Math.min(100, a.speed * 5, cmd.target - cmd.done)) });
+        a = res.agent;
+        if (Date.now() - lastLog > 3e4) {
+          lastLog = Date.now();
+          ctx.out(JSON.stringify({ taps: a.taps - startTaps, pointsEarned: (big(a.points) - startPoints).toString(), energy: a.energy }));
+        }
+        if (a.energy < 1) {
+          const c2 = a.commands.find((c) => c.status === "running");
+          if (c2) await act(ctx, "stop", { commandId: c2.id });
+          if (once) break;
+        }
+        await claimMissions();
+      } catch (error) {
+        if (/energy/i.test(error.message)) {
+          try {
+            const st = await act(ctx, "state");
+            a = st.agent;
+            const run = a.commands.find((c) => c.status === "running");
+            if (run) await act(ctx, "stop", { commandId: run.id });
+          } catch {
+          }
+          if (once) break;
+          await ctx.sleep(5e3);
+          continue;
+        }
+        if (/RATE_LIMITED/.test(error.message)) {
+          await ctx.sleep(3e3);
+          continue;
+        }
+        if (/frozen|expired or revoked|disconnected|Game access|requires/i.test(error.message)) {
+          ctx.out("Stopped: " + error.message);
+          break;
+        }
+        if (error.status === 401) throw error;
+        ctx.out("Retrying after: " + error.message);
+        await ctx.sleep(5e3);
+        try {
+          r = await act(ctx, "state");
+          a = r.agent;
+        } catch {
+        }
+      }
+    }
+  } finally {
+    try {
+      const st = await act(ctx, "state");
+      a = st.agent;
+      const run = a.commands.find((c) => c.status === "running");
+      if (run) await act(ctx, "stop", { commandId: run.id });
+      await claimMissions();
+    } catch {
+    }
+    process.off("SIGINT", onStop);
+    process.off("SIGTERM", onStop);
+  }
+  const summary = { earnedTap: (big(a.points) - startPoints).toString(), taps: a.taps - startTaps, balance: String(a.points), energy: a.energy, missionsClaimed: claimed.length, sessionEndsAt: new Date(s.expiresAt).toISOString() };
+  ctx.out("Done: " + JSON.stringify(summary));
+  return summary;
+}
+function startBackground(ctx) {
+  const { script, argvForBackground, stateDir } = ctx;
+  if (!script || !argvForBackground || !stateDir) return fail("Background mode is unavailable here.");
+  fs.mkdirSync(stateDir, { recursive: true, mode: 448 });
+  const log = path.join(stateDir, "earn.log"), pidFile = path.join(stateDir, "earn.pid");
+  try {
+    const old = Number(fs.readFileSync(pidFile, "utf8"));
+    if (old) {
+      process.kill(old, 0);
+      fail("An earn-max run is already active (pid " + old + "). Run: node taptap-agent.mjs do earn-stop");
+    }
+  } catch (e) {
+    if (e instanceof DoError) throw e;
+  }
+  const fd = fs.openSync(log, "a", 384);
+  const child = spawn(process.execPath, [script, ...argvForBackground.filter((x) => x !== "--background")], { detached: true, stdio: ["ignore", fd, fd] });
+  fs.writeFileSync(pidFile, String(child.pid), { mode: 384 });
+  child.unref();
+  ctx.out("Earning in the background (pid " + child.pid + "). Log: " + log + "\nCheck progress with: node taptap-agent.mjs status   \xB7 stop with: node taptap-agent.mjs do earn-stop");
+}
+function earnStop(ctx) {
+  const pidFile = path.join(ctx.stateDir || ".", "earn.pid");
+  try {
+    const pid = Number(fs.readFileSync(pidFile, "utf8"));
+    process.kill(pid, "SIGTERM");
+    fs.rmSync(pidFile, { force: true });
+    ctx.out("Stopped earn-max (pid " + pid + ").");
+  } catch {
+    ctx.out("No background earn-max run found.");
+  }
+}
+async function status(ctx, json = false) {
+  const s = ctx.s, out = { wallet: s.wallet, site: ctx.origin, sessionExpiresAt: new Date(s.expiresAt).toISOString(), sessionMinutesLeft: Math.max(0, Math.round((s.expiresAt - Date.now()) / 6e4)) };
+  const st = await act(ctx, "state");
+  const a = st.agent;
+  out.game = { tap: String(a.points), energy: a.energy + "/" + a.capacity, speedPerSec: a.speed, nftAccess: a.gameAccess ? { canPlay: a.gameAccess.canPlay, nfts: a.gameAccess.owned, multiplier: String(a.gameAccess.multiplier) } : null, missionsClaimable: (a.missions || []).filter((m) => !m.claimed && m.progress >= m.goal).map((m) => m.name) };
+  try {
+    const d = (await act(ctx, "airdrop-state")).airdrop;
+    out.airdrop = { open: d.open, message: d.message, pointsPerNib: d.season?.pointsPerNib, bonusTap: d.user?.bonusBalance, convertibleTap: d.user?.convertible, nftBonusClaimableNow: d.nftBonus?.user?.claimableNow, pendingVoucher: d.user?.pending ? { id: d.user.pending.id, points: d.user.pending.points, expiresAt: new Date(d.user.pending.expiresAt).toISOString() } : void 0 };
+  } catch (e) {
+    out.airdrop = { error: e.message };
+  }
+  try {
+    const m = (await act(ctx, "nib-market-state")).nibMarket;
+    out.nibMarket = { deployed: m.deployed, bestBid: m.bestBid ? m.bestBid.priceBnb + " BNB per NIB (bid #" + m.bestBid.id + ")" : null, openBids: m.openBids, yourNib: m.user?.nib, yourBids: m.user?.myBids?.length };
+  } catch (e) {
+    out.nibMarket = { error: e.message };
+  }
+  try {
+    const n = await act(ctx, "nft-state");
+    out.nftRequests = (n.intents || []).filter((i) => ["agent_preparing", "awaiting_approval", "approved", "executing", "app_confirmation", "needs_receipt", "broadcast"].includes(i.status)).map((i) => ({ id: i.id, what: i.summary?.title, status: i.status }));
+  } catch {
+  }
+  const j = loadJournal(ctx.journalFile);
+  out.previews = Object.entries(j.previews).filter(([k, v]) => !j.executions[k] && v.expiresAt > Date.now()).map(([k, v]) => ({ requestId: k, what: v.label, expiresInMin: Math.round((v.expiresAt - Date.now()) / 6e4) }));
+  out.unfinished = Object.entries(j.executions).filter(([, v]) => !v.done).map(([k, v]) => ({ requestId: k, hash: v.hash || null, note: "Run: node taptap-agent.mjs execute " + k + " --approve (resumes receipt tracking, never re-sends)" }));
+  if (json) {
+    ctx.out(JSON.stringify(out, null, 2));
+    return out;
+  }
+  const lines = [
+    "Wallet " + out.wallet,
+    "Session: " + out.sessionMinutesLeft + " min left",
+    "TAP " + out.game.tap + " \xB7 energy " + out.game.energy + (out.game.nftAccess ? " \xB7 " + out.game.nftAccess.nfts + " NFT, multiplier " + out.game.nftAccess.multiplier + "x" : "") + (out.game.missionsClaimable.length ? " \xB7 missions to claim: " + out.game.missionsClaimable.join(", ") : ""),
+    "Airdrop: " + (out.airdrop.error || out.airdrop.message) + (out.airdrop.convertibleTap ? " \xB7 convertible TAP " + out.airdrop.convertibleTap : "") + (out.airdrop.bonusTap && out.airdrop.bonusTap !== "0" ? " \xB7 bonus TAP " + out.airdrop.bonusTap : "") + (Number(out.airdrop.nftBonusClaimableNow) > 0 ? " \xB7 NFT bonus claimable now: " + out.airdrop.nftBonusClaimableNow + ' NFT(s) (say "claim my bonus")' : ""),
+    "NIB market: " + (out.nibMarket.error || (out.nibMarket.deployed ? (out.nibMarket.bestBid ? "best bid " + out.nibMarket.bestBid : "no open bids") + " \xB7 you hold " + (out.nibMarket.yourNib ?? "?") + " NIB" : "not live"))
+  ];
+  if (out.previews.length) lines.push("Waiting for your yes: " + out.previews.map((p) => p.what + " (" + p.requestId + ", " + p.expiresInMin + " min)").join("; "));
+  if (out.unfinished.length) lines.push("Unfinished: " + out.unfinished.map((u) => u.requestId + (u.hash ? " " + u.hash : "")).join("; "));
+  ctx.out(lines.join("\n"));
+  return out;
+}
+async function waitReceipt(ctx, hash3, tx, confirmations) {
+  const client = ctx.receipt ? null : createPublicClient({ transport: http(ctx.rpcUrl || process.env.BSC_RPC_URL || "https://bsc-dataseed.bnbchain.org", { timeout: 1e4, retryCount: 1 }) });
+  const deadline = Date.now() + 4 * 6e4;
+  while (Date.now() < deadline) {
+    try {
+      const r = ctx.receipt ? await ctx.receipt(hash3) : await (async () => {
+        const [t, rc, head] = await Promise.all([client.getTransaction({ hash: hash3 }), client.getTransactionReceipt({ hash: hash3 }), client.getBlockNumber()]);
+        return { status: rc.status, blockNumber: rc.blockNumber, from: t.from, to: t.to, input: t.input, value: t.value, confirmations: head - rc.blockNumber + 1n };
+      })();
+      if (!same2(r.from, tx.from) || !same2(r.to, tx.to) || r.input.toLowerCase() !== tx.data.toLowerCase() || r.value !== BigInt(tx.value)) fail("The mined transaction does not match the approved call. Do not trust it; check the hash on BscScan.");
+      if (r.status !== "success") return { ok: false, block: r.blockNumber };
+      if (r.confirmations >= confirmations) return { ok: true, block: r.blockNumber };
+    } catch (e) {
+      if (e instanceof DoError) throw e;
+    }
+    await ctx.sleep(3e3);
+  }
+  return { ok: null, block: null };
+}
+async function execute(ctx, requestId, approved, knownHash) {
+  if (!approved) fail("Run this only after the user approved this exact preview in chat: execute " + requestId + " --approve");
+  const j = loadJournal(ctx.journalFile), p = j.previews[requestId];
+  if (!p) fail("Unknown requestId. Create a preview first with a `do` command.");
+  let ex = j.executions[requestId];
+  const persist2 = () => saveJournal(ctx.journalFile, j);
+  if (p.type === "nft") {
+  } else validateServerTx(p.tx, { ...reviveExpect(p.expect), wallet: ctx.s.wallet });
+  if (ex?.done) {
+    ctx.out("Already executed: https://bscscan.com/tx/" + ex.hash);
+    return { ok: !ex.failed, hash: ex.hash, already: true };
+  }
+  if (!ex) {
+    if (p.expiresAt <= Date.now() + 5e3) fail("This preview expired. Run the `do` command again for a fresh preview.");
+    if (!same2(developerMode(ctx.baw), ctx.s.wallet)) fail("The connected Binance wallet differs from the paired game wallet.");
+    if (p.type === "nft") {
+      const c = await act(ctx, "nft-execute", { intentId: p.intentId, requestId });
+      validateNftTransaction(c.intent, c.contracts, ctx.s.wallet);
+      if (txDigest(c.intent.transaction) !== txDigest(p.tx)) fail("The NFT transaction changed since the preview. Refusing.");
+    }
+    ex = j.executions[requestId] = { startedAt: Date.now(), done: false };
+    persist2();
+    try {
+      const response = await ctx.baw(["contract-call", "execute", "--requestId", requestId]);
+      ex.response = response;
+      ex.hash = response.txHash || response.transactionHash || null;
+      ex.orderId = response.orderId || null;
+      persist2();
+      if (!ex.hash && !ex.orderId) throw Error("Binance returned no transaction hash or confirmation order.");
+    } catch (error) {
+      ex.uncertain = true;
+      ex.error = String(error.message).slice(0, 300);
+      persist2();
+      if (p.type === "nft") try {
+        await act(ctx, "nft-fail", { intentId: p.intentId, uncertain: true });
+      } catch {
+      }
+      fail("The submission outcome is uncertain: " + ex.error + "\nDo NOT execute again. Check the wallet history / BscScan for the hash, then run: execute " + requestId + " --approve --tx <hash> (it only tracks the receipt).");
+    }
+  }
+  if (knownHash && !ex.hash) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(knownHash)) fail("--tx must be a 66-character transaction hash.");
+    if (!ex.uncertain && !ex.orderId) fail("Nothing was submitted for this request.");
+    ex.hash = knownHash;
+    persist2();
+  }
+  if (!ex.hash && ex.orderId) {
+    try {
+      const history = ctx.baw(["wallet", "tx-history", "--binanceChainId", "56", "--size", "20"]);
+      const h = findOrderHash(history, ex.orderId);
+      if (h) {
+        ex.hash = h;
+        persist2();
+      }
+    } catch {
+    }
+    if (!ex.hash) {
+      ctx.out("Waiting for your confirmation in the Binance app (order " + ex.orderId + "). Confirm there, then run again: node taptap-agent.mjs execute " + requestId + " --approve (it will not send a second transaction).");
+      return { pending: true };
+    }
+  }
+  if (!ex.hash) fail("The submission outcome is uncertain and no transaction hash is known. Do NOT execute again. Find the hash in the Binance wallet history or on BscScan (from " + ctx.s.wallet + "), then run: execute " + requestId + " --approve --tx <hash>  (it only tracks the receipt).");
+  if (p.type === "nft" && ex.hash) try {
+    await act(ctx, "nft-broadcast", { intentId: p.intentId, transactionHash: ex.hash, orderId: ex.orderId || void 0 });
+  } catch (e) {
+    if (e.status !== 409) ctx.out("Note: " + e.message);
+  }
+  ctx.out("Submitted: https://bscscan.com/tx/" + ex.hash + "\nWaiting for the receipt\u2026");
+  const rc = await waitReceipt(ctx, ex.hash, p.tx, p.type === "nft" ? 3n : 1n);
+  if (rc.ok === null) {
+    ctx.out("Not confirmed yet. Run `execute " + requestId + " --approve` later to keep tracking; never send it again.");
+    return { pending: true, hash: ex.hash };
+  }
+  if (!rc.ok) {
+    ex.done = true;
+    ex.failed = true;
+    persist2();
+    ctx.out("The transaction reverted on-chain (gas was spent). Nothing changed. https://bscscan.com/tx/" + ex.hash);
+    return { ok: false, hash: ex.hash };
+  }
+  let settled = {};
+  try {
+    if (p.type === "nft") {
+      for (let i = 0; i < 20; i++) {
+        try {
+          settled = await act(ctx, "nft-confirm", { intentId: p.intentId, transactionHash: ex.hash });
+          break;
+        } catch (e) {
+          if (e.status === 409 && /three BNB Chain confirmations|not confirmed/i.test(e.message)) {
+            await ctx.sleep(3e3);
+            continue;
+          }
+          throw e;
+        }
+      }
+    } else if (p.type === "airdrop") {
+      const d = (await act(ctx, "airdrop-state")).airdrop;
+      settled = { tapBalance: d.user?.balance, bonusTap: d.user?.bonusBalance, pending: d.user?.pending };
+    } else {
+      const m = (await act(ctx, "nib-market-state")).nibMarket;
+      settled = { yourNib: m.user?.nib, openBids: m.openBids, yourBids: m.user?.myBids?.length };
+    }
+  } catch (e) {
+    ctx.out("Confirmed on-chain, but settling with the site said: " + e.message + ". It will catch up on the next sync.");
+  }
+  ex.done = true;
+  persist2();
+  ctx.out("Done \u2714 " + p.label + "\nTransaction: https://bscscan.com/tx/" + ex.hash + " (block " + rc.block + ")" + (Object.keys(settled).length ? "\nSite state: " + JSON.stringify(settled) : ""));
+  return { ok: true, hash: ex.hash, settled };
+}
+var DO_HELP = `Plain-chat commands (the agent runs these; the user just says it):
+  do mint [--qty N] [--usdt]            mint Nib NFT(s) (BNB by default; the first one is free of mint cost)
+  do earn-max [--once] [--minutes N] [--background]   tap with all available energy, claim missions (alias: play)
+  do earn-stop                          stop a background earn-max
+  do convert all|bonus|normal [pts]|<pts>   convert TAP to NIB (voucher + preview)
+  do bonus [--convert]                  claim the one-time NFT bonus (no transaction); --convert also previews converting it
+  do nib-bid --bnb 0.01 --price 0.00001 [--nib N] [--hours H]
+  do nib-accept top|<bidId> [--nib N|max] [--min-price P]
+  do nib-cancel <bidId>
+  do nib-book                           show the NIB bid book
+  do nft-list <id> --bnb P [--days D] | nft-buy <id> | nft-bid <id> --bnb P [--days D] | nft-cancel <id>
+  do nft-cancel-bid <bidId> | nft-accept <bidId> | nft-withdraw
+  do nft-market                         list NFTs for sale
+  status [--json]                       balances, session, previews waiting for a yes
+  execute <requestId> --approve         ONLY after the user said yes to that exact preview`;
+async function runDo(ctx, argv) {
+  const { cmd, rest, flags: f } = parseDoArgs(argv);
+  const sess = ctx.s;
+  if (!sess.sessionId) fail("Confirm the session first.");
+  switch (cmd) {
+    case "mint": {
+      const q = Number(f.qty ?? 1);
+      if (!Number.isInteger(q) || q < 1 || q > 10) fail("--qty must be 1\u201310.");
+      return nftPrepare(ctx, "Mint Nib NFT", { kind: "mint", quantity: q, currency: f.usdt ? "USDT" : "BNB" });
+    }
+    case "mint-approval":
+      return nftPrepare(ctx, "Approve exact USDT for the mint", { kind: "mint-approval", quantity: Number(f.qty ?? 1), currency: "USDT" });
+    case "earn-max":
+    case "earn":
+    case "play":
+      if (f.background === true) return startBackground(ctx);
+      return earnMax(ctx, f);
+    case "earn-stop":
+      return earnStop(ctx);
+    case "convert": {
+      const c = convertPayload(rest);
+      return airdropVoucher(ctx, c.payload, c.label);
+    }
+    case "bonus": {
+      const r = await act(ctx, "airdrop-nft-bonus"), b = r.airdrop;
+      ctx.out("NFT bonus claimed for token(s) " + b.claimed.map((c) => "#" + c.tokenId).join(", ") + ": +" + b.pointsCredited + " bonus TAP (about " + formatUnits(BigInt(b.estimatedNib), 18) + " NIB). Bonus TAP converts to NIB in airdrop season 1 only.\nNext: node taptap-agent.mjs do convert bonus");
+      if (f.convert === true || f.all === true) return airdropVoucher(ctx, { source: "bonus" }, "Convert my NFT bonus to NIB");
+      return b;
+    }
+    case "nib-bid":
+      return nibBid(ctx, f);
+    case "nib-accept":
+      return nibAccept(ctx, rest[0] || "top", f);
+    case "nib-cancel":
+      return nibCancel(ctx, rest[0]);
+    case "nib-book": {
+      const m = (await act(ctx, "nib-market-state")).nibMarket;
+      ctx.out(m.deployed ? "NIB bid book: " + m.openBids + " open bids\n" + (m.bids || []).slice(0, 10).map((b) => "  #" + b.id + " " + b.priceBnb + " BNB per NIB \xB7 " + b.nibRemaining + " NIB left").join("\n") + (m.user ? "\nYou hold " + m.user.nib + " NIB." : "") : "The NIB pre-market is not live yet.");
+      return m;
+    }
+    case "nft-list":
+      return nftPrepare(ctx, "List Nib NFT", { kind: "list", tokenId: tokenId(rest[0]), price: decimal(f.bnb, "--bnb"), days: Number(f.days ?? 7) });
+    case "nft-buy":
+      return nftPrepare(ctx, "Buy Nib NFT", { kind: "buy", tokenId: tokenId(rest[0]) });
+    case "nft-bid":
+      return nftPrepare(ctx, "Bid on Nib NFT", { kind: "bid", tokenId: tokenId(rest[0]), price: decimal(f.bnb, "--bnb"), days: Number(f.days ?? 7) });
+    case "nft-cancel":
+      return nftPrepare(ctx, "Cancel NFT listing", { kind: "cancel", tokenId: tokenId(rest[0]) });
+    case "nft-cancel-bid":
+      return nftPrepare(ctx, "Cancel NFT bid", { kind: "cancel-bid", bidId: bidId(rest[0]) });
+    case "nft-accept":
+      return nftPrepare(ctx, "Accept NFT bid", { kind: "accept-bid", bidId: bidId(rest[0]) });
+    case "nft-withdraw":
+      return nftPrepare(ctx, "Withdraw cancelled NFT bid deposit", { kind: "withdraw-bid-refund" });
+    case "nft-market": {
+      const j = await (ctx.fetchJson || (async (u) => (await fetch(u)).json()))(ctx.origin + "/api/nft");
+      const items = (j.listings || []).slice(0, 12);
+      ctx.out(items.length ? "NFTs for sale:\n" + items.map((l) => "  Nib #" + l.tokenId + " " + l.price + " BNB (buyer pays " + l.buyerTotal + " incl. 2%)" + (l.rarity ? " \xB7 rank " + l.rarity.rank : "")).join("\n") : "No NFTs are listed right now.");
+      return items;
+    }
+    default:
+      ctx.out(DO_HELP);
+      return null;
+  }
+}
+
 // agent/connector.ts
 var args = process.argv.slice(2);
 var mode = args[0] || "help";
@@ -18769,17 +19499,30 @@ var site = option("site") || process.env.TAPTAP_SITE;
 if (!site && mode !== "help") throw Error("Set TAPTAP_SITE or --site.");
 var origin = site ? new URL(site).origin : "";
 if (site && new URL(site).protocol !== "https:" && !["localhost", "127.0.0.1"].includes(new URL(site).hostname)) throw Error("Use an HTTPS Site URL.");
-var dir = path.join(os.homedir(), ".local", "state", "taptap");
-var statePath = path.join(dir, origin ? keccak256(new TextEncoder().encode(origin)).slice(2, 18) + ".json" : "unused");
+var dir = path2.join(os.homedir(), ".local", "state", "taptap");
+var statePath = path2.join(dir, origin ? keccak256(new TextEncoder().encode(origin)).slice(2, 18) + ".json" : "unused");
 function persist(value) {
-  fs.mkdirSync(dir, { recursive: true, mode: 448 });
+  fs2.mkdirSync(dir, { recursive: true, mode: 448 });
   const temporary = statePath + ".tmp";
-  fs.writeFileSync(temporary, JSON.stringify(value), { mode: 384 });
-  fs.renameSync(temporary, statePath);
+  fs2.writeFileSync(temporary, JSON.stringify(value), { mode: 384 });
+  fs2.renameSync(temporary, statePath);
+}
+function persistNonce(s) {
+  try {
+    const disk = JSON.parse(fs2.readFileSync(statePath, "utf8"));
+    if (disk.sessionId === s.sessionId) {
+      if (!(disk.nonce > s.nonce)) disk.nonce = s.nonce;
+      else s.nonce = disk.nonce;
+      persist(disk);
+      return;
+    }
+  } catch {
+  }
+  persist(s);
 }
 function load() {
-  if (!fs.existsSync(statePath)) throw Error("No session. Run prepare, review the preview, then confirm.");
-  return JSON.parse(fs.readFileSync(statePath, "utf8"));
+  if (!fs2.existsSync(statePath)) throw Error("No session. Run prepare, review the preview, then confirm.");
+  return JSON.parse(fs2.readFileSync(statePath, "utf8"));
 }
 function baw(argv) {
   const p = spawnSync("baw", [...argv, "--json"], { encoding: "utf8", maxBuffer: 2 * 1024 * 1024 });
@@ -18811,7 +19554,7 @@ async function action(s, kind, payload = {}) {
   const r = await request("agent/action", { ...envelope, signature });
   if (Number.isSafeInteger(r.data.nonce)) {
     s.nonce = r.data.nonce;
-    persist(s);
+    persistNonce(s);
   }
   if (!r.ok) throw Object.assign(Error(r.data.error || "Agent action failed."), { status: r.status });
   return r.data;
@@ -18836,8 +19579,8 @@ async function report(stage, code) {
 async function prepare() {
   await report("wallet_check");
   if (!process.env.TAPTAP_PAIRING_CODE && !option("pair")) throw Error("Set TAPTAP_PAIRING_CODE to the code from your dashboard.");
-  const status = baw(["wallet", "status"]);
-  if (status.status !== "CONNECTED") throw Error("Sign in to Binance Agentic Wallet first using baw auth signin / auth verify.");
+  const status2 = baw(["wallet", "status"]);
+  if (status2.status !== "CONNECTED") throw Error("Sign in to Binance Agentic Wallet first using baw auth signin / auth verify.");
   await report("identity_check");
   const identity = baw(["wallet", "agent-id"]);
   if (!identity.claimed) throw Error("Claim your .ai Agent ID in Binance Wallet first.");
@@ -18954,13 +19697,13 @@ async function watch() {
   console.log("Connector stopped. Pair again after session expiry.");
 }
 async function diagnose() {
-  const status = baw(["wallet", "status"]);
+  const status2 = baw(["wallet", "status"]);
   let s = {};
   try {
     s = load();
   } catch {
   }
-  console.log(JSON.stringify({ walletStatus: status.status, gameSession: !!s.sessionId, gameSessionExpiresAt: s.expiresAt ? new Date(s.expiresAt).toISOString() : null, site: origin, guide: origin + "/agent-skill.md", recovery: status.status === "CONNECTED" ? "Use prepare, preview, and confirm for a new game session. Developer Mode and Secure Auto Sign are separate." : "Sign in using the official Binance Agentic Wallet authentication flow." }, null, 2));
+  console.log(JSON.stringify({ walletStatus: status2.status, gameSession: !!s.sessionId, gameSessionExpiresAt: s.expiresAt ? new Date(s.expiresAt).toISOString() : null, site: origin, guide: origin + "/agent-skill.md", recovery: status2.status === "CONNECTED" ? "Use prepare, preview, and confirm for a new game session. Developer Mode and Secure Auto Sign are separate." : "Sign in using the official Binance Agentic Wallet authentication flow." }, null, 2));
 }
 async function claimPreview() {
   const s = load(), r = await action(s, "state"), reward = r.rewards;
@@ -18984,8 +19727,33 @@ async function claimPreview() {
   const preview = baw(["contract-call", "preview", "--binanceChainId", "56", "--from", s.wallet, "--to", reward.contract, "--value", "0", "--inputData", input]);
   console.log(JSON.stringify({ contract: reward.contract, token, amountRaw: (BigInt(reward.proof.amount) - claimed).toString(), preview, next: "Show all risks, get user approval, then use baw contract-call execute --requestId from this preview. Do not execute without approval." }, null, 2));
 }
+function doContext() {
+  const s = load();
+  if (s.expiresAt && s.expiresAt < Date.now()) throw Error("The game session expired. Pair again: prepare, preview, confirm.");
+  return { s, origin, journalFile: statePath.replace(/\.json$/, ".do.json"), rawAction: action, baw, out: (t) => console.log(t), sleep: wait2, script: process.argv[1], argvForBackground: args, stateDir: dir };
+}
+async function doMode() {
+  const rest = args.slice(1);
+  try {
+    if (mode === "do") await runDo(doContext(), rest);
+    else if (mode === "status") await status(doContext(), args.includes("--json"));
+    else {
+      const id = args[1];
+      if (!id || id.startsWith("--")) throw new DoError("Usage: execute <requestId> --approve (only after the user said yes to that preview).");
+      await execute(doContext(), id, args.includes("--approve"), option("tx"));
+    }
+  } catch (e) {
+    if (e instanceof DoError) {
+      console.error(e.message);
+      process.exitCode = 1;
+      return;
+    }
+    throw e;
+  }
+}
 (async () => {
-  if (mode === "prepare") await prepare();
+  if (["do", "status", "execute"].includes(mode)) await doMode();
+  else if (mode === "prepare") await prepare();
   else if (mode === "confirm") await confirm();
   else if (mode === "watch") await watch();
   else if (mode === "diagnose") await diagnose();
@@ -18995,7 +19763,7 @@ async function claimPreview() {
     console.log(JSON.stringify(await action(load(), kind, JSON.parse(option("payload") || "{}")), null, 2));
   } else if (mode === "state") console.log(JSON.stringify(await action(load(), "state"), null, 2));
   else if (mode === "claim-preview") await claimPreview();
-  else console.log("TapTap agent connector\nCommands: prepare, confirm --approve-session, watch, state, diagnose, action --action NAME --payload JSON, claim-preview\nSet TAPTAP_SITE and TAPTAP_PAIRING_CODE. Private Sites also require TAPTAP_SITE_ACCESS_TOKEN.\nRequires Node 22+ and the official baw CLI. This connector never exports Binance wallet keys or transfers funds automatically.");
+  else console.log("TapTap agent connector\nCommands: prepare, confirm --approve-session, watch, state, diagnose, action --action NAME --payload JSON, claim-preview, do, status, execute\n" + DO_HELP + "\nSet TAPTAP_SITE and TAPTAP_PAIRING_CODE. Private Sites also require TAPTAP_SITE_ACCESS_TOKEN.\nRequires Node 22+ and the official baw CLI. This connector never exports Binance wallet keys or transfers funds automatically.");
 })().catch(async (e) => {
   if (mode === "prepare") {
     const code = ["351509", "351802", "351803", "351804"].find((c) => String(e.message).includes(c)) || (/Agent ID/.test(e.message) ? "identity" : /Sign in/.test(e.message) ? "unconnected" : "unknown");

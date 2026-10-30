@@ -2,6 +2,42 @@
 
 Use this connector to play TapTap with the user's Binance Agentic Wallet. The website has no manual tap endpoint. The user directs the agent; the agent runs signed game commands.
 
+## Just say it (read this first)
+
+After the user has paired once (see Pairing below), they run everything by chatting with you. **Never ask the user to copy a command, voucher, calldata, pairing code or transaction from the website, and never send them to the dashboard to queue anything.** Every user action is a signed action you start yourself through the connector. For each request: run the command, show the clean preview it prints, get a clear "yes" from the user in chat, then run `execute`. Nothing moves funds without that yes.
+
+Download `taptap-agent.mjs` from this site and set `TAPTAP_SITE` to its origin (or add `--site <origin>`). Do not run `do`, `status` or `execute` for a wallet that has no paired session; pair first.
+
+| The user says | You run |
+| --- | --- |
+| "How am I doing?", "status", "what do I have?" | `node taptap-agent.mjs status` |
+| "Mint an NFT" / "mint 2 NFTs" | `do mint` / `do mint --qty 2` (BNB by default; add `--usdt` for USDT. The first mint is free of mint cost) |
+| "Claim all of today's taps", "earn max", "play" | `do earn-max` (taps with all energy, claims finished missions, stops at session end; add `--background` to keep it running while you chat, `--minutes N` to limit, `do earn-stop` to stop) |
+| "Convert my TAP to NIB" / "convert 5000 TAP" | `do convert all` / `do convert 5000` (add `normal` or `bonus` to pick the balance) |
+| "Claim my NFT bonus" | `do bonus` (credits the one-time bonus, no transaction), then offer `do convert bonus` |
+| "Bid 0.01 BNB for NIB at 0.00001" | `do nib-bid --bnb 0.01 --price 0.00001` |
+| "Accept the top bid" / "sell my NIB to bid 7" | `do nib-accept top` / `do nib-accept 7` (`--nib 500` to sell part, `--min-price` as a floor) |
+| "Cancel my NIB bid 7" | `do nib-cancel 7` |
+| "Show the NIB bids" | `do nib-book` |
+| "List my Nib #42 for 2 BNB" | `do nft-list 42 --bnb 2` |
+| "Buy Nib #42" | `do nft-buy 42` |
+| "Bid 1 BNB on Nib #42" | `do nft-bid 42 --bnb 1` |
+| "Cancel my listing / my NFT bid / accept the offer on my NFT" | `do nft-cancel 42` / `do nft-cancel-bid <bidId>` / `do nft-accept <bidId>` |
+| "Withdraw my bid refund" | `do nft-withdraw` |
+| "What NFTs are for sale?" | `do nft-market` |
+
+What `do` prints for a transaction: what it does, BNB value, token changes, allowance and authority changes, Binance risks, the preview expiry (about 5 minutes) and a `requestId`. Show that to the user in plain words and ask. **Only after an explicit yes to that exact preview** run:
+
+`node taptap-agent.mjs execute <requestId> --approve`
+
+`execute` re-validates the call, sends it once, waits for the receipt, then settles with the site and prints the BscScan link. If the preview expired, just run the `do` command again. If it says the outcome is uncertain, **never execute again**: find the hash in the Binance wallet history or on BscScan and run `execute <requestId> --approve --tx <hash>`, which only tracks the receipt.
+
+Multi-step actions need one `do` per step, each with its own preview and yes: a USDT mint needs an exact USDT approval first (`do mint --usdt` prepares it, then run it again for the mint); listing an NFT or accepting an NFT bid needs a one-time approval for that single NFT (the first `do` prepares it and tells you to repeat the command); selling NIB needs an exact-amount NIB approval when the allowance is short (run `do nib-accept` again after it confirms, the accept is valid for 10 minutes).
+
+Rules that never bend: explicit chat approval for every on-chain transaction; no unlimited approvals (exact amounts only; the connector refuses anything else); never re-execute an uncertain transaction; never spend, bid, buy or sell on your own initiative or invent a price; never print or share the local session file. The agent-started NFT flow does not need the owner browser: the user's "yes" in chat is the approval, given only for the paired wallet. TAP converted to NIB is deducted when the voucher is issued and refunded automatically if the voucher expires unclaimed (15 minutes), so convert only when the user will approve right away.
+
+The connector shares one signed-action nonce with `watch`. It is safe to run `do` while `watch` is running (a nonce mismatch is resynchronised automatically). Earning has no daily cap, but each tap costs energy: the tank holds 1,000 and refills at 5 per second only while no tapping command runs, so `earn-max` alternates tapping and recharging, and one wallet cannot go faster than that. Each held Nib multiplies points 5×.
+
 ## Requirements
 
 - Node.js 22 or later and the official `@binance/agentic-wallet` CLI (`baw`). Follow Binance's official skill at https://github.com/binance/binance-skills-hub/tree/main/skills/binance-web3/binance-agentic-wallet for installation, authentication, and signing rules.
@@ -19,9 +55,9 @@ Download `taptap-agent.mjs` from the same Site origin as this guide. Set `TAPTAP
 2. Show the user the full wallet address, typed message, game-only scope, expiry, and Binance preview/risk results. Get explicit approval for this exact signature.
 3. Only after approval, run `node taptap-agent.mjs confirm --approve-session`.
 4. If confirmation is pending, ask the user to confirm in Binance App, then run `confirm --approve-session` again. It fetches the existing signature result rather than executing the preview twice.
-5. Run `node taptap-agent.mjs watch` to consume the user's queued commands. It runs until stopped or the one-hour session expires.
+5. That is the only setup. From now on the user just chats (see **Just say it**). Optionally run `node taptap-agent.mjs watch` to also consume commands queued from the dashboard; it runs until stopped or the one-hour session expires.
 
-The user can now queue prompts such as “Tap 100 times” or “Use 500 energy” in TapTap. An AI agent may also use the signed API directly after receiving user instructions. The connector itself is a transport/runner, not an AI model.
+The user does not need the dashboard: you start taps yourself with `do earn-max`. Dashboard-queued prompts (“Tap 100 times”) still work for users who prefer them. You may also use the signed API directly after receiving user instructions. The connector itself is a transport/runner, not an AI model.
 
 ## Game protocol
 
@@ -30,7 +66,7 @@ Protocol version 2 uses only `name`, `version`, and `chainId` in the EIP-712 dom
 POST `/api/agent/challenge`: pairingCode, wallet, sessionKey → challengeId, typedData.
 POST `/api/agent/session`: challengeId, signature → sessionId, nonce, expiresAt.
 POST `/api/agent/action`: sessionId, nonce, timestamp, action, payload, signature.
-Actions: state `{}`, start `{commandId}`, tap `{commandId,taps}`, stop `{commandId}`.
+Actions: state `{}`, command-create `{target?}` (1–10,000 taps, default 10,000), start `{commandId}`, tap `{commandId,taps}`, stop `{commandId}`, mission-claim `{index}`.
 
 ## Season 0 and competition tasks
 
@@ -70,9 +106,9 @@ Tap batches are limited by elapsed server time, agent speed, available energy, a
 
 ## Nib Collection minting and marketplace
 
-Read `/nft-guide.md` before handling NFT actions. The game-only session can coordinate requests; it cannot move wallet funds. The latest `watch` runner separately prepares Binance main-wallet calls only for queued NFT tasks, then waits for the user to review the exact transaction and explicitly approve it in TapTap's transaction desk. Never treat game-session approval as NFT transaction approval.
+Read `/nft-guide.md` before handling NFT actions. The game-only session can coordinate requests; it cannot move wallet funds. The latest `watch` runner separately prepares Binance main-wallet calls only for queued NFT tasks, then waits for the user to review the exact transaction and explicitly approve it in TapTap's transaction desk. Never treat game-session approval as NFT transaction approval. Requests you start yourself (`do mint`, `do nft-list` …) are approved by the user's explicit yes in chat; dashboard-queued requests still need the browser transaction desk.
 
-`GET /api/nft` returns on-chain collection, market and wallet state. Browser `POST /api/nft/intents` queues one of `mint`, `mint-approval`, `nft-approval`, `list`, `buy`, `cancel`, `bid`, `cancel-bid`, `accept-bid`, `withdraw-bid-refund`. The signed actions are `nft-state`, `nft-claim`, `nft-preview`, `nft-execute`, `nft-broadcast`, `nft-confirm`, `nft-fail`. Only the owner browser can approve a preview, binding both its Binance request ID and exact transaction digest. The agent consumes that approval once before executing.
+`GET /api/nft` returns on-chain collection, market and wallet state. Browser `POST /api/nft/intents` queues one of `mint`, `mint-approval`, `nft-approval`, `list`, `buy`, `cancel`, `bid`, `cancel-bid`, `accept-bid`, `withdraw-bid-refund`. The signed actions are `nft-state`, `nft-request` (the same payloads as the browser queue; the agent starts the request itself and `payload.origin` is `agent`), `nft-claim`, `nft-preview`, `nft-execute`, `nft-broadcast`, `nft-confirm`, `nft-fail`. For dashboard-queued requests only the owner browser can approve a preview, binding both its Binance request ID and exact transaction digest. For agent-started requests (`nft-request`) the preview moves to `awaiting_approval` and `nft-execute` is accepted once after the user's chat approval, bound to the Binance request ID. Either way the agent consumes the approval once before executing.
 
 The runner independently checks chain56, paired-wallet identity, allowed contract/function, exact native BNB value or USDT allowance, quantity, token ID, price/seller/version and deadline. It also checks Developer Mode before preview/execution. Mint requests use `currency: "USDT"` (default) or `currency: "BNB"`. BNB mints carry a 1% maximum quote ceiling in the exact transaction `value`; unused BNB is refunded on-chain. Marketplace listings and buys are BNB-only. A buy or bid sends exactly `priceRaw + floor(priceRaw * 200 / 10000)` as `value` (the price plus the 2% buyer fee), matching `buyerTotalRaw`, with no USDT approval step. The seller receives the base price minus a separate 2% fee. Both fees and the immutable recipient are shown before browser approval. Never replace a nonzero value with zero or change its currency. The receipt must match this value as well as sender, target and calldata. An unavailable/stale oracle blocks paid BNB mints while USDT and a free BNB mint remain available.
 

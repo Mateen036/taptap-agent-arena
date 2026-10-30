@@ -2,7 +2,7 @@ import {decodeFunctionData,keccak256,toHex} from 'viem';
 import {canonical} from '../lib/game';
 import {NFT_PAYMENT,nativeMintBudget,marketQuote,nftAbi,nftMarketAbi,nftPaymentAbi} from '../lib/nft-protocol';
 type Bridge={action:(s:any,kind:string,payload?:any)=>Promise<any>;baw:(argv:string[])=>any;persist:(s:any)=>void};
-const txDigest=(t:any)=>keccak256(toHex(canonical(t)));
+export const txDigest=(t:any)=>keccak256(toHex(canonical(t)));
 const same=(a:any,b:any)=>String(a).toLowerCase()===String(b).toLowerCase();
 export function validateNftTransaction(intent:any,contracts:any,wallet:string){
  const tx=intent.transaction,p=intent.payload;
@@ -34,13 +34,13 @@ export function validateNftTransaction(intent:any,contracts:any,wallet:string){
  }
  return true;
 }
-function developerMode(baw:Bridge['baw']){
+export function developerMode(baw:Bridge['baw']){
  const status=baw(['wallet','status']);if(status.status!=='CONNECTED')throw Error('Sign in to Binance before an NFT transaction.');
  const settings=baw(['wallet','settings']),raw=settings.devMode?.expiresAt,n=Number(raw),expiry=typeof raw==='string'&&!/^\d+$/.test(raw)?Date.parse(raw):n<1e12?n*1000:n;
  if(!settings.devMode?.enabled||!Number.isFinite(expiry)||expiry<Date.now())throw Error('Enable Developer Mode in Binance Agentic Wallet settings.');
  const addresses=baw(['wallet','address']).addresses;return addresses.find((a:any)=>String(a.binanceChainId)==='56')?.address;
 }
-function findOrderHash(value:any,order:string,depth=0):string|null{
+export function findOrderHash(value:any,order:string,depth=0):string|null{
  if(!value||typeof value!=='object'||depth>7)return null;
  if(value.orderId===order||value.id===order){for(const key of ['txHash','transactionHash','hash'])if(/^0x[0-9a-f]{64}$/i.test(value[key]||''))return value[key];}
  for(const v of Object.values(value)){if(v&&typeof v==='object'){const hash=findOrderHash(v,order,depth+1);if(hash)return hash;}}return null;
@@ -48,7 +48,7 @@ function findOrderHash(value:any,order:string,depth=0):string|null{
 /** Main wallet calls are separate from the game key and require an exact browser approval. */
 export async function processNftIntent(s:any,intents:any[],bridge:Bridge):Promise<boolean>{
  const {action,baw,persist}=bridge;
- const work=intents.filter(i=>['queued','preparing','approved','executing','broadcast','app_confirmation'].includes(i.status)).sort((a,b)=>(a.status==='approved'?-1:0)-(b.status==='approved'?-1:0)||a.created_at-b.created_at);
+ const work=intents.filter(i=>i.payload?.origin!=='agent'&&['queued','preparing','approved','executing','broadcast','app_confirmation'].includes(i.status)).sort((a,b)=>(a.status==='approved'?-1:0)-(b.status==='approved'?-1:0)||a.created_at-b.created_at);
  s.nftPreviews??={};s.nftExecutions??={};
  for(const intent of work){
   const id=intent.id,journal=s.nftExecutions[id];
