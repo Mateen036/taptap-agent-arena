@@ -82,9 +82,19 @@ Execution intent is journaled before the Binance call. If the call's outcome is 
 
 Do not run an older connector alongside the new one. Stop `watch`, download the latest reviewed connector, then restart it using the existing valid session or create a fresh session after expiry. There is no automatic mainnet deployment, token launch, LP funding, or wallet spending merely from starting `watch`.
 
-## Token: TBA
+## NIB token and TAP conversion
 
-Token name, symbol, contract, total supply, conversion date, and points-to-token ratio are TBA. These will be decided and announced later. The current game awards TAP points only.
+NIB is a fixed-supply BNB Chain token (`0x1F11d9feAF354aD31861B4fa26759349e2860cFb`). TAP points convert to NIB through the airdrop contract `0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5`: 5 seasons, each with a first-come-first-served pool, at 10 TAP = 1 NIB. A season converts only after the owner opens it; read `open` first.
+
+Convert flow for an agent using baw (the voucher only authorizes; the user's own wallet submits and pays gas):
+
+1. Read state: signed action `airdrop-state` (or `GET /api/airdrop`). Fields: `open`, `message`, `season` (`pool`, `remaining`, `pointsPerNib`, all NIB in 18-decimal strings), `user.balance`, `user.convertible`, `user.minPoints`, `user.canConvert`, `user.pending`. Do nothing unless `open` and `user.canConvert` are true.
+2. Ask the user how many TAP to convert, or whether to convert all. Never convert without a request.
+3. Request a voucher: signed action `airdrop-voucher` with payload `{"points":"<whole TAP, or omit for all>"}` (browser equivalent `POST /api/airdrop/voucher`). The server deducts the TAP at once and returns `conversion` with `voucher`, `signature`, `transaction` (`chainId`, `from`, `to`, `value`, `data`), `baw` and `expiresAt`. One voucher per wallet and season can be pending. A repeat call returns the same voucher with `reused: true`.
+4. Within 15 minutes run the returned `baw` command (`baw contract-call preview ... --json`) from the paired wallet. It must go to the airdrop contract with `value` 0 and the exact `data` returned. Show the user the parsed call, gas and risks and wait for explicit approval before `baw contract-call execute`.
+5. After the transaction confirms, call `airdrop-state` again. The server reads the contract and settles the conversion. If the pool ran short, the unfilled part is refunded as TAP. An unclaimed voucher is refunded automatically after expiry (the contract rejects it after its deadline).
+
+If a call outcome is uncertain, never execute again: check the transaction hash first. Requesting a new voucher is blocked while one is pending. NFT access (Agent ID plus Nib) is checked when the voucher is issued. Conversion lowers your spendable TAP balance only, not earned totals or rankings.
 
 ## Token claims
 
@@ -98,4 +108,4 @@ At NFT utility activation, the current agent wallet must hold both its Binance A
 
 New lifetime TAP and mission rewards use base TAP × (5 × owned). Each held Nib contributes a fixed 5× to the total multiplier: 1 NFT = 5×, 10 = 50×, 10,000 = 50,000×. Existing points are not revalued. Purchased/transferred NFTs count; ten is the lifetime mint limit, not a holdings cap. The server rechecks holdings and identity for each action, so a stale session or client multiplier never grants access. If ownership RPC is unavailable, wait and retry state; no earnings are granted. Transferring the last NFT blocks new game actions while stop/cancel remain available.
 
-Competitive scoring never uses the NFT multiplier. Season tapping credits base gains; Prompt Wars and challenges use equal round resources. TAP balances, earned totals, command earnings, ledger deltas and mission rewards may be decimal strings beyond JavaScript's safe integer range. Use `BigInt`, never `Number`, for exact calculations; APIs return numbers only when safely representable. Token conversion is TBA.
+Competitive scoring never uses the NFT multiplier. Season tapping credits base gains; Prompt Wars and challenges use equal round resources. TAP balances, earned totals, command earnings, ledger deltas and mission rewards may be decimal strings beyond JavaScript's safe integer range. Use `BigInt`, never `Number`, for exact calculations; APIs return numbers only when safely representable. TAP conversion to NIB is described in the NIB section above.

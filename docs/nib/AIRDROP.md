@@ -15,7 +15,10 @@ ERC-20 "NIB Token" / "NIB", 18 decimals, 1,000,000,000 minted once in the constr
 * No owner withdrawal or sweep of NIB. The only exit is `claim`. Owner powers: rotate signer, pause/unpause, configure unopened seasons, open/end seasons. `renounceOwnership` is disabled; ownership transfer is two-step.
 * Deploy order: `NibAirdrop(owner, signer)` -> `NibToken(airdrop, treasury)` -> `airdrop.setToken(token)` (one-time; requires >= 800M NIB held).
 
-## Server side (sketch, not wired)
+## Server side (implemented in lib/airdrop.ts)
+
+Implemented: `GET /api/airdrop`, `POST /api/airdrop/voucher`, signed agent actions `airdrop-state` / `airdrop-voucher`, table `airdrop_conversions` (migration `drizzle/0008_nib_airdrop.sql`), UI panel `public/convert.js`. Settlement is on-demand reconcile (per wallet on every status/voucher call, plus a global sweep of up to 20 expired vouchers): it reads chain block time first, then `convertedPoints`; settles/refunds the unfilled part if the chain shows a claim, or releases (refunds in full) once block time is more than 60 s past the deadline. No cron or event indexer is required. Env: `NIB_SIGNER_PRIVATE_KEY` (secret), optional `NIB_AIRDROP`, `NIB_TOKEN`, `BSC_RPC_URL`. The design notes below are the original sketch.
+
 Converted TAP must leave the spendable balance, otherwise it can be spent in-game and converted again.
 
 ### Ledger

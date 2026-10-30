@@ -28,3 +28,8 @@ export const nftIntents=sqliteTable('nft_intents',{
  transaction:text('transaction').notNull(),summary:text('summary').notNull(),preview:text('preview'),previewRequestId:text('preview_request_id'),previewExpiresAt:integer('preview_expires_at'),
  transactionHash:text('transaction_hash'),orderId:text('order_id'),error:text('error'),createdAt:integer('created_at').notNull(),expiresAt:integer('expires_at').notNull(),approvedAt:integer('approved_at'),finishedAt:integer('finished_at')
 },t=>[index('nft_intent_wallet').on(t.wallet,t.createdAt),uniqueIndex('nft_transaction_unique').on(t.transactionHash).where(sql`${t.status} = 'confirmed'`)]);
+// NIB airdrop conversions: TAP points are deducted when a voucher is issued and settled or refunded from on-chain convertedPoints.
+export const airdropConversions=sqliteTable('airdrop_conversions',{
+ id:text('id').primaryKey(),wallet:text('wallet').notNull(),season:integer('season').notNull(),deltaPoints:text('delta_points').notNull(),cumulativePoints:text('cumulative_points').notNull(),baseConverted:text('base_converted').notNull(),
+ deadline:integer('deadline').notNull(),status:text('status').notNull().default('pending'),paidPoints:text('paid_points'),refundPoints:text('refund_points'),signature:text('signature').notNull(),createdAt:integer('created_at').notNull(),settledAt:integer('settled_at')
+},t=>[index('airdrop_wallet').on(t.wallet,t.createdAt),uniqueIndex('airdrop_one_pending').on(t.wallet,t.season).where(sql`${t.status} = 'pending'`)]);
