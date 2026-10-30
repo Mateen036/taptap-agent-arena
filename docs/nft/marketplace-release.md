@@ -7,7 +7,7 @@ The browser and signed API tests use disposable local EVM wallets and synthetic 
 ## Implemented rules
 
 - Buyer fee: **2% added to the base price**. Seller fee: **2% deducted from the base price**. Immutable constants; each fee rounds down to whole wei.
-- The immutable fee recipient receives both fees at settlement. The unsigned default deployment plan uses the LP vault; a project treasury can be selected before deployment with `--fee-recipient ADDRESS`. The user’s recipient choice is still pending. `NFT_FEE_RECIPIENT` must match the deployed contract; it defaults to the configured LP vault.
+- The immutable fee recipient receives both fees at settlement. The user selected the connected BNB agent wallet `0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d` as the project treasury. The current unsigned deployment plan fixes marketplace fees to that address. A treasury is selected with `--fee-recipient ADDRESS`. `NFT_FEE_RECIPIENT` must match the deployed contract; it defaults to the configured LP vault.
 - Listings leave the NFT in the seller’s wallet. Exact purchase total, NFT delivery, net seller payout and fee transfer all succeed together or revert.
 - Bids escrow the base price plus the buyer fee, name the current owner, expire within 30 days, and require no listing. One open bid per bidder per NFT.
 - Acceptance requires the named current owner, both current Agent IDs, NFT approval, exact bidder and price, and an unexpired deadline. It clears both the accepted bid and any listing for the NFT.
