@@ -2,6 +2,7 @@
 import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';
 import {handle} from '../lib/api';import {SQLiteDatabase} from '../test/helpers/database';import {browserSession} from '../deploy/vercel/lib/browser-session';
 import {generatePrivateKey,privateKeyToAccount} from 'viem/accounts';import {actionData} from '../lib/protocol';import {createPublicCard} from '../lib/share-card';
+import {nftPreviewResponse} from '../lib/nft-preview';
 import {nftChain} from '../test/helpers/nft-chain';
 if(process.env.TAPTAP_BROWSER_FIXTURE!=='1'||process.env.NODE_ENV==='production')throw Error('This fixture must only run explicitly in local test mode.');
 process.env.AUTH_SECRET=crypto.randomBytes(32).toString('hex');
@@ -50,6 +51,7 @@ const server=http.createServer(async(req,res)=>{
   else if(url.pathname==='/__test/reset'){await db.prepare("DELETE FROM arena_entries").run();await db.prepare("DELETE FROM arena_matches").run();}
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
  }
+ if(url.pathname.startsWith('/api/nft/preview/v1/')){const result=nftPreviewResponse(decodeURIComponent(url.pathname.slice('/api/nft/preview/v1/'.length)));res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;}
  if(url.pathname.startsWith('/api/card/')){
   const [, , ,kind,id]=url.pathname.split('/'),routes:Record<string,string>={profile:'agents',match:'matches',run:'runs',round:'rounds'};
   const endpoint=kind==='season'?'/api/season':routes[kind]?'/api/public/'+routes[kind]+'/'+id:null;

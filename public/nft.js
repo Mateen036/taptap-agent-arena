@@ -57,7 +57,7 @@
  }
  function inspect(id){
   const item=[...(foundry?.gallery||[]),...(foundry?.owned||[]),...(foundry?.listings||[])].find(v=>v.id===id);if(!item)return;
-  modal(item.name,`<div class="nft-detail"><img src="${item.image}" alt="${esc(item.name)}" width="560" height="560"><dl class="nft-traits">${Object.entries(item.traits).filter(([k])=>k!=='indexes').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></div><p class="tiny muted">${id<=foundry.minted?'This serial has been minted. Ownership and available listings are read from the contracts.':'Unminted collection design. Minting assigns the next available serial, not a chosen token.'}</p><a class="text-button" href="${item.image}" target="_blank" rel="noopener">Open original SVG ↗</a>`);
+  modal(item.name,`<div class="nft-detail"><img src="${item.image}" alt="${esc(item.name)}" width="560" height="560"><dl class="nft-traits">${Object.entries(item.traits).filter(([k])=>k!=='indexes').map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></div><p class="tiny muted">${id<=foundry.minted?'This serial has been minted. Ownership and available listings are read from the contracts.':'Unminted collection design. Minting assigns the next available serial, not a chosen token.'}</p><a class="text-button" href="${item.originalImage||'/api/nft/art/'+id+'.svg'}" target="_blank" rel="noopener">Open original SVG ↗</a>`);
  }
  function review(id){
   const i=foundry.intents.find(v=>v.id===id);if(!i||!i.preview)return;
