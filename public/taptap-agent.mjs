@@ -18904,7 +18904,7 @@ import path2 from "node:path";
 import fs from "node:fs";
 import path from "node:path";
 import crypto3 from "node:crypto";
-var NIB_BUG_BOUNTY = "0x8Ae26e0F30d0F7500aC8023fF28C55E81c3cFaF8";
+var NIB_BUG_BOUNTY = "0x8e41998Bd06d00098930A094f411E5b8f655436D";
 var NIB_TOKEN_PIN = "0x1F11d9feAF354aD31861B4fa26759349e2860cFb";
 var MAX_REPORT_BYTES = 49152;
 var MAX_SCOPE_BYTES = 16384;

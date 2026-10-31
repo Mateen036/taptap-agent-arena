@@ -20,7 +20,7 @@ export const NIB_VAULT_V2='0x65397BF634E817539024EFd32a0E2c5e51fB81bd' as const;
 /** Reviewed parameters, all IMMUTABLE once deployed (except the ticket signer, which the guardian can rotate through a public 7-day delay). 1 NIB = 10^18. */
 export const BOUNTY_PARAMS={
  /** Address of the key the TapTap server signs TAP-stake tickets with (BUG_BOUNTY_SIGNER_PRIVATE_KEY). It can never move NIB. A fresh, dedicated key: see docs/bug-bounty.md. */
- signer:'0x33F4171a3880e07A5E135FFC3F3B9BE3468BDd4B' as `0x${string}`,
+ signer:'0x34B800cB13ef386Aa607E4dd24DC34D3796C92b2' as `0x${string}`,
  /** May ONLY rotate the ticket signer, and only through a public 7-day delay. Cannot touch escrow, outcomes or fees. */
  guardian:TREASURY as `0x${string}`,
  /** Decides appealed rejections ONLY (approve up to the claimed severity, or reject for good). Cannot touch escrow, fees, unappealed reports or the rules. */

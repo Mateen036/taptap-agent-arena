@@ -5,7 +5,7 @@ import fs from 'node:fs';import path from 'node:path';import crypto from 'node:c
 
 /** NibBugBounty (deterministic CREATE2 address from scripts/nib-bug-bounty-deploy.ts `plan`). Pinned so a site can never point the connector at another contract.
  *  test/bug-bounty-chat.test.ts fails if this differs from the deploy plan: if you change the contract or its parameters, re-run `plan` and update this line. */
-export const NIB_BUG_BOUNTY='0x8Ae26e0F30d0F7500aC8023fF28C55E81c3cFaF8';
+export const NIB_BUG_BOUNTY='0x8e41998Bd06d00098930A094f411E5b8f655436D';
 export const NIB_TOKEN_PIN='0x1F11d9feAF354aD31861B4fa26759349e2860cFb';
 export const MAX_REPORT_BYTES=49152,MAX_SCOPE_BYTES=16384;
 /** Upper bound on any single NIB approval for the bounty contract (deposits are at least 10,000 NIB; this stops absurd amounts). */
