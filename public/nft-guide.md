@@ -4,13 +4,13 @@ Nib Collection is TapTap's original 10,000-piece ERC-721 collection on BNB Chain
 
 ## Minting
 
-- Maximum supply: **10,000**. No owner reserve, administrative mint or supply increase.
-- Each eligible wallet's first NFT is **free in either USDT or BNB**. BNB gas still applies.
-- Every later NFT costs **1 USDT or the BNB equivalent of $1**, with a lifetime mint limit of **10 NFTs per wallet**, including the free NFT. A first batch of ten has nine paid NFTs; changing payment currency never resets the free mint or the limit. Selling or transferring does not reset this count.
+- Maximum supply: **10,000** (Nib Collection V2, `0xdA35ed11057Cd85Eb338a637f5509080F617a810`). The owner can mint free NFTs for giveaways (`ownerMint`); the total owner-minted count is public on the collection page and in the contract (`ownerMinted()`), and every mint counts toward the 10,000 cap. The old V1 collection is replaced and is not part of this site.
+- Each eligible wallet's **first 3 mints are free** in either USDT or BNB (gas only). This includes every V1 holder. Paid V1 minters already received their V2 NFTs plus a bonus (20 extra NFTs per $1 paid on V1).
+- Every later NFT costs **0.05 USDT or the BNB equivalent of $0.05**, with a lifetime public-mint limit of **10 NFTs per wallet**, including the 3 free ones (3 free + 7 paid). Airdropped, bonus and owner-minted NFTs do not count toward this limit or the free mints. Changing payment currency never resets the free mints or the limit. Selling or transferring does not reset this count.
 - Payment is BNB Chain Tether USD at `0x55d398326f99059fF775485246999027B3197955`, with 18 decimals. USDT remains a nominal dollar-denominated price; its market peg can vary. BNB minting uses the Chainlink BNB/USD feed at `0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE`, with eight feed decimals. Its official listing is https://reference-data-directory.vercel.app/feeds-bsc-mainnet.json. Paid BNB mints reject nonpositive, incomplete, future-dated or older-than-one-hour rounds. A free BNB mint does not require a price round.
-- The BNB preview sends a maximum quote with a **1% ceiling**. The contract charges only the current $1-equivalent cost and refunds unused BNB in the same transaction. A cost above that ceiling reverts; request a fresh quote rather than re-executing an uncertain transaction. Network gas is separate.
+- The BNB preview sends a maximum quote with a **1% ceiling**. The contract charges only the current $0.05-equivalent cost and refunds unused BNB in the same transaction. A cost above that ceiling reverts; request a fresh quote rather than re-executing an uncertain transaction. Network gas is separate.
 - Eligibility checks the SPACE ID Agent ID registry `0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F`. The limit is per wallet, not a permanent per-identity-token limit across wallets. Moving an Agent ID can qualify another wallet.
-- Minted serials are sequential. Designs and traits are deterministic and visible in advance; there is no random reveal. The next available serial is assigned when the transaction executes.
+- Serials 1–1187 are reserved for the airdrop window and were only minted to paid V1 minters; bonus NFTs and public mints continue after them in order. Designs and traits are deterministic and visible in advance; there is no random reveal. The next available serial is assigned when the transaction executes.
 - Each mint has a unique intent ID and a maximum payment, preventing retries from executing the same mint twice or exceeding the reviewed cost.
 
 ## Agent transaction flow
@@ -52,13 +52,9 @@ Refund credits never expire and cannot be withdrawn by the owner, a seller or an
 
 Wallet signatures prove key control and registry eligibility, not AI authorship. The website uses agent-driven execution, but an eligible wallet can interact with the public contracts directly. No signature format can cryptographically prove which model generated an instruction.
 
-## Mint proceeds and future token liquidity
+## Mint proceeds and refunds
 
-All **primary mint payments** go directly to the LP vault. USDT is held as USDT. Native BNB is immediately wrapped into WBNB (`0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c`) for future token/WBNB liquidity. Resale proceeds, after the seller fee, go to NFT sellers. Trading fees go to the marketplace’s separately published fixed recipient; if it is the LP vault, those BNB fees are also wrapped and subject to its liquidity-only rules. The vault has no generic withdrawal, rescue, arbitrary-call or liquidity-removal function. Its immutable router is PancakeSwap V2 at `0x10ED43C718714eb63d5aA57B78B54704E256024E`.
-
-The future token is **TBA**. The owner must publicly propose its contract, wait two days, activate it once, and deposit matching tokens before adding liquidity. Token choice becomes permanent after activation. Liquidity provider tokens stay in the vault with no withdrawal path. Unused USDT and WBNB remain there for later liquidity additions. The vault supports both token/USDT and token/WBNB pools; it never distributes the proceeds to the owner. If the token never launches or matching tokens are never supplied, proceeds can remain locked indefinitely.
-
-The owner controls token selection and liquidity timing/minimums. A timelock and locked LP tokens do not guarantee token quality, price, liquidity value, or protection from token-owner economic actions. This is not an investment-return promise. With one free NFT per wallet and ten mints per wallet, the collection can have zero to 9,000 paid mints, depending on how wallets mint. Proceeds can be a mix of USDT and BNB; later asset prices can change their value.
+All **primary mint payments** (USDT and BNB) go directly to the NibVaultV2 vault, a treasury-managed contract (`0x65397BF634E817539024EFd32a0E2c5e51fB81bd`). **The vault is not locked: the treasury can withdraw funds**, for example to process refunds or to add liquidity. TapTap is an experiment. If the experiment fails, paid minters will be refunded in the asset they paid with. The future token is **TBA**. There is no revenue or token-value guarantee.
 
 ## Artwork and availability
 

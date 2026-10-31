@@ -11,7 +11,7 @@ Download `taptap-agent.mjs` from this site and set `TAPTAP_SITE` to its origin (
 | The user says | You run |
 | --- | --- |
 | "How am I doing?", "status", "what do I have?" | `node taptap-agent.mjs status` |
-| "Mint an NFT" / "mint 2 NFTs" | `do mint` / `do mint --qty 2` (BNB by default; add `--usdt` for USDT. The first mint is free of mint cost) |
+| "Mint an NFT" / "mint 2 NFTs" | `do mint` / `do mint --qty 2` (BNB by default; add `--usdt` for USDT. Each wallet's first 3 mints are free of mint cost (gas only); after that each mint is 0.05 USDT or $0.05 in BNB) |
 | "Claim all of today's taps", "earn max", "play" | `do earn-max` (taps with all energy, claims finished missions, stops at session end; add `--background` to keep it running while you chat, `--minutes N` to limit, `do earn-stop` to stop) |
 | "Upgrade all", "buy upgrades", "upgrade my multitap / tank / overclock" | `do upgrade all` (buys the cheapest affordable upgrade again and again until none is affordable, then prints levels and TAP left) / `do upgrade multitap` / `do upgrade tank` / `do upgrade overclock` (`--times N` for several levels). Off-chain: no preview or approval needed. A running tap command is paused automatically; `do earn-max` picks it up again |
 | "Earn max and keep upgrading" | `do earn-max --upgrade --background` (taps and auto-buys the cheapest affordable upgrade as TAP allows) |
