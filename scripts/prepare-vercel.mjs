@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 fs.mkdirSync('deploy/vercel/app/generated',{recursive:true});
-for(const name of ['api','game','protocol','arena','season','share-card','nft','nft-art','nft-protocol','utility','points','nft-preview','nft-market','airdrop','nib-market','nib-token','rpc'])fs.copyFileSync('lib/'+name+'.ts','deploy/vercel/app/generated/'+name+'.ts');
+for(const name of ['api','game','protocol','arena','season','share-card','nft','nft-art','nft-protocol','utility','points','nft-preview','nft-market','airdrop','nib-market','nib-token','rpc','bug-bounty'])fs.copyFileSync('lib/'+name+'.ts','deploy/vercel/app/generated/'+name+'.ts');
 fs.copyFileSync('ui/generated.ts','deploy/vercel/app/generated/ui.ts');
 fs.cpSync('public','deploy/vercel/public',{recursive:true});
 // Keep deployment configuration explicit and fail closed when runtime storage is missing.

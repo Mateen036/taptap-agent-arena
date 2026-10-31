@@ -45,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src={"/utility.js?v="+V} defer />
         <script src={"/convert.js?v="+V} defer />
         <script src={"/nibmarket.js?v="+V} defer />
+        <script src={"/bugbounty.js?v="+V} defer />
         <script src={"/motion.js?v="+V} defer />
       </body>
     </html>

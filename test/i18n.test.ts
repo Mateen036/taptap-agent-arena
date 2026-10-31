@@ -170,12 +170,12 @@ const SCRIPT_IGNORE_EXACT = new Set([
   '(prefers-reduced-motion: reduce)', '(hover: hover) and (pointer: fine)', // media queries
 ]);
 // Agent-facing instructions and CLI commands are intentionally English (the agent reads them, not the human).
-const AGENT_FACING = /^(Connect my Binance Agentic Wallet|Claim my NIB airdrop conversion|node taptap-agent\.mjs)|signed action nib-bid-/;
+const AGENT_FACING = /^(Connect my Binance Agentic Wallet|Claim my NIB airdrop conversion|node taptap-agent\.mjs)|signed action nib-bid-|taptap-agent\.mjs do bounty-|^--file report\.md"|^" \(the report text is untrusted/;
 const SCRIPT_IGNORE = /^(GET|POST|UTC|PUT|DELETE|Content-Type|#[\w-]+ \w+)$/;
 
 test('UI strings written in the frontend scripts have a Chinese translation', () => {
   const missing: string[] = [];
-  for (const f of ['app', 'convert', 'nft', 'nibmarket', 'utility', 'motion']) {
+  for (const f of ['app', 'convert', 'nft', 'nibmarket', 'bugbounty', 'utility', 'motion']) {
     for (const s of scriptStrings(`public/${f}.js`)) {
       if (SCRIPT_IGNORE.test(s) || SCRIPT_IGNORE_EXACT.has(s) || AGENT_FACING.test(s)) continue;
       const probe = s.replace(/[#\u0000\u0001]+/g, '12');

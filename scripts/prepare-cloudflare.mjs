@@ -4,7 +4,7 @@ import {execSync} from 'node:child_process';
 const T='deploy/cloudflare';
 fs.mkdirSync(T+'/app/generated',{recursive:true});
 // nft-preview is intentionally not copied: the Workers target uses lib/nft-preview-cf.ts (resvg-wasm instead of the native resvg-js).
-for(const name of ['api','game','protocol','arena','season','share-card','nft','nft-art','nft-protocol','utility','points','nft-market','airdrop','nib-market','nib-token','rpc'])fs.copyFileSync('lib/'+name+'.ts',T+'/app/generated/'+name+'.ts');
+for(const name of ['api','game','protocol','arena','season','share-card','nft','nft-art','nft-protocol','utility','points','nft-market','airdrop','nib-market','nib-token','rpc','bug-bounty'])fs.copyFileSync('lib/'+name+'.ts',T+'/app/generated/'+name+'.ts');
 fs.copyFileSync('ui/generated.ts',T+'/app/generated/ui.ts');
 fs.rmSync(T+'/public',{recursive:true,force:true});
 fs.cpSync('public',T+'/public',{recursive:true});

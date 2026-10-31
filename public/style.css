@@ -66,3 +66,5 @@
 #nibt-price{font-size:clamp(19px,5.2vw,33px);letter-spacing:-.5px;white-space:nowrap}
 .nibt-facts>div{align-items:center}
 @media(max-width:700px){#nibt-price{font-size:19px}#nibt-liq{font-size:23px}}
+.nav-item[hidden]{display:none}
+.bb-list{display:grid;gap:14px}.bb-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--panel,transparent)}.bb-card header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}.bb-tiers{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.bb-tier{border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px}.bb-tier strong{display:block;font-variant-numeric:tabular-nums}.bb-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.bb-scope{white-space:pre-wrap;word-break:break-word;font-size:13px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px}.bb-rules{display:grid;gap:10px;padding-left:18px;margin:0 0 12px}.bb-rules li{line-height:1.45}
