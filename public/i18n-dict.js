@@ -344,6 +344,8 @@ add(
 ["A market with","一个"],["no fingers.","无需手指的市场。"],
 ["Eligible agents list, buy and bid in BNB only. You give the instructions and approve the exact transaction. Settlement happens on BNB Chain.","合格代理仅以 BNB 挂单、购买和出价。你下达指令并确认具体交易，结算在 BNB Chain 上完成。"],
 ["NFTs stay in the seller’s wallet until a sale. BNB payment and NFT delivery happen atomically. No USDT approval is needed to buy. Buyers pay the price plus 2%; sellers receive the price minus 2%. Gas is additional. Primary mint proceeds fund the LP vault.","在成交前，NFT 一直留在卖家钱包中。BNB 付款与 NFT 交付原子化完成。购买无需授权 USDT。买家支付标价加 2%；卖家收到标价减 2%。Gas 费另计。一级铸造收入将注入 LP 金库。"],
+["NFTs stay in the seller’s wallet until a sale. BNB payment and NFT delivery happen atomically. No USDT approval is needed to buy. Buyers pay the price plus 2%; sellers receive the price minus 2%. Gas is additional.","在成交前，NFT 一直留在卖家钱包中。BNB 付款与 NFT 交付原子化完成。购买无需授权 USDT。买家支付标价加 2%；卖家收到标价减 2%。Gas 费另计。"],
+["Primary mint proceeds fund the LP vault.","一级铸造收入将注入 LP 金库。"],
 ["Find your next agent.","找到你的下一个代理。"],["Manage your NFTs ↗","管理你的 NFT ↗"],["Sort listings","排序挂单"],
 ["SETTLED ON BNB CHAIN","在 BNB Chain 上结算"],["Recent sales.","近期成交。"],
 ["CLEAR BEFORE YOU COMMIT","确认之前，一清二楚"],["2% on each side. Shown before approval.","双方各 2%，批准前明示。"],
@@ -962,7 +964,18 @@ add(
 add(
 ["TapTap is an experiment. If the experiment fails, paid minters will be refunded in the asset they paid with.","TapTap 是一项实验。如果实验失败，付费铸造者将以其支付时使用的资产获得退款。"],
 ["The V2 vault is managed by the treasury (funds can be withdrawn to process refunds and liquidity).","V2 金库由国库管理（资金可被提取，用于处理退款和流动性）。"],
-["View V2 vault","查看 V2 金库"]
+["View V2 vault","查看 V2 金库"],
+["FIRST 3 MINTS FREE","前 3 枚免费铸造"],
+["First 3 mints per wallet","每个钱包前 3 次铸造"],
+["0.05 USDT or $0.05 in BNB + gas","0.05 USDT 或等值 $0.05 的 BNB + Gas"],
+["$0.05 per paid NFT at the on-chain BNB/USD price. Estimate includes a 1% quote ceiling; unused BNB is refunded. Network gas is additional.","按链上 BNB/USD 价格计，每枚付费 NFT $0.05。估算含 1% 报价上限；未使用的 BNB 会退还。网络 Gas 另计。"],
+["Each paid NFT costs 0.05 USDT. Paid USDT mints need an exact token approval first. Network gas is additional.","每枚付费 NFT 需 0.05 USDT。以 USDT 付费铸造需先精确授权代币额度。网络 Gas 另计。"],
+["{a} / 10 lifetime mints used · {b} NFTs held · {c} USDT · {d} BNB available · {e} free mints left","已用终身铸造 {a} / 10 · 持有 {b} 枚 NFT · {c} USDT · 可用 {d} BNB · 剩余免费铸造 {e} 枚"],
+["· {a} free mints left","· 剩余免费铸造 {a} 枚"],
+["Mint opens after the holder airdrop","持有者空投完成后开放铸造"],
+["BNB in vault","金库中的 BNB"],
+["Mint payments (USDT and BNB) go directly to the treasury vault.","铸造款项（USDT 与 BNB）直接进入国库金库。"],
+["Airdropped to original holders: {a} · Bonus NFTs: {b} · Owner-minted (free): {c} · Public mints: {d}","已空投给原持有者：{a} · 奖励 NFT：{b} · 所有者免费铸造：{c} · 公开铸造：{d}"]
 );
 (root.TAPTAP_I18N_PAIRS=P);
 })(typeof window!=='undefined'?window:globalThis);

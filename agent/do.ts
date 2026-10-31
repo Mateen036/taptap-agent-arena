@@ -13,6 +13,9 @@ export const NIB_MARKET='0x775377BAdf400F070024b2C806A2573461b5dCb7';
 export const NIB_COLLECTION='0x7374f0379F5b2689B906D47Da708B394F1910B23';
 // Collection-wide bids contract (deterministic CREATE2 address from scripts/nib-collection-bids-deploy.ts). Pinned so a site can never point the connector at another contract.
 export const NIB_COLLECTION_BIDS='0xdCd8FB9d7fE9680D247CF14E2BEEd04D714a1b67';
+// NibCollectionV2 and its collection bids: CREATE2 addresses from scripts/nib-collection-v2-deploy.ts plan (publicStartId 1188). If the deployment arguments change, these pins change with them and must be regenerated.
+export const NIB_COLLECTION_V2='0xdA35ed11057Cd85Eb338a637f5509080F617a810';
+export const NIB_COLLECTION_BIDS_V2='0x6Fa70911C8eCF6F869789f114Cc2bed445933a6B';
 const airdropAbi=parseAbi(['function claim((address wallet,uint256 season,uint256 cumulativePoints,uint256 deadline,bytes32 voucherId) v,bytes signature) returns (uint256 points,uint256 nib)']);
 const marketAbi=parseAbi(['function placeBid(uint256 nibAmount,uint256 bnbAmount,uint256 expiresAt) payable returns (uint256)','function cancelBid(uint256 id)','function acceptBid(uint256 id,uint256 nibAmount,uint256 minBnbOut,uint256 deadline)']);
 const erc20Abi=parseAbi(['function approve(address,uint256) returns (bool)']);
@@ -147,8 +150,8 @@ async function nftPrepare(ctx:Ctx,label:string,values:any,nextHint?:string,e?:{u
   if(values.kind==='mint'&&values.currency==='USDT'&&/Approve the exact USDT/.test(error.message)){ctx.out('USDT allowance is short, so step 1 is an exact-amount approval for this mint only.');return nftPrepare(ctx,'Approve exact USDT for the mint (step 1 of 2)',{kind:'mint-approval',quantity:values.quantity,currency:'USDT'},'After it confirms, run the same mint command again for step 2.');}
   throw error;
  }
- const intent=r.intent,contracts=r.contracts;if(!same(contracts.collection,ctx.collection||NIB_COLLECTION))fail('The site reports an unexpected NFT collection contract. Refusing.');
- if(String(intent.kind).startsWith('cbid')&&!same(contracts.collectionBids,ctx.collectionBids||NIB_COLLECTION_BIDS))fail('The site reports an unexpected collection-bids contract. Refusing.');
+ const intent=r.intent,contracts=r.contracts;if(!(ctx.collection?same(contracts.collection,ctx.collection):same(contracts.collection,NIB_COLLECTION)||same(contracts.collection,NIB_COLLECTION_V2)))fail('The site reports an unexpected NFT collection contract. Refusing.');
+ if(String(intent.kind).startsWith('cbid')&&!(ctx.collectionBids?same(contracts.collectionBids,ctx.collectionBids):same(contracts.collectionBids,NIB_COLLECTION_BIDS)||same(contracts.collectionBids,NIB_COLLECTION_BIDS_V2)))fail('The site reports an unexpected collection-bids contract. Refusing.');
  validateNftTransaction(intent,contracts,ctx.s.wallet);
  const claimed=await act(ctx,'nft-claim',{intentId:intent.id});validateNftTransaction(claimed.intent,claimed.contracts,ctx.s.wallet);
  if(txDigest(claimed.intent.transaction)!==txDigest(intent.transaction))fail('The transaction changed between request and claim. Refusing.');

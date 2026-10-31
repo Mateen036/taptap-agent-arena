@@ -2,6 +2,7 @@ import {createPublicClient,http,fallback,parseAbi,encodeFunctionData,isAddress,k
 import {bsc} from 'viem/chains';
 import {privateKeyToAccount} from 'viem/accounts';
 import {requireGameAccess,gameAccessSnapshot,utilityPolicy,type UtilityEnv} from './utility';
+import {resolveNftEnv} from './nft-protocol';
 import {pointBalance,earnedBalance,pointFields,exactPoints,legacyPoints} from './points';
 // NIB airdrop conversion. TAP points are deducted when a voucher is issued, then settled or refunded from the contract's on-chain convertedPoints.
 export class AirdropError extends Error{constructor(public status:number,message:string){super(message);}}
@@ -145,7 +146,8 @@ export async function airdropStatus(e:AirdropEnv,a:any|null,now:number){
  return out;
 }
 
-const collectionAddress=(e:AirdropEnv)=>(e.NFT_COLLECTION&&isAddress(e.NFT_COLLECTION)?e.NFT_COLLECTION:NIB_COLLECTION) as `0x${string}`;
+/** With NFT_COLLECTION_V2 set the bonus reads ONLY V2 holdings. Claims are keyed by token id, so ids already claimed through the original collection stay claimed. */
+const collectionAddress=(e0:AirdropEnv)=>{const e=resolveNftEnv(e0);return (e.NFT_COLLECTION&&isAddress(e.NFT_COLLECTION)?e.NFT_COLLECTION:NIB_COLLECTION) as `0x${string}`;};
 const bigSum=(v:any)=>BigInt(String(v??0).split('.')[0]||'0');
 const claimedTotal=async(e:AirdropEnv)=>bigSum((await first(e,'SELECT COALESCE(SUM(amount),0) AS total FROM nft_bonus_claims'))?.total);
 /** Token ids this wallet holds right now: enumerate, then confirm each with ownerOf so a mid-read transfer can't slip through. */

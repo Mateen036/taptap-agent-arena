@@ -52,6 +52,25 @@ export type NftTransaction={chainId:56;from:`0x${string}`;to:`0x${string}`;value
 export function nibVaultV2Address(env:{NIB_VAULT_V2?:string}):`0x${string}`|null{const a=env.NIB_VAULT_V2;return typeof a==='string'&&isAddress(a)&&!/^0x0{40}$/i.test(a)?a as `0x${string}`:null;}
 /** The collection-bid contract is optional and stays hidden everywhere until NFT_COLLECTION_BIDS is a valid address. */
 export function nftCollectionBidsAddress(env:{NFT_COLLECTION_BIDS?:string}):`0x${string}`|null{const a=env.NFT_COLLECTION_BIDS;return typeof a==='string'&&isAddress(a)&&!/^0x0{40}$/i.test(a)?a as `0x${string}`:null;}
+/** The original collection. Referenced only so NibCollectionV2 can be verified against the contract it mirrors; the site never serves or links it once V2 is active. */
+export const NFT_COLLECTION_V1='0x7374f0379F5b2689B906D47Da708B394F1910B23' as const;
+export const nftV2Abi=parseAbi([
+ 'function legacy() view returns(address)','function publicStartId() view returns(uint256)','function airdropFinalized() view returns(bool)','function airdropCount() view returns(uint256)',
+ 'function publicMinted() view returns(uint256)','function nextPublicId() view returns(uint256)','function bonusCount() view returns(uint256)','function ownerMinted() view returns(uint256)','function FREE_PER_WALLET() view returns(uint256)','function publicRemaining() view returns(uint256)','function totalSupply() view returns(uint256)'
+]);
+/** The NibVaultV2 treasury vault is the payment destination of NibCollectionV2 (the collection's `lpVault`). */
+export const nibVaultV2ReadAbi=parseAbi(['function usdt() view returns(address)','function router() view returns(address)','function wbnb() view returns(address)','function owner() view returns(address)']);
+export type NftV2Env={NFT_COLLECTION_V2?:string;NFT_MARKETPLACE_V2?:string;NFT_COLLECTION_BIDS_V2?:string;NIB_VAULT_V2?:string};
+/** True once NFT_COLLECTION_V2 is set. From then on the site serves ONLY NibCollectionV2 and its own marketplace, bids and vault. */
+export function nftV2Active(env:NftV2Env):boolean{return typeof env.NFT_COLLECTION_V2==='string'&&env.NFT_COLLECTION_V2.trim()!=='';}
+/**
+ * Maps the V2 environment onto the pointers the rest of the code already uses and DROPS the v1 pointers, so v1 can never leak into the mint,
+ * gallery, marketplace, bids, game gate or bonus. A half-configured V2 fails closed instead of falling back to v1. Idempotent.
+ */
+export function resolveNftEnv<T extends NftV2Env&{NFT_COLLECTION?:string;NFT_MARKETPLACE?:string;NFT_LP_VAULT?:string;NFT_COLLECTION_BIDS?:string}>(env:T):T{
+ if(!nftV2Active(env))return env;
+ return {...env,NFT_COLLECTION:env.NFT_COLLECTION_V2,NFT_MARKETPLACE:env.NFT_MARKETPLACE_V2,NFT_LP_VAULT:env.NIB_VAULT_V2,NFT_COLLECTION_BIDS:env.NFT_COLLECTION_BIDS_V2};
+}
 export function nftConfig(env:{NFT_COLLECTION?:string;NFT_MARKETPLACE?:string;NFT_LP_VAULT?:string}):NftAddresses|null{
  const {NFT_COLLECTION:c,NFT_MARKETPLACE:m,NFT_LP_VAULT:v}=env;
  if(!c&&!m&&!v)return null;if(![c,m,v].every(x=>typeof x==='string'&&isAddress(x)))throw Error('NFT contract configuration is incomplete.');

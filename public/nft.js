@@ -9,7 +9,7 @@
  const rankBadge=r=>r?`<span class="rarity-badge tier-${esc(r.tier.toLowerCase())}" title="${esc(r.tier)} · rarity score ${esc(r.score)} · computed from trait frequency among ${fmt(r.of)} minted">Rank #${fmt(r.rank)} <small>of ${fmt(r.of)}${r.tied>1?' · tied':''}</small></span>`:'';
  const addressLink=a=>`<a class="text-button" href="https://bscscan.com/address/${encodeURIComponent(a)}" target="_blank" rel="noopener" title="${esc(a)}">${esc(short(a))}</a>`;
  const ago=ms=>{if(!ms)return 'time pending';const s=Math.max(0,Math.round((Date.now()-ms)/1000));return s<60?'just now':s<3600?Math.floor(s/60)+' min ago':s<86400?Math.floor(s/3600)+' h ago':Math.floor(s/86400)+' d ago';};
- const cost=()=>{const n=Math.max(1,Math.min(10,Number($('#nft-quantity').value)||1));return Math.max(0,n-(collection?.wallet?.freeAvailable!==false?1:0));};
+ const cost=()=>{const n=Math.max(1,Math.min(10,Number($('#nft-quantity').value)||1)),w=collection?.wallet,free=w&&w.freeRemaining!==undefined?w.freeRemaining:collection?.freePerWallet??(w?.freeAvailable!==false?1:0);return Math.max(0,n-free);};
  const isEligible=()=>connected()&&collection?.wallet?.eligible;
  async function refreshCollection(force=false){
   $('#nft-transaction-desk').hidden=!active();
@@ -24,16 +24,19 @@
  function renderMint(){
   if(!collection)return;const d=collection,w=d.wallet,n=cost(),native=currency()==='BNB';
   const quote=native&&d.bnbPriceRaw?BigInt(d.bnbPriceRaw)*BigInt(n):0n,budget=(quote*101n+99n)/100n,missing=native&&n>0&&!d.bnbPriceRaw;
+  const v2=d.v2&&d.v2.active===true,usdt=k=>v2?(k*5/100).toFixed(2).replace(/\.?0+$/,''):money(k);
+  {const f=$('#nft-v2-facts');f.hidden=!v2;if(v2)f.textContent=`Airdropped to original holders: ${fmt(d.v2.airdropCount)} · Bonus NFTs: ${fmt(d.v2.bonusCount)} · Owner-minted (free): ${fmt(d.v2.ownerMinted)} · Public mints: ${fmt(d.v2.publicMinted)}`;
+   if(v2){$('#nft-free-chip').textContent='FIRST 3 MINTS FREE';$('#nft-free-label').textContent='First 3 mints per wallet';$('#nft-paid-price').textContent='0.05 USDT or $0.05 in BNB + gas';}}
   $('#nft-minted').textContent=fmt(d.minted);$('#nft-supply-bar').style.width=(d.minted/100)+'%';
-  $('#nft-cost').textContent=!n?'FREE + BNB gas':native?missing?(d.configured?'BNB quote unavailable':'BNB quote at launch'):'Up to '+nativeAmount(budget)+' BNB':money(n)+' USDT';
-  $('#nft-price-note').textContent=native?'$1 per paid NFT at the on-chain BNB/USD price. Estimate includes a 1% quote ceiling; unused BNB is refunded. Network gas is additional.':'Each paid NFT costs 1 USDT. Paid USDT mints need an exact token approval first. Network gas is additional.';
+  $('#nft-cost').textContent=!n?'FREE + BNB gas':native?missing?(d.configured?'BNB quote unavailable':'BNB quote at launch'):'Up to '+nativeAmount(budget)+' BNB':usdt(n)+' USDT';
+  $('#nft-price-note').textContent=v2?(native?'$0.05 per paid NFT at the on-chain BNB/USD price. Estimate includes a 1% quote ceiling; unused BNB is refunded. Network gas is additional.':'Each paid NFT costs 0.05 USDT. Paid USDT mints need an exact token approval first. Network gas is additional.'):native?'$1 per paid NFT at the on-chain BNB/USD price. Estimate includes a 1% quote ceiling; unused BNB is refunded. Network gas is additional.':'Each paid NFT costs 1 USDT. Paid USDT mints need an exact token approval first. Network gas is additional.';
   $('#nft-quantity').max=String(Math.max(1,w?.remaining||10));
-  $('#nft-wallet-note').textContent=!connected()?'Pair your agent to check its free mint and remaining allocation.':!w?'Agent paired. Allocation is read from the contracts after activation.':`${w.minted} / 10 lifetime mints used · ${w.owned} NFTs held · ${money(w.paymentBalance)} USDT · ${money(w.bnbBalance)} BNB available${w.freeAvailable?' · First mint free':''}`;
-  const allowance=w?BigInt(w.mintAllowanceRaw||'0'):0n,need=BigInt(n)*10n**18n,approvalNeeded=!native&&allowance<need;
+  $('#nft-wallet-note').textContent=!connected()?'Pair your agent to check its free mint and remaining allocation.':!w?'Agent paired. Allocation is read from the contracts after activation.':`${w.minted} / 10 lifetime mints used · ${w.owned} NFTs held · ${money(w.paymentBalance)} USDT · ${money(w.bnbBalance)} BNB available${v2?` · ${w.freeRemaining} free mints left`:w.freeAvailable?' · First mint free':''}`;
+  const allowance=w?BigInt(w.mintAllowanceRaw||'0'):0n,need=BigInt(n)*(v2?5n*10n**16n:10n**18n),approvalNeeded=!native&&allowance<need;
   $('#nft-approve-payment').hidden=!(d.configured&&isEligible()&&approvalNeeded);
-  $('#nft-approve-payment').textContent='1. Ask agent to approve exactly '+money(n)+' USDT';$('#nft-approve-payment').disabled=submitting||!d.mintOpen;
+  $('#nft-approve-payment').textContent='1. Ask agent to approve exactly '+usdt(n)+' USDT';$('#nft-approve-payment').disabled=submitting||!d.mintOpen;
   const button=$('#nft-mint');button.disabled=submitting||(!d.configured)||!!w&&(!w.remaining||!w.eligible)||d.configured&&!d.mintOpen||!!w&&approvalNeeded||missing;
-  button.textContent=!d.configured?'Awaiting mainnet deployment':!connected()?'Connect agent to mint ↗':!w?.eligible?'Eligible Agent ID required':!w.remaining?'Wallet mint limit reached':!d.mintOpen?'Mint paused':missing?'BNB quote unavailable · try USDT':approvalNeeded?'Confirm USDT approval first':'Ask agent to preview '+currency()+' mint ↗';
+  button.textContent=!d.configured?'Awaiting mainnet deployment':!connected()?'Connect agent to mint ↗':!w?.eligible?'Eligible Agent ID required':!w.remaining?'Wallet mint limit reached':!d.mintOpen?(v2&&!d.v2.airdropFinalized?'Mint opens after the holder airdrop':'Mint paused'):missing?'BNB quote unavailable · try USDT':approvalNeeded?'Confirm USDT approval first':'Ask agent to preview '+currency()+' mint ↗';
  }
  function nftCard(item,owned=false){
   const l=item.listing||item,forSale=l.available===true;
@@ -42,7 +45,8 @@
  function renderCollection(){
   const d=collection;if(!d)return;$('#nft-launch-status').hidden=d.configured;$('#nft-launch-status').textContent=d.notice||'';renderMint();
   {const v=d.vaultV2,box=$('#nft-vault-v2');if(box){box.hidden=!v?.configured;if(v?.configured)$('#nft-vault-v2-link').innerHTML=chainLink(v.address,'View V2 vault');}}
-  $('#nft-lp-state').innerHTML=d.lp?`<div class="nft-lp-number">${money(d.lp.balance)} <small>USDT in vault</small><br>${money(d.lp.bnbBalance)} <small>WBNB in vault</small></div><p class="tiny muted">${money(d.lp.paymentAdded)} USDT + ${money(d.lp.bnbAdded)} WBNB added to liquidity · ${d.lp.tokenConfigured?'Liquidity token configured':'Token: TBA · proceeds held for LP'}</p>${chainLink(d.lp.vault,'View vault and balances')}`:'<p class="muted">Vault deployment pending. No primary mint payments have been collected by these contracts.</p>';
+  {const v=d.v2&&d.v2.active===true;$('#nft-lp-note').hidden=v;{const m=$('#nft-market-lp-note');if(m)m.hidden=v;}}
+  $('#nft-lp-state').innerHTML=d.v2&&d.v2.active===true?`<div class="nft-lp-number">${money(d.v2.vaultUsdt)} <small>USDT in vault</small><br>${money(d.v2.vaultBnb)} <small>BNB in vault</small></div><p class="tiny muted">Mint payments (USDT and BNB) go directly to the treasury vault.</p>${chainLink(d.v2.vault,'View vault and balances')}`:d.lp?`<div class="nft-lp-number">${money(d.lp.balance)} <small>USDT in vault</small><br>${money(d.lp.bnbBalance)} <small>WBNB in vault</small></div><p class="tiny muted">${money(d.lp.paymentAdded)} USDT + ${money(d.lp.bnbAdded)} WBNB added to liquidity · ${d.lp.tokenConfigured?'Liquidity token configured':'Token: TBA · proceeds held for LP'}</p>${chainLink(d.lp.vault,'View vault and balances')}`:'<p class="muted">Vault deployment pending. No primary mint payments have been collected by these contracts.</p>';
   const items=tab==='owned'?d.owned:d.gallery;$('#nft-gallery').innerHTML=items.length?items.map(v=>nftCard(v,tab==='owned')).join(''):empty(connected()?'Your agent has not collected a Nib yet.':'Pair your agent to view the NFTs in its wallet.');
   $('#nft-gallery-note').textContent=tab==='owned'?'Ownership is read from BNB Chain. Transfers do not reset your lifetime mint count.':'Collection designs, not a record of sales. Every one of the 10,000 trait combinations is unique and visible before minting.';
   const current=tab==='owned'?ownedPage:galleryPage,total=tab==='owned'?Math.max(1,Math.ceil((d.wallet?.owned||0)/12)):d.galleryPages;

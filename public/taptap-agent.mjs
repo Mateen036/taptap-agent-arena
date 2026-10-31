@@ -18683,6 +18683,20 @@ var nftCollectionBidsAbi = parseAbi([
 var nftPaymentAbi = parseAbi(["function balanceOf(address) view returns(uint256)", "function allowance(address,address) view returns(uint256)", "function approve(address,uint256)", "function decimals() view returns(uint8)", "function symbol() view returns(string)"]);
 var nftVaultAbi = parseAbi(["function wrappedNative() view returns(address)", "function bnbAdded() view returns(uint256)", "function lpTokensLockedBNB() view returns(uint256)", "function paymentToken() view returns(address)", "function liquidityToken() view returns(address)", "function pendingToken() view returns(address)", "function tokenReadyAt() view returns(uint256)", "function paymentAdded() view returns(uint256)", "function lpTokensLocked() view returns(uint256)", "function router() view returns(address)"]);
 var nftConfigAbi = parseAbi(["function owner() view returns(address)"]);
+var nftV2Abi = parseAbi([
+  "function legacy() view returns(address)",
+  "function publicStartId() view returns(uint256)",
+  "function airdropFinalized() view returns(bool)",
+  "function airdropCount() view returns(uint256)",
+  "function publicMinted() view returns(uint256)",
+  "function nextPublicId() view returns(uint256)",
+  "function bonusCount() view returns(uint256)",
+  "function ownerMinted() view returns(uint256)",
+  "function FREE_PER_WALLET() view returns(uint256)",
+  "function publicRemaining() view returns(uint256)",
+  "function totalSupply() view returns(uint256)"
+]);
+var nibVaultV2ReadAbi = parseAbi(["function usdt() view returns(address)", "function router() view returns(address)", "function wbnb() view returns(address)", "function owner() view returns(address)"]);
 function collectionBidDeposit(price, quantity) {
   return marketQuote(price).buyerTotal * BigInt(quantity);
 }
@@ -18889,6 +18903,8 @@ var NIB_TOKEN = "0x1F11d9feAF354aD31861B4fa26759349e2860cFb";
 var NIB_MARKET = "0x775377BAdf400F070024b2C806A2573461b5dCb7";
 var NIB_COLLECTION = "0x7374f0379F5b2689B906D47Da708B394F1910B23";
 var NIB_COLLECTION_BIDS = "0xdCd8FB9d7fE9680D247CF14E2BEEd04D714a1b67";
+var NIB_COLLECTION_V2 = "0xdA35ed11057Cd85Eb338a637f5509080F617a810";
+var NIB_COLLECTION_BIDS_V2 = "0x6Fa70911C8eCF6F869789f114Cc2bed445933a6B";
 var airdropAbi = parseAbi(["function claim((address wallet,uint256 season,uint256 cumulativePoints,uint256 deadline,bytes32 voucherId) v,bytes signature) returns (uint256 points,uint256 nib)"]);
 var marketAbi = parseAbi(["function placeBid(uint256 nibAmount,uint256 bnbAmount,uint256 expiresAt) payable returns (uint256)", "function cancelBid(uint256 id)", "function acceptBid(uint256 id,uint256 nibAmount,uint256 minBnbOut,uint256 deadline)"]);
 var erc20Abi2 = parseAbi(["function approve(address,uint256) returns (bool)"]);
@@ -19066,8 +19082,8 @@ async function nftPrepare(ctx, label, values, nextHint, e) {
     throw error;
   }
   const intent = r.intent, contracts = r.contracts;
-  if (!same2(contracts.collection, ctx.collection || NIB_COLLECTION)) fail("The site reports an unexpected NFT collection contract. Refusing.");
-  if (String(intent.kind).startsWith("cbid") && !same2(contracts.collectionBids, ctx.collectionBids || NIB_COLLECTION_BIDS)) fail("The site reports an unexpected collection-bids contract. Refusing.");
+  if (!(ctx.collection ? same2(contracts.collection, ctx.collection) : same2(contracts.collection, NIB_COLLECTION) || same2(contracts.collection, NIB_COLLECTION_V2))) fail("The site reports an unexpected NFT collection contract. Refusing.");
+  if (String(intent.kind).startsWith("cbid") && !(ctx.collectionBids ? same2(contracts.collectionBids, ctx.collectionBids) : same2(contracts.collectionBids, NIB_COLLECTION_BIDS) || same2(contracts.collectionBids, NIB_COLLECTION_BIDS_V2))) fail("The site reports an unexpected collection-bids contract. Refusing.");
   validateNftTransaction(intent, contracts, ctx.s.wallet);
   const claimed = await act(ctx, "nft-claim", { intentId: intent.id });
   validateNftTransaction(claimed.intent, claimed.contracts, ctx.s.wallet);

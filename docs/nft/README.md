@@ -126,3 +126,18 @@ One bidder escrows BNB for N NFTs at price P each plus the 2% buyer fee (`N × (
 - Deploy: `npx tsx scripts/nib-vault-v2-deploy.ts plan|dryrun|preview|execute --approve-deployment|verify` (CREATE2, address known up front). Compile: `node scripts/compile-vault-v2.mjs` (standalone, writes `artifacts/NibVaultV2*.json`); BscScan input: `artifacts/NibVaultV2-standard-input.json`.
 - Tests: `npx tsx --test test/nib-vault-v2.test.ts` (local AMM mock). Set `NIB_FORK_RPC=https://bsc-dataseed.bnbchain.org` to also run the BSC mainnet-fork test against the real PancakeSwap V2 router, NIB and treasury.
 - Site: once `NIB_VAULT_V2` is set, the NFT page's LP panel shows (EN and 中文) the refund commitment and a short factual line that the vault is managed by the treasury and funds can be withdrawn.
+
+
+## Nib Collection V2 (replacement collection, holder airdrop)
+
+`contracts/NibCollectionV2.sol` is a separate ERC-721 collection with the **same art and renderer** as the old collection. The old contract (`0x7374f0379F5b2689B906D47Da708B394F1910B23`) is only referenced as `legacy`, the airdrop source; it is history, not part of the live site once V2 is on.
+
+- Supply 10,000 across: airdropped ids (the SAME token id as the old collection, once per id, minted to the current v1 holder), bonus NFTs, owner mints and public mints. Public/bonus/owner ids continue after the airdropped ids (`publicStartId` = old `minted()` + 1).
+- Public mint: $0.05 (USDT or BNB at the oracle price), 3 free + 7 paid per wallet (10 limit). Airdropped, bonus and owner-minted NFTs do not count toward the wallet limit or the free mints. Mint starts closed and `setMintOpen(true)` requires `finalizeAirdrop()` first.
+- All mint payments go to NibVaultV2 (treasury-owned). The V2 marketplace and collection bids are redeployed (they bind one collection immutably), fees go to NibVaultV2 unless `V2_FEE_RECIPIENT=treasury`.
+- Bonus: each $1 paid on the old collection = 20 V2 NFTs ($ paid / $0.05), derived from on-chain data at snapshot time (`mintedBy` and Minted logs), minted by the owner through `airdropBonus` before `finalizeAirdrop`. `ownerMint(address[],uint256[])` mints free NFTs for giveaways at any time, including after finalize; `ownerMinted()` is public and shown on the page.
+- Deploy (treasury via baw, CREATE2): `npx tsx scripts/nib-collection-v2-deploy.ts plan` then `dryrun|preview|execute --approve-deployment|verify` with `--step 1` (collection), `--step 2` (marketplace), `--step 3` (collection bids). Deploy NibVaultV2 first.
+- Airdrop: `npx tsx scripts/nib-collection-v2-airdrop.ts snapshot --refunds-csv <file>`, `plan`, then `dryrun|preview|execute --approve <batch>` for every `airdrop-N`, `bonus-N`, then `finalize`. `ownermint addr:count,... plan|dryrun|preview|execute --approve`. Re-run `snapshot` if any v1 id moved before a batch is sent.
+- Website: set `NFT_COLLECTION_V2`, `NFT_MARKETPLACE_V2`, `NIB_VAULT_V2` (all required, otherwise the NFT page fails closed) and optionally `NFT_COLLECTION_BIDS_V2` after the airdrop is finalized. While `NFT_COLLECTION_V2` is set the old collection is completely hidden (mint, gallery, market, bids, game gate and multiplier, NIB holder bonus all read V2 only). `NFT_LEGACY_COLLECTION` is a test-only override.
+- NIB holder bonus: 10,000 NIB per token id, once per id (`nft_bonus_claims.token_id` is unique), so ids already claimed on v1 stay claimed. Pool cap 200M NIB; 10,000 NFTs x 10,000 NIB = 100M NIB fits. Game multiplier is 5x per owned NFT of the active collection.
+- Connector pins in `agent/do.ts` (`NIB_COLLECTION_V2`, `NIB_COLLECTION_BIDS_V2`) are the planned CREATE2 addresses; rebuild with `node scripts/bundle-agent.mjs` if the deployment arguments change.
