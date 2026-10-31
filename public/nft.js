@@ -25,7 +25,7 @@
   if(!collection)return;const d=collection,w=d.wallet,n=cost(),native=currency()==='BNB';
   const quote=native&&d.bnbPriceRaw?BigInt(d.bnbPriceRaw)*BigInt(n):0n,budget=(quote*101n+99n)/100n,missing=native&&n>0&&!d.bnbPriceRaw;
   const v2=d.v2&&d.v2.active===true,usdt=k=>v2?(k*5/100).toFixed(2).replace(/\.?0+$/,''):money(k);
-  {const f=$('#nft-v2-facts');f.hidden=!v2;if(v2)f.textContent=`Airdropped to paid V1 minters: ${fmt(d.v2.airdropCount)} · Bonus NFTs: ${fmt(d.v2.bonusCount)} · Owner-minted (free): ${fmt(d.v2.ownerMinted)} · Public mints: ${fmt(d.v2.publicMinted)}`;{const n=$('#nft-v2-note');n.hidden=!v2;if(v2)n.textContent='V1 holders can mint 3 free V2 NFTs (gas only). Paid V1 minters already received their V2 NFTs plus a bonus.';}
+  {const f=$('#nft-v2-facts');f.hidden=!v2;if(v2)f.textContent=`Airdropped: ${fmt(d.v2.airdropCount)} · Bonus NFTs: ${fmt(d.v2.bonusCount)} · Owner-minted (free): ${fmt(d.v2.ownerMinted)} · Public mints: ${fmt(d.v2.publicMinted)}`;{const n=$('#nft-v2-note');n.hidden=!v2;if(v2)n.textContent='Every wallet can mint 3 free NFTs (gas only), plus 7 more at $0.05 each.';}
    if(v2){$('#nft-free-chip').textContent='FIRST 3 MINTS FREE';$('#nft-free-label').textContent='First 3 mints per wallet';$('#nft-paid-price').textContent='0.05 USDT or $0.05 in BNB + gas';}}
   $('#nft-minted').textContent=fmt(d.minted);$('#nft-supply-bar').style.width=(d.minted/100)+'%';
   $('#nft-cost').textContent=!n?'FREE + BNB gas':native?missing?(d.configured?'BNB quote unavailable':'BNB quote at launch'):'Up to '+nativeAmount(budget)+' BNB':usdt(n)+' USDT';
