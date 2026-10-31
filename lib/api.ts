@@ -1,4 +1,4 @@
-import {errorSummary} from './rpc';
+import {errorSummary,bscTransport} from './rpc';
 import {createPublicClient,http,fallback,parseAbi,isAddress,verifyTypedData,keccak256,toHex,encodeAbiParameters,concat} from 'viem';
 import {bsc} from 'viem/chains';
 import {utilityPolicy,gameAccessSnapshot,requireGameAccess,type UtilityPolicy} from './utility';
@@ -17,7 +17,7 @@ const json=(data:any,status=200)=>new Response(JSON.stringify(data,(_,v)=>typeof
 const id=()=>crypto.randomUUID();
 const hash=(v:string)=>keccak256(toHex(v));
 const lower=(v:any)=>typeof v==='string'&&isAddress(v)?v.toLowerCase():fail(400,'A valid wallet address is required.');
-const publicClient=(e:Env)=>createPublicClient({chain:bsc,transport:e.BSC_RPC_URL?http(e.BSC_RPC_URL,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])});
+const publicClient=(e:Env)=>createPublicClient({chain:bsc,transport:bscTransport(e.BSC_RPC_URL)});
 const gateAbi=parseAbi(['function balanceOf(address) view returns (uint256)']);
 export async function eligible(wallet:string,env:Env){
  try{const client=publicClient(env);const chain=await client.getChainId();if(chain!==56)fail(503,'The identity RPC is on the wrong chain.');const balance=await client.readContract({address:AGENT_ID_REGISTRY,abi:gateAbi,functionName:'balanceOf',args:[wallet as `0x${string}`]});if(balance===0n)fail(403,'This wallet does not hold a Binance .ai Agent ID. Claim one in Binance Wallet first.');return true;}

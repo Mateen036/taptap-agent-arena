@@ -1,4 +1,5 @@
 import {createPublicClient,http,fallback,parseAbi,parseAbiItem,encodeFunctionData,formatUnits,parseUnits,isAddress} from 'viem';
+import {bscTransport} from './rpc';
 import {bsc} from 'viem/chains';
 import {requireGameAccess,type UtilityEnv} from './utility';
 import {logRpcUrls,SALES_TTL_MS,SALES_CHUNK,SALES_OVERLAP,type SalesEnv} from './nft-market';
@@ -23,7 +24,7 @@ export const marketAbi=parseAbi([
 const erc20Abi=parseAbi(['function balanceOf(address) view returns (uint256)','function allowance(address,address) view returns (uint256)','function approve(address,uint256) returns (bool)']);
 const acceptedEvent=parseAbiItem('event BidAccepted(uint256 indexed id,address indexed bidder,address indexed seller,uint256 nibAmount,uint256 bnbAmount,uint256 buyerFee,uint256 sellerFee,uint256 nibRemaining,uint256 bnbRemaining)');
 export type Bid={id:bigint;bidder:string;expiresAt:bigint;nibRemaining:bigint;bnbRemaining:bigint;feeRemaining:bigint;priceE18:bigint};
-const client=(e:NibMarketEnv)=>createPublicClient({chain:bsc,transport:e.BSC_RPC_URL?http(e.BSC_RPC_URL,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])}) as any;
+const client=(e:NibMarketEnv)=>createPublicClient({chain:bsc,transport:bscTransport(e.BSC_RPC_URL)}) as any;
 export const marketAddress=(e:NibMarketEnv)=>e.NIB_BID_MARKET&&isAddress(e.NIB_BID_MARKET)?e.NIB_BID_MARKET as `0x${string}`:null;
 export const tokenAddress=(e:NibMarketEnv)=>(e.NIB_TOKEN&&isAddress(e.NIB_TOKEN)?e.NIB_TOKEN:NIB_TOKEN) as `0x${string}`;
 const fee=(x:bigint)=>x*BUYER_FEE_BPS/BPS;

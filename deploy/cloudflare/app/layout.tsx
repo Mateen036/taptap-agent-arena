@@ -33,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#11120f" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="stylesheet" href={"/style.css?v="+V} />
         <link rel="stylesheet" href={"/motion.css?v="+V} />
         <link rel="stylesheet" href={"/i18n.css?v="+V} />

@@ -13,7 +13,7 @@ class Prepared {
 export class PostgresDatabase{
  constructor(readonly pool:Pick<Pool,'query'|'connect'>){}
  prepare(sql:string){return new Prepared(this,sql);}
- async batch(statements:Prepared[]){for(let attempt=0;attempt<3;attempt++){const client=await this.pool.connect();try{await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');const results=[];for(const s of statements){const r=await client.query(placeholders(s.sql),s.args);results.push({success:true,meta:{changes:r.rowCount||0}});}await client.query('COMMIT');return results;}catch(error:any){await client.query('ROLLBACK');if(!['40001','40P01'].includes(error.code)||attempt===2)throw error;}finally{client.release();}}throw Error('Transaction retry limit.');}
+ async batch(statements:Prepared[]){for(let attempt=0;attempt<6;attempt++){const client=await this.pool.connect();try{await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');const results=[];for(const s of statements){const r=await client.query(placeholders(s.sql),s.args);results.push({success:true,meta:{changes:r.rowCount||0}});}await client.query('COMMIT');return results;}catch(error:any){await client.query('ROLLBACK');if(!['40001','40P01'].includes(error.code)||attempt===5)throw error;await new Promise(r=>setTimeout(r,15*(attempt+1)+Math.random()*25));}finally{client.release();}}throw Error('Transaction retry limit.');}
 }
 // Cloudflare Workers cannot share I/O objects (TCP sockets) between requests, so a Pool must never outlive the request that created it.
 // One short-lived pool is created per request (database() is called once per request) and its sockets are closed with the request.

@@ -6,6 +6,8 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "observability": { "enabled": true },
+  // Workers Paid: raise the per-request CPU cap (default 30s on Paid is already generous; card images and cold NFT reads need more than the Free 10ms).
+  "limits": { "cpu_ms": 30000 },
   "routes": [
     { "pattern": "www.nibtap.site", "custom_domain": true },
     { "pattern": "nibtap.site", "custom_domain": true }
