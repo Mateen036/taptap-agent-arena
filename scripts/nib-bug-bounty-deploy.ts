@@ -91,7 +91,7 @@ async function run(){
  const w=wallet();if(w.toLowerCase()!==TREASURY.toLowerCase())throw Error('Connected wallet '+w+' is not the treasury.');
  await guard();
  const cost=await costs();
- const p=baw(['contract-call','preview','--binanceChainId','56','--from',TREASURY,'--to',tx.to,'--value','0','--inputData',tx.data]);if(!p.requestId)throw Error('Binance did not return a usable preview.');
+ const p=baw(['contract-call','preview','--binanceChainId','56','--from',TREASURY,'--to',tx.to,'--value','0','--inputData',tx.data,'--gasLimit','7000000']);if(!p.requestId)throw Error('Binance did not return a usable preview.');
  const n=Number(p.expiresAt);p.expiresAt=Number.isFinite(n)?(n<1e12?n*1000:n):Date.now()+180000;
  const summary={what:'Deploy NibBugBounty(nib, agentIdRegistry, signer, guardian, feeRecipient, feeBps, reviewerBps, minDeposit, minLowestTier, owner) via CREATE2',to:tx.to,value:'0 BNB',calldataKeccak:keccak256(tx.data),calldataBytes:(tx.data.length-2)/2,resultAddress:plan.address,constructorArgs:plan.constructorArgs,...cost};
  fs.mkdirSync(dir,{recursive:true,mode:0o700});fs.writeFileSync(stateFile,JSON.stringify({tx:{...tx},calldataKeccak:keccak256(tx.data),summary,preview:p}),{mode:0o600});
