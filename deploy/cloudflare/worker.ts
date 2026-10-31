@@ -10,7 +10,7 @@ import {apiRoute} from './lib/api-route';
 import {ASSET_VERSION} from './app/generated/version';
 import {AsyncLocalStorage} from 'node:async_hooks';
 
-const PAGE=/^\/(agents|matches|runs|rounds)\/[^/]+\/?$/;
+const PAGE=/^\/((agents|matches|runs|rounds)\/[^/]+|(arena|mint|collection|marketplace|convert|nibtoken|nibmarket|bounty|wars|challenges|leaderboard|profile|docs|about|privacy|terms))\/?$/;
 const PREVIEW=/^\/api\/nft\/preview\/v2\/([^/]+)$/;
 async function handle(request:Request,env:any,ctx:ExecutionContext):Promise<Response>{
   const url=new URL(request.url);

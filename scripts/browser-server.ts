@@ -68,7 +68,7 @@ const server=http.createServer(async(req,res)=>{
   const forwarded=new Request(raw,{headers});const result=await handle(forwarded,env);if(session?.cookie)result.headers.append('Set-Cookie',session.cookie);
   res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;
  }
- if(url.pathname==='/'||/^\/(agents|matches|runs|rounds)\/[^/]+$/.test(url.pathname)){res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('ui/index.html','utf8').replace('<!-- NFT_VIEWS -->',fs.readFileSync('ui/nft.html','utf8')));return;}
+ if(url.pathname==='/'||/^\/((agents|matches|runs|rounds)\/[^/]+|(arena|mint|collection|marketplace|convert|nibtoken|nibmarket|bounty|wars|challenges|leaderboard|profile|docs|about|privacy|terms))\/?$/.test(url.pathname)){res.setHeader('Content-Type','text/html');res.end(fs.readFileSync('ui/index.html','utf8').replace('<!-- NFT_VIEWS -->',fs.readFileSync('ui/nft.html','utf8')));return;}
  const filename=path.resolve('public','.'+decodeURIComponent(url.pathname));if(!filename.startsWith(path.resolve('public')+path.sep)||!fs.existsSync(filename)||!fs.statSync(filename).isFile()){res.writeHead(404).end();return;}
  res.setHeader('Content-Type',mime[path.extname(filename)]||'application/octet-stream');res.end(fs.readFileSync(filename));
  }catch(error){console.error('Browser fixture error',error instanceof Error?error.message:'unknown');if(res.headersSent){res.end();return;}res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error instanceof Error?error.message:'Fixture unavailable'}));}

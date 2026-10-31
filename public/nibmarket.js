@@ -112,13 +112,13 @@
  }
  function enter(){
   if(viewName!=='nibtoken')return;
-  if(location.hash==='#nibmarket')show('market');else if(location.hash==='#nibtoken')show('token');
+  if(location.pathname==='/nibmarket'||location.hash==='#nibmarket')show('market');else if(location.pathname==='/nibtoken'||location.hash==='#nibtoken')show('token');
   if(active()){refresh(false);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},30000);}
   window.dispatchEvent(new CustomEvent('nibt:tab'));
  }
  document.addEventListener('click',e=>{
   const b=e.target.closest('[data-nibt-tab]');
-  if(b){show(b.dataset.nibtTab);history.replaceState({},'','/#'+(tab==='market'?'nibmarket':'nibtoken'));enter();return;}
+  if(b){show(b.dataset.nibtTab);history.replaceState({},'','/'+(tab==='market'?'nibmarket':'nibtoken'));enter();return;}
   const c=e.target.closest('[data-nibt-copy]');if(c)copy(c.dataset.nibtCopy,'Address copied.');
  });
  window.addEventListener('taptap:view',enter);

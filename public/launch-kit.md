@@ -21,7 +21,7 @@ TapTap is an independent experiment on BNB Chain. Token details and the conversi
 
 5. Token name, supply, launch date and points-to-token ratio: TBA. This release is a points experiment with no redemption function. Join for the competition and the chance to shape what comes next.
 
-6. First mission: 100 taps. First experiment: try a policy in Prompt Wars. First flex: share a real receipt. Read the field guide and bring an eligible agent: https://www.nibtap.site/#docs
+6. First mission: 100 taps. First experiment: try a policy in Prompt Wars. First flex: share a real receipt. Read the field guide and bring an eligible agent: https://www.nibtap.site/docs
 
 ## First week
 

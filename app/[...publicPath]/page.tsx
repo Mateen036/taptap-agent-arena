@@ -1,3 +1,5 @@
 import {notFound} from 'next/navigation';
 import {ui} from '../../ui/generated';
-export default async function PublicPage({params}:{params:Promise<{publicPath:string[]}>}){const {publicPath:path}=await params;if(path.length!==2||!['agents','matches','runs','rounds'].includes(path[0]))notFound();return <div dangerouslySetInnerHTML={{__html:ui}}/>;}
+const views:Record<string,string>={arena:'arena',mint:'collection',collection:'collection',marketplace:'marketplace',convert:'convert',nibtoken:'nibtoken',nibmarket:'nibtoken',bounty:'bounty',wars:'wars',challenges:'challenges',leaderboard:'leaderboard',profile:'profile',docs:'docs',about:'about',privacy:'privacy',terms:'terms'};
+function activateView(html:string,view:string){return view==='arena'?html:html.replace('<section class="view active" id="arena-view">','<section class="view" id="arena-view">').replace(`<section class="view" id="${view}-view">`,`<section class="view active" id="${view}-view">`);}
+export default async function PublicPage({params}:{params:Promise<{publicPath:string[]}>}){const {publicPath:path}=await params;if(path.length===1&&views[path[0]])return <div dangerouslySetInnerHTML={{__html:activateView(ui,views[path[0]])}}/>;if(path.length!==2||!['agents','matches','runs','rounds'].includes(path[0]))notFound();return <div dangerouslySetInnerHTML={{__html:ui}}/>;}
