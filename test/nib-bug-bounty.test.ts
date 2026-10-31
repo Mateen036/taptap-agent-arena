@@ -1,370 +1,377 @@
 import {test,after} from 'node:test';import assert from 'node:assert/strict';
-import {encodeFunctionData,keccak256,toHex} from 'viem';
-import {setup,E,DAY,TIERS,STAKE,DEPOSIT,FEE_BPS,MIN_DEPOSIT,MIN_TIER,Status,Reason,bountyArtifact,closeAll} from './helpers/bounty-chain';
+import {keccak256,toHex} from 'viem';
+import {setup,E,DAY,TIERS,STAKE,DEPOSIT,FEE_BPS,REVIEWER_BPS,MIN_DEPOSIT,MIN_TIER,Status,Outcome,DUP,REV0,bountyArtifact,closeAll} from './helpers/bounty-chain';
 after(closeAll);
-const fee=(x:bigint)=>x*FEE_BPS/10000n;
-const BURN='0x000000000000000000000000000000000000dEaD';
+const fee=(x:bigint)=>x*FEE_BPS/10000n,pool=(x:bigint)=>x*REVIEWER_BPS/10000n;
+const H=3600;
 
-test('NibBugBounty: constructor guards, immutables, constants and NO owner/admin path to escrow (ABI audit)',async()=>{
+test('NibBugBounty: constructor guards, constants, size limit and NO owner/admin path to escrow (ABI audit)',async()=>{
  const t=await setup();
- assert.equal(await t.br('feeBps'),FEE_BPS);assert.equal(await t.br('minDeposit'),MIN_DEPOSIT);assert.equal(await t.br('minLowestTier'),MIN_TIER);
- assert.equal((await t.br('arbiter')).toLowerCase(),t.arbiter.toLowerCase());assert.equal((await t.br('feeRecipient')).toLowerCase(),t.feeTo.toLowerCase());
- for(const [k,v] of Object.entries({MAX_TIERS:4n,MIN_DURATION:14n*86400n,MAX_DURATION:365n*86400n,MIN_REVIEW_WINDOW:3n*86400n,MAX_REVIEW_WINDOW:30n*86400n,REVEAL_WINDOW:86400n,DISPUTE_WINDOW:3n*86400n,ARBITER_TIMEOUT:14n*86400n,CANCEL_COOLDOWN:7n*86400n,ARBITER_CHANGE_DELAY:14n*86400n,MAX_OPEN_SUBMISSIONS:20n,MAX_ACTIVE_PER_HUNTER:3n,MAX_FEE_BPS:500n}))assert.equal(await t.br(k),v,k);
- const d=(args:any[])=>t.deploy(t.bb,args);
- await t.rejects(d([t.hunter,t.registry,t.arbiter,t.feeTo,200n,MIN_DEPOSIT,MIN_TIER]),undefined);            // NIB must be a contract
- await t.rejects(d([t.nib,t.hunter,t.arbiter,t.feeTo,200n,MIN_DEPOSIT,MIN_TIER]));                          // registry must be a contract
- await t.rejects(d([t.nib,t.registry,t.zeroAddress,t.feeTo,200n,MIN_DEPOSIT,MIN_TIER]));
- await t.rejects(d([t.nib,t.registry,t.arbiter,t.zeroAddress,200n,MIN_DEPOSIT,MIN_TIER]));
- await t.rejects(d([t.nib,t.registry,t.arbiter,t.feeTo,501n,MIN_DEPOSIT,MIN_TIER]));                       // fee cap 5%
- await t.rejects(d([t.nib,t.registry,t.arbiter,t.feeTo,200n,MIN_TIER-1n,MIN_TIER]));                       // deposit minimum below tier minimum
- await t.rejects(d([t.nib,t.registry,t.arbiter,t.feeTo,200n,50n,50n]));
- await d([t.nib,t.registry,t.arbiter,t.feeTo,0n,MIN_DEPOSIT,MIN_TIER]); // a zero fee is allowed
- // ABI audit: nothing owner/admin/pause/upgrade/rescue/sweep shaped; every state-changing function is one of the reviewed set.
- const fns=bountyArtifact().abi.filter((x:any)=>x.type==='function');
- assert.ok(!fns.some((x:any)=>/owner|admin|pause|upgrade|rescue|sweep|recover|setFee|setArbiter|emergency|withdrawFees|setToken|initialize|delegate|selfdestruct/i.test(x.name)),'no admin-shaped function');
+ assert.equal(await t.br('feeBps'),200n);assert.equal(await t.br('reviewerBps'),2000n);assert.equal(await t.br('minDeposit'),MIN_DEPOSIT);assert.equal(await t.br('minLowestTier'),MIN_TIER);
+ assert.equal(MIN_DEPOSIT,E(10000),'the minimum bounty is 10,000 NIB');
+ for(const [k,a] of Object.entries({signer:'ticketSigner',guardian:'guardian',feeTo:'feeRecipient'}))assert.equal(((t as any)[k] as string).toLowerCase(),String(await t.br(a)).toLowerCase(),a);
+ for(const [k,v] of Object.entries({MAX_TIERS:4n,MIN_DURATION:14n*86400n,MAX_DURATION:365n*86400n,REVEAL_WINDOW:86400n,APPLY_WINDOW:2n*86400n,VOTE_WINDOW:3n*86400n,VOTE_REVEAL_WINDOW:2n*86400n,CANCEL_COOLDOWN:7n*86400n,SIGNER_CHANGE_DELAY:7n*86400n,MIN_PANEL:3n,MAX_PANEL:9n,MAX_APPLICANTS:40n,MAX_OPEN_SUBMISSIONS:20n,MAX_ACTIVE_PER_HUNTER:3n,MAX_ACTIVE_HUNTER_TOTAL:5n,MAX_ACTIVE_REVIEWS:5n,MIN_TAP_STAKE:500n,MAX_FEE_BPS:500n,MAX_REVIEWER_BPS:3000n}))assert.equal(await t.br(k),v,k);
+ const d=(a:any[])=>t.deploy(t.bb,[t.nib,t.registry,t.signer,t.guardian,t.feeTo,200n,2000n,MIN_DEPOSIT,MIN_TIER].map((x,i)=>a[i]??x));
+ await t.rejects(d([t.hunter]));await t.rejects(d([undefined,t.hunter]));                       // NIB and registry must be contracts
+ await t.rejects(d([undefined,undefined,t.zeroAddress]));await t.rejects(d([undefined,undefined,undefined,t.zeroAddress]));await t.rejects(d([undefined,undefined,undefined,undefined,t.zeroAddress]));
+ await t.rejects(d([undefined,undefined,undefined,undefined,undefined,501n]),undefined);        // fee cap 5%
+ await t.rejects(d([undefined,undefined,undefined,undefined,undefined,undefined,3001n]),undefined);
+ await t.rejects(d([undefined,undefined,undefined,undefined,undefined,undefined,undefined,MIN_TIER-1n]));
+ await d([undefined,undefined,undefined,undefined,undefined,0n,0n]);                               // zero fee and share are allowed
+ const art=bountyArtifact();
+ assert.ok((art.deployedBytecode.length-2)/2<=24576,'under the EIP-170 contract size limit');
+ const fns=art.abi.filter((x:any)=>x.type==='function');
+ assert.ok(!fns.some((x:any)=>/owner|admin|pause|upgrade|rescue|sweep|recover|setFee|arbiter|emergency|withdrawFees|setToken|initialize|delegate|selfdestruct/i.test(x.name)),'no admin-shaped function');
  const writes=fns.filter((x:any)=>x.stateMutability!=='view'&&x.stateMutability!=='pure').map((x:any)=>x.name).sort();
- assert.deepEqual(writes,['accept','acceptArbiter','acceptDecision','cancelArbiterChange','claimArbiterTimeout','commit','createBounty','dispute','escalate','expireCommit','extend','finalize','proposeArbiter','reject','requestCancel','resolveDispute','reveal','topUp','withdraw']);
+ assert.deepEqual(writes,['activateSigner','applyToReview','cancelSignerChange','claimReward','commit','commitVote','createBounty','expireCommit','extend','finalizeJudgment','proposeSigner','requestCancel','reveal','revealVote','selectPanel','startSelection','topUp','withdraw']);
  assert.ok(!fns.some((x:any)=>x.stateMutability==='payable'),'never accepts BNB');
- assert.equal(bountyArtifact().abi.some((x:any)=>x.type==='receive'||x.type==='fallback'),false);
+ assert.equal(art.abi.some((x:any)=>x.type==='receive'||x.type==='fallback'),false);
 });
 
-test('createBounty: exact escrow and every rule that keeps bounties honest',async()=>{
+test('createBounty: exact escrow, 10,000 NIB minimum, TAP-only stake scaled to the bounty, odd panel',async()=>{
  const t=await setup();
- const base=async(o:any={})=>({scope:t.scopeHash(),tiers:TIERS,ends:BigInt(await t.now()+30*DAY+60),review:BigInt(7*DAY),stake:STAKE,deposit:DEPOSIT,...o});
- const call=async(o:any={},who=3)=>{const p=await base(o);return t.bw('createBounty',[p.scope,p.tiers,p.ends,p.review,p.stake,p.deposit],who);};
+ const call=async(o:any={},who=4)=>{const p={scope:t.scopeHash(),tiers:TIERS,ends:BigInt(await t.now()+30*DAY+60),panel:3n,stake:STAKE,deposit:DEPOSIT,...o};return t.bw('createBounty',[p.scope,p.tiers,p.ends,p.panel,p.stake,p.deposit],who);};
  const before=await t.bal(t.creator);
  await call();
  assert.equal(before-await t.bal(t.creator),DEPOSIT,'exactly the deposit leaves the creator');assert.equal(await t.bal(t.bounty),DEPOSIT);
  const b=await t.bnty(1n);
- assert.equal(b.creator.toLowerCase(),t.creator.toLowerCase());assert.equal(b.available,DEPOSIT);assert.equal(b.reserved,0n);assert.equal(b.tierCount,4);assert.deepEqual([...b.tiers],TIERS);assert.equal(b.stake,STAKE);assert.equal(b.scopeHash,t.scopeHash());
- assert.equal(await t.br('totalEscrow'),DEPOSIT);await t.solvent();
- assert.equal((await t.br('creatorStats',[t.creator]))[0],1);
- await t.rejects(call({},9),/Agent ID/);                                  // no Agent ID (account 9 never registered)
- await t.rejects(call({},1),/Arbiter cannot create/);                     // the arbiter can never be a project
- await t.rejects(call({scope:'0x'+'00'.repeat(32)}),/Scope hash/);
- await t.rejects(call({tiers:[]}),/1 to 4/);await t.rejects(call({tiers:[E(1e4),E(2e4),E(3e4),E(4e4),E(5e4)]}),/1 to 4/);
- await t.rejects(call({tiers:[E(10000),E(10000)]}),/strictly increase/);await t.rejects(call({tiers:[E(20000),E(10000)]}),/strictly increase/);
- await t.rejects(call({tiers:[E(9999),E(20000)],stake:E(500)}),/Lowest tier below minimum/);
- await t.rejects(call({deposit:E(49999)}),/Deposit below minimum/);                // minimum reward
- await t.rejects(call({tiers:[E(10000),E(60000)],deposit:E(55000)}),/Deposit below minimum or top tier/); // must cover the top tier
- await t.rejects(call({stake:E(99)}),/Stake must be/);await t.rejects(call({stake:E(1001)}),/Stake must be/);await t.rejects(call({stake:0n}),/Stake must be/);
- await t.rejects(call({ends:BigInt(await t.now()+13*DAY)}),/Duration/);               // minimum duration 14 days
- await t.rejects(call({ends:BigInt(await t.now()+366*DAY)}),/Duration/);
- await t.rejects(call({review:BigInt(2*DAY)}),/Review window/);await t.rejects(call({review:BigInt(31*DAY)}),/Review window/);
- const poor=await t.bal(t.creator);await t.approve(3,E(1));await t.rejects(call());await t.approve(3);assert.equal(await t.bal(t.creator),poor,'failed create moves nothing');
- await call({tiers:[E(10000)],deposit:E(50000)});assert.equal((await t.bnty(2n)).tierCount,1);                       // a single tier is fine
- await t.rejects(t.bw('createBounty',[t.scopeHash(),TIERS,BigInt(await t.now()+30*DAY),BigInt(7*DAY),STAKE,DEPOSIT],3).then(()=>t.bw('topUp',[1n,E(1)],4)),/Only the creator/);
+ assert.equal(b.creator.toLowerCase(),t.creator.toLowerCase());assert.equal(b.available,DEPOSIT);assert.equal(b.reserved,0n);assert.equal(b.tierCount,4);assert.deepEqual([...b.tiers],TIERS);assert.equal(b.tapStake,STAKE);assert.equal(b.panelSize,3);assert.equal(b.scopeHash,t.scopeHash());
+ await t.solvent();
+ await t.rejects(call({},0),/AgentIDRequired/);await t.rejects(call({},1),/AgentIDRequired/);
+ await t.idy(t.signer);await t.idy(t.guardian);await t.rejects(call({},1),/RoleHolderCannotCreateBounties/);await t.rejects(call({},2),/RoleHolderCannotCreateBounties/);
+ await t.rejects(call({scope:'0x'+'00'.repeat(32)}),/ScopeHashRequired/);
+ await t.rejects(call({tiers:[]}),/1To4/);await t.rejects(call({tiers:[E(1e4),E(2e4),E(3e4),E(4e4),E(5e4)]}),/1To4/);
+ await t.rejects(call({tiers:[E(10000),E(10000)]}),/StrictlyIncrease/);await t.rejects(call({tiers:[E(20000),E(10000)]}),/StrictlyIncrease/);
+ await t.rejects(call({tiers:[E(9999)],deposit:E(10000)}),/LowestTierBelowMinimum/);                   // minimum bounty size 10,000 NIB
+ await t.rejects(call({tiers:[E(10000),E(60000)],deposit:E(55000)}),/DepositBelowMinimum/);               // must cover the top tier
+ await call({tiers:[E(10000)],deposit:E(10000),stake:1000n});assert.equal((await t.bnty(2n)).tierCount,1);   // a single 10,000 NIB tier is the smallest bounty
+ // TAP stake: at least max(500, lowest tier / 10 TAP per NIB / 100) = 1,000 TAP for 10,000 NIB, at most 10x that
+ assert.equal(await t.br('minTapStake',[E(10000)]),1000n);assert.equal(await t.br('minTapStake',[E(1000)]),500n);assert.equal(await t.br('minTapStake',[E(100000)]),10000n);
+ await t.rejects(call({stake:999n}),/TAPStake/);await t.rejects(call({stake:10001n}),/TAPStake/);await t.rejects(call({stake:0n}),/TAPStake/);
+ await call({stake:10000n});
+ await call({tiers:[E(100000)],deposit:E(100000),stake:10000n});await t.rejects(call({tiers:[E(100000)],deposit:E(100000),stake:1000n}),/TAPStake/); // stake scales with the bounty
+ for(const p of [0n,1n,2n,4n,11n])await t.rejects(call({panel:p}),/Panel/);
+ for(const p of [5n,7n,9n])await call({panel:p});
+ await t.rejects(call({ends:BigInt(await t.now()+13*DAY)}),/Duration/);await t.rejects(call({ends:BigInt(await t.now()+366*DAY)}),/Duration/);
+ const poor=await t.bal(t.creator);await t.approve(4,E(1));await t.rejects(call());await t.approve(4);assert.equal(await t.bal(t.creator),poor,'failed create moves nothing');
+ await t.rejects(t.bw('topUp',[1n,E(1)],5),/OnlyTheCreator/);
  await t.solvent();
 });
 
-test('commit-reveal: hidden severity, binding to hunter/bounty/contract, front-running and copying fail, reservations are exact',async()=>{
- const t=await setup();const id=await t.create();
- const rep=t.report('sqli');
- // on-chain helper matches the documented formula
+test('TAP tickets: only the server signer can open a TAP lock; wrong wallet/amount/scope, replays, expiry and low stakes all fail',async()=>{
+ const t=await setup();const id=await t.create();const rep=t.report();
+ const h=(who:number)=>t.commitHash(id,t.accounts[who].address,2,rep.reportHash,rep.salt);
+ const go=(who:number,tk:any,tap=tk.tap)=>t.bw('commit',[id,h(who),tap,tk.lockId,tk.deadline,tk.signature],who);
+ await t.rejects(go(5,await t.ticket(1,t.hunter,id,STAKE,{signerIdx:6})),/InvalidTAPTicket/);       // signed by a random wallet
+ await t.rejects(go(5,await t.ticket(1,t.hunter2,id,STAKE)),/InvalidTAPTicket/);                    // ticket for another wallet
+ await t.rejects(go(5,await t.ticket(1,t.hunter,id+1n,STAKE)),/InvalidTAPTicket/);                  // ticket for another bounty
+ await t.rejects(go(5,await t.ticket(2,t.hunter,id,STAKE)),/InvalidTAPTicket/);                     // reviewer ticket cannot open a hunter lock
+ await t.rejects(go(5,await t.ticket(1,t.hunter,id,STAKE),STAKE+1n),/InvalidTAPTicket/);            // amount is signed
+ await t.rejects(go(5,await t.ticket(1,t.hunter,id,STAKE-1n)),/TAPStakeBelowTheBounty/);            // below the bounty's stake even if signed
+ await t.rejects(go(5,await t.ticket(1,t.hunter,id,STAKE,{deadline:await t.now()-5})),/TicketExpired/);
+ await t.rejects(go(5,{lockId:'0x'+'00'.repeat(32),deadline:BigInt(await t.now()+99),signature:'0x'+'11'.repeat(65),tap:STAKE}),/LockAlreadyUsed/);
+ await t.rejects(go(5,{...(await t.ticket(1,t.hunter,id,STAKE)),signature:'0x1234'}),/InvalidTAPTicket|ECDSA/);
+ const ok=await t.ticket(1,t.hunter,id,STAKE);await go(5,ok);
+ const rep2=t.report();
+ await t.rejects(t.bw('commit',[id,t.commitHash(id,t.hunter,2,rep2.reportHash,rep2.salt),ok.tap,ok.lockId,ok.deadline,ok.signature],5),/LockAlreadyUsed/); // one TAP lock = one submission
+ const big=await t.ticket(1,t.hunter2,id,STAKE*3n);await t.bw('commit',[id,t.commitHash(id,t.hunter2,2,rep2.reportHash,rep2.salt),big.tap,big.lockId,big.deadline,big.signature],6); // staking more is allowed
+ assert.equal((await t.sub(2n)).tapStake,STAKE*3n);
+});
+
+test('commit-reveal: hidden severity and report, bound to hunter/bounty/contract, front-running fails, reservations are exact',async()=>{
+ const t=await setup();const id=await t.create();const rep=t.report('sqli');
  assert.equal(await t.br('commitHashFor',[id,t.hunter,3,rep.reportHash,rep.salt]),t.commitHash(id,t.hunter,3,rep.reportHash,rep.salt));
- const before=await t.bal(t.hunter);
- const s=await t.commit(id,4,3,rep);
- assert.equal(before-await t.bal(t.hunter),STAKE,'stake locked');
- let b=await t.bnty(id);assert.equal(b.reserved,TIERS[3],'top tier reserved while severity is hidden');assert.equal(b.available,DEPOSIT-TIERS[3]);assert.equal(b.pending,1);
- const sb=await t.sub(s.id);assert.equal(sb.status,Status.Committed);assert.equal(sb.claimed,0,'severity not public yet');assert.equal(sb.reportHash,'0x'+'00'.repeat(32));
- // copying the commit hash from the mempool is useless: the same hash cannot be reused, and a different hunter's hash differs
- await t.rejects(t.bw('commit',[id,s.commitHash],5),/Commit already used/);
- const copy=t.commitHash(id,t.hunter2,3,rep.reportHash,rep.salt);assert.notEqual(copy,s.commitHash,'hash binds the hunter address');
- // a front-runner cannot reveal someone else's commit, even knowing the preimage
- await t.rejects(t.bw('reveal',[s.id,3,rep.reportHash,rep.salt],5),/Not your open commit/);
- // wrong severity / report / salt cannot reveal
- await t.rejects(t.bw('reveal',[s.id,2,rep.reportHash,rep.salt],4),/does not match/);await t.rejects(t.bw('reveal',[s.id,3,keccak256(toHex('x')),rep.salt],4),/does not match/);await t.rejects(t.bw('reveal',[s.id,3,rep.reportHash,keccak256(toHex('y'))],4),/does not match/);
- await t.rejects(t.bw('reveal',[s.id,5,rep.reportHash,rep.salt],4));await t.rejects(t.bw('reveal',[s.id,0,rep.reportHash,rep.salt],4));
- await t.rejects(t.bw('reveal',[99n,3,rep.reportHash,rep.salt],4));
+ const nibBefore=await t.bal(t.hunter);
+ const s=await t.commit(id,5,3,rep);
+ assert.equal(await t.bal(t.hunter),nibBefore,'the hunter stakes TAP only: no NIB moves');
+ let b=await t.bnty(id);assert.equal(b.reserved,TIERS[3]);assert.equal(b.available,DEPOSIT-TIERS[3]);assert.equal(b.pending,1);
+ const sb=await t.sub(s.id);assert.equal(sb.status,Status.Committed);assert.equal(sb.claimed,0);assert.equal(sb.tapStake,STAKE);assert.equal(sb.hunterLock,s.lockId);
+ {const tk=await t.ticket(1,t.hunter2,id,STAKE);await t.rejects(t.bw('commit',[id,s.commitHash,STAKE,tk.lockId,tk.deadline,tk.signature],6),/CommitAlreadyUsed/);}
+ assert.notEqual(t.commitHash(id,t.hunter2,3,rep.reportHash,rep.salt),s.commitHash);
+ await t.rejects(t.bw('reveal',[s.id,3,rep.reportHash,rep.salt],6),/NotYourOpenCommit/);
+ await t.rejects(t.bw('reveal',[s.id,2,rep.reportHash,rep.salt],5),/RevealDoesNotMatch/);await t.rejects(t.bw('reveal',[s.id,3,keccak256(toHex('x')),rep.salt],5),/RevealDoesNotMatch/);await t.rejects(t.bw('reveal',[s.id,3,rep.reportHash,keccak256(toHex('y'))],5),/RevealDoesNotMatch/);
+ await t.rejects(t.bw('reveal',[s.id,5,rep.reportHash,rep.salt],5));await t.rejects(t.bw('reveal',[s.id,0,rep.reportHash,rep.salt],5));
  await t.reveal(s);
- b=await t.bnty(id);assert.equal(b.reserved,TIERS[2],'reservation drops to the claimed tier');assert.equal(b.available,DEPOSIT-TIERS[2]);
- const r2=await t.sub(s.id);assert.equal(r2.status,Status.Revealed);assert.equal(r2.claimed,3);assert.equal(r2.reportHash,rep.reportHash);assert.equal(r2.deadline,BigInt(await t.now())+BigInt(7*DAY)-(BigInt(await t.now())-BigInt(r2.revealedAt)),'review clock is revealedAt + window');
- await t.rejects(t.reveal(s),/Not your open commit/);                                  // cannot reveal twice
- await t.rejects(t.bw('commit',[id,'0x'+'00'.repeat(32)],5),/Commit already used/);   // zero hash rejected
- assert.deepEqual([...(await t.br('submissionsOf',[id]))],[s.id]);assert.deepEqual([...(await t.br('hunterSubmissions',[t.hunter]))],[s.id]);
+ b=await t.bnty(id);assert.equal(b.reserved,TIERS[2]);assert.equal(b.available,DEPOSIT-TIERS[2]);
+ assert.equal((await t.sub(s.id)).status,Status.Applying);
+ await t.rejects(t.reveal(s),/NotYourOpenCommit/);
+ // a commit not revealed in time: anyone closes it, escrow is released, the hunter's TAP is forfeited and a strike applies
+ const s2=await t.commit(id,6,2);
+ await t.rejects(t.bw('expireCommit',[s2.id],0),/RevealWindowStillOpen/);
+ await t.warp(25*H);await t.rejects(t.reveal(s2),/RevealWindowPassed/);
+ await t.bw('expireCommit',[s2.id],0);
+ b=await t.bnty(id);assert.equal(b.pending,1);assert.equal(b.reserved,TIERS[2]);
+ assert.equal((await t.sub(s2.id)).outcome,Outcome.Unrevealed);
+ const tr=await t.br('tapResult',[s2.lockId]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,0n,0n,STAKE],'forfeited TAP is burned');
+ assert.equal(await t.br('strikes',[t.hunter2]),1n);assert.ok((await t.br('cooldownUntil',[t.hunter2]))>BigInt(await t.now()));
+ await t.rejects(t.commit(id,6,2),/CoolingDown/);
  await t.solvent();
 });
 
-test('abuse: self-dealing, identity, limits, and a bounty that cannot back another top-tier payout',async()=>{
- const t=await setup();const id=await t.create({deposit:E(250000)}); // backs exactly two top-tier (100k) commits
- const h=(who:number)=>t.commitHash(id,t.accounts[who].address,2,t.report().reportHash,t.report().salt);
- await t.rejects(t.bw('commit',[id,h(3)],3),/Creator\/arbiter cannot submit/);        // anti-self-dealing: creator address
- await t.rejects(t.bw('commit',[id,h(1)],1),/Creator\/arbiter cannot submit/);        // arbiter cannot hunt
- await t.rejects(t.bw('commit',[id,h(9)],9),/Agent ID required/);
- await t.idy(t.hunter3,0n);await t.rejects(t.bw('commit',[id,h(6)],6),/Agent ID required/);await t.idy(t.hunter3);
- await t.rejects(t.bw('commit',[99n,h(4)],4),/Bounty not open/);
- await t.commit(id,4);await t.commit(id,5);
- assert.equal(await t.br('freeSlots',[id]),0n);
- await t.rejects(t.commit(id,6),/Escrow cannot back/);                                // third commit cannot be backed
- await t.rejects(t.bw('withdraw',[id],3),/still open/);
- // per-hunter cap needs a rich bounty
- const rich=await t.create({deposit:E(5_000_000),scope:'rich'});
- await t.commit(rich,4);await t.commit(rich,4);await t.commit(rich,4);
- await t.rejects(t.commit(rich,4),/Too many of your submissions/);
- // bounty-wide cap of 20 open submissions
- let n=3;for(const w of [5,6]){for(let i=0;i<3&&n<20;i++,n++)await t.commit(rich,w);}
- await t.idy(t.creator2);const r3=await t.create({deposit:E(5_000_000),scope:'r3',who:7});
- // creator2 cannot be a hunter on its own bounty, but may hunt on another one
- await t.rejects(t.commit(r3,7),/Creator\/arbiter cannot submit/);await t.commit(rich,7);n++;
- assert.equal((await t.bnty(rich)).pending,n);
- // approvals missing -> no commit, no state change
- await t.approve(4,0n);const pend=(await t.bnty(r3)).pending;await t.rejects(t.commit(r3,4));assert.equal((await t.bnty(r3)).pending,pend);await t.approve(4);
- await t.solvent();
+test('hunter limits: per-bounty, overall, open-submission caps; creator, guardian and signer cannot submit; no escrow = no commit',async()=>{
+ const t=await setup();const id=await t.create({deposit:E(400000)});
+ await t.commit(id,5);await t.commit(id,5);await t.commit(id,5);
+ await t.rejects(t.commit(id,5),/TooManyOfYourSubmissions/);
+ await t.rejects(t.commit(id,4),/NotAllowedToSubmit/);
+ await t.idy(t.guardian);await t.idy(t.signer);await t.rejects(t.commit(id,2),/NotAllowedToSubmit/);await t.rejects(t.commit(id,1),/NotAllowedToSubmit/);
+ await t.rejects(t.commit(id,0),/AgentIDRequired/);
+ // the escrow must cover another top-tier payout
+ await t.commit(id,6);await t.rejects(t.commit(id,6),/EscrowCannotBackAnotherTop/);   // 4 top-tier slots of 100k: all taken
 });
 
-test('bounty lifecycle windows: commits stop at the end, reveals still allowed, expiry pays the creator and frees the reservation',async()=>{
- const t=await setup();const id=await t.create({days:15});
- const s=await t.commit(id,4,4);
- await t.rejects(t.bw('expireCommit',[s.id],5),/Not expired/);
- await t.warp(DAY+10);
- await t.rejects(t.reveal(s),/Reveal window passed/);
- const creatorBefore=await t.bal(t.creator);
- await t.bw('expireCommit',[s.id],6); // anyone can trigger the expiry
- assert.equal(await t.bal(t.creator)-creatorBefore,STAKE,'forfeited stake compensates the project');
- assert.equal((await t.sub(s.id)).status,Status.Expired);let b=await t.bnty(id);assert.equal(b.reserved,0n);assert.equal(b.available,DEPOSIT);assert.equal(b.pending,0);assert.equal(await t.br('hunterActive',[id,t.hunter]),0n);
- await t.rejects(t.bw('expireCommit',[s.id],6),/Not expired/);
- await t.solvent();
- // ending: new commits blocked after endsAt, a pending reveal still completes
- const s2=await t.commit(id,4,1);
- await t.warp(14*DAY+DAY); // past endsAt (15 days+60s from creation), commit still unrevealed? (reveal window = 1 day)
- assert.equal(await t.br('isOpen',[id]),false);
- await t.rejects(t.commit(id,5),/Bounty not open/);
- await t.rejects(t.reveal(s2),/Reveal window passed/);await t.bw('expireCommit',[s2.id],5);
- await t.rejects(t.bw('topUp',[id,E(1)],3),/not open/);await t.rejects(t.bw('extend',[id,BigInt(await t.now()+40*DAY)],3),/not open/);
+test('hunter overall cap: 5 open submissions across bounties',async()=>{
+ const t=await setup();const ids=[await t.create(),await t.create({scope:'b'}),await t.create({scope:'c'})];
+ await t.commit(ids[0],5);await t.commit(ids[0],5);await t.commit(ids[1],5);await t.commit(ids[1],5);await t.commit(ids[2],5);
+ await t.rejects(t.commit(ids[2],5),/TooManyOpenSubmissionsOverall/);
 });
 
-test('project pays in full: net of fee, stake refunded, escrow remainder stays, stats update',async()=>{
+test('reviewer eligibility: no conflict of interest, no hunters of the bounty, Agent ID, TAP ticket, one application each, caps',async()=>{
+ const t=await setup();const id=await t.create();const s=await t.submit(id,5,2);const s2=await t.submit(id,6,2);
+ for(const i of [1,2,3])await t.idy(t.accounts[i].address);
+ await t.rejects(t.apply(s.id,4),/ConflictOfInterest/);          // the creator
+ await t.rejects(t.apply(s.id,5),/ConflictOfInterest/);          // the hunter themself
+ await t.rejects(t.apply(s.id,6),/HuntersOfThisBountyCannot/);   // another hunter of the same bounty
+ await t.rejects(t.apply(s.id,3),/ConflictOfInterest/);          // the fee recipient
+ await t.rejects(t.apply(s.id,1),/ConflictOfInterest/);  // the ticket signer
+ await t.rejects(t.apply(s.id,2),/ConflictOfInterest/);  // the guardian
+ await t.rejects(t.apply(s.id,REV0,STAKE-1n),/TAPStakeBelowTheBounty/);
+ await t.rejects(t.apply(s.id,REV0,STAKE,await t.ticket(1,t.accounts[REV0].address,s.id,STAKE)),/InvalidTAPTicket/);   // hunter ticket cannot be used to review
+ await t.rejects(t.apply(s.id,REV0,STAKE,await t.ticket(2,t.accounts[REV0].address,s.id,STAKE,{signerIdx:7})),/InvalidTAPTicket/);
+ await t.apply(s.id,REV0);await t.rejects(t.apply(s.id,REV0),/AlreadyApplied/);
+ await t.apply(s2.id,REV0);
+ // open reviews are capped at 5 per wallet
+ const more=[];for(let i=0;i<3;i++)more.push(await t.submit(await t.create({scope:'m'+i}),7,2));
+ for(const m of more)await t.apply(m.id,REV0);
+ await t.rejects(t.apply((await t.submit(await t.create({scope:'last'}),8,2)).id,REV0),/TooManyOpenReviews|ConflictOfInterest/);
+ await t.idy(t.accounts[28].address,0n);await t.rejects(t.apply(s.id,28),/AgentIDRequired/);
+});
+
+test('full valid flow: 2% fee to the vault, 20% to reviewers who voted with the outcome, the rest to the hunter; TAP results per lock',async()=>{
  const t=await setup();const id=await t.create();
- const s=await t.submit(id,4,3);
- const hb=await t.bal(t.hunter),fb=await t.bal(t.feeTo);
- await t.rejects(t.bw('accept',[s.id,3],4),/Only the creator/);await t.rejects(t.bw('accept',[s.id,3],1),/Only the creator/);await t.rejects(t.bw('accept',[s.id,3],5),/Only the creator/);
- await t.rejects(t.bw('accept',[s.id,4],3),/within the claimed tier/);await t.rejects(t.bw('accept',[s.id,0],3),/within the claimed tier/);
- await t.bw('accept',[s.id,3],3);
- const pay=TIERS[2];
- assert.equal(await t.bal(t.hunter)-hb,pay-fee(pay)+STAKE,'hunter gets payout minus 2% plus stake back');assert.equal(await t.bal(t.feeTo)-fb,fee(pay));
+ const s=await t.submit(id,5,2);
+ const {panel,rest,locks}=await t.seat(s.id);
+ assert.equal(panel.length,3);assert.equal(rest.length,3);
+ let sb=await t.sub(s.id);assert.equal(sb.status,Status.Voting);
+ for(const a of panel)assert.equal((await t.br('getReviewer',[s.id,t.accounts[a].address])).state,2);
+ for(const a of rest)assert.equal((await t.br('getReviewer',[s.id,t.accounts[a].address])).state,3);
+ // two vote severity 2 (aligned), one votes severity 1 (still within one step: aligned), the median is severity 2
+ const hunterBefore=await t.bal(t.hunter),feeBefore=await t.bal(t.feeTo),held=await t.bal(t.bounty);
+ await t.judge(s.id,panel,[2,2,1]);
+ sb=await t.sub(s.id);assert.equal(sb.status,Status.Settled);assert.equal(sb.outcome,Outcome.Valid);assert.equal(sb.awarded,2);assert.equal(sb.aligned,3);
+ const pay=TIERS[1],f=fee(pay),p=pool(pay),per=p/3n,dist=per*3n;
+ assert.equal(await t.bal(t.feeTo)-feeBefore,f,'2% platform fee goes to the NibVaultV2 fee recipient');
+ assert.equal(await t.bal(t.hunter)-hunterBefore,pay-f-dist,'the hunter keeps the remainder');
+ assert.equal(await t.br('totalOwed'),dist);await t.solvent();
+ for(const a of panel){assert.equal(await t.br('rewardOf',[t.accounts[a].address]),per);}
+ const a0=t.accounts[panel[0]].address,b0=await t.bal(a0);await t.bw('claimReward',[],panel[0]);assert.equal(await t.bal(a0)-b0,per);
+ await t.rejects(t.bw('claimReward',[],panel[0]),/NothingToClaim/);
+ assert.equal(await t.br('totalOwed'),dist-per);await t.solvent();
  const b=await t.bnty(id);assert.equal(b.reserved,0n);assert.equal(b.available,DEPOSIT-pay);assert.equal(b.pending,0);
- assert.equal((await t.sub(s.id)).status,Status.Settled);assert.equal((await t.sub(s.id)).awarded,3);
- const cs=await t.br('creatorStats',[t.creator]),hs=await t.br('hunterStats',[t.hunter]);assert.equal(cs[1],1);assert.equal(cs[5],pay);assert.equal(hs[0],1);assert.equal(hs[2],pay-fee(pay));
- assert.equal(await t.br('totalFees'),fee(pay));assert.equal(await t.br('totalPaid'),pay-fee(pay));assert.equal(await t.br('totalEscrow'),DEPOSIT-pay);
- await t.rejects(t.bw('accept',[s.id,3],3),/Not awaiting review/);await t.rejects(t.bw('reject',[s.id,2,0n],3),/Not awaiting review/);
- await t.solvent();
+ // TAP: the hunter's lock is returned, every aligned reviewer is returned, unseated applicants are returned
+ const tr=(l:string)=>t.br('tapResult',[l]).then((x:any)=>[x[0],x[1],x[2],x[3]]);
+ assert.deepEqual(await tr(s.lockId),[true,STAKE,0n,0n]);
+ for(const a of panel)assert.deepEqual(await tr(locks[a]),[true,STAKE,0n,0n]);
+ for(const a of rest)assert.deepEqual(await tr(locks[a]),[true,STAKE,0n,0n]);
+ assert.equal(await t.br('hunterActiveTotal',[t.hunter]),0n);assert.equal(await t.br('reviewerActive',[t.accounts[panel[0]].address]),0n);
 });
 
-test('project downgrades: hunter can accept, let it stand, or dispute with a bond',async()=>{
+test('a valid vote at a LOWER severity pays the median tier; reviewers who say invalid are slashed and struck; the hunter is capped at the claim',async()=>{
+ const t=await setup();const id=await t.create();const s=await t.submit(id,5,2);const {panel,locks}=await t.seat(s.id);
+ await t.judge(s.id,panel,[1,1,0]);
+ const sb=await t.sub(s.id);assert.equal(sb.outcome,Outcome.Valid);assert.equal(sb.awarded,1);assert.equal(sb.aligned,2);
+ const pay=TIERS[0];assert.equal(await t.br('totalOwed'),pool(pay)/2n*2n);await t.solvent();
+ const tr=await t.br('tapResult',[locks[panel[2]]]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,0n,0n,STAKE],'the dissenting reviewer loses the TAP');
+ assert.equal(await t.br('strikes',[t.accounts[panel[2]].address]),1n);assert.ok((await t.br('cooldownUntil',[t.accounts[panel[2]].address]))>0n);
+ assert.equal(await t.br('rewardOf',[t.accounts[panel[2]].address]),0n);
+ // votes above the claim are capped at the claim
+ const s2=await t.submit(id,6,1);const seated=await t.seat(s2.id,{from:REV0+8});await t.judge(s2.id,seated.panel,[4,3,2]);
+ const sb2=await t.sub(s2.id);assert.equal(sb2.outcome,Outcome.Valid);assert.equal(sb2.awarded,1);await t.solvent();
+});
+
+test('invalid report: nothing is paid, escrow returns, the hunter forfeits the TAP (burned) and the aligned reviewers split it; dissenters are slashed',async()=>{
+ const t=await setup();const id=await t.create();const s=await t.submit(id,5,3);const {panel,rest,locks}=await t.seat(s.id);
+ const hunterBefore=await t.bal(t.hunter);
+ await t.judge(s.id,panel,[0,0,2]);
+ const sb=await t.sub(s.id);assert.equal(sb.outcome,Outcome.Invalid);assert.equal(sb.aligned,2);
+ assert.equal(await t.bal(t.hunter),hunterBefore,'no NIB to the hunter');assert.equal(await t.br('totalOwed'),0n,'no NIB reviewer reward on an invalid report');
+ const b=await t.bnty(id);assert.equal(b.available,DEPOSIT);assert.equal(b.reserved,0n);await t.solvent();
+ let tr=await t.br('tapResult',[s.lockId]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,0n,0n,STAKE]);
+ for(const i of [0,1]){tr=await t.br('tapResult',[locks[panel[i]]]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,STAKE,STAKE/2n,0n],'aligned reviewer: stake back + half the forfeited hunter stake');}
+ tr=await t.br('tapResult',[locks[panel[2]]]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,0n,0n,STAKE]);
+ for(const a of rest){tr=await t.br('tapResult',[locks[a]]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,STAKE,0n,0n]);}
+ assert.equal(await t.br('strikes',[t.hunter]),1n);await t.rejects(t.commit(id,5,2),/CoolingDown/);
+ await t.warp(8*DAY);await t.commit(id,5,2);                                                         // the cooldown ends
+});
+
+test('duplicates: a good-faith duplicate gets the TAP back with no strike; only the earliest valid report is paid',async()=>{
  const t=await setup();const id=await t.create();
- // 1) hunter accepts the lower award at once
- const a=await t.submit(id,4,4);await t.bw('accept',[a.id,2],3);
- let sb=await t.sub(a.id);assert.equal(sb.status,Status.Decided);assert.equal(sb.awarded,2);
- let b=await t.bnty(id);assert.equal(b.reserved,TIERS[3],'the claimed tier stays reserved while the hunter may dispute');
- await t.rejects(t.bw('acceptDecision',[a.id],5),/Not your decided/);await t.rejects(t.bw('finalize',[a.id],5),/Not finalisable/);
- const hb=await t.bal(t.hunter);await t.bw('acceptDecision',[a.id],4);
- assert.equal(await t.bal(t.hunter)-hb,TIERS[1]-fee(TIERS[1])+STAKE);b=await t.bnty(id);assert.equal(b.reserved,0n);assert.equal(b.available,DEPOSIT-TIERS[1],'difference to the claim returns to the project');
- // 2) hunter is silent: anyone finalises after the dispute window
- const c=await t.submit(id,5,3);await t.bw('accept',[c.id,1],3);
- await t.warp(3*DAY+10);await t.rejects(t.bw('dispute',[c.id],5),/Dispute window passed/);
- const hb2=await t.bal(t.hunter2);await t.bw('finalize',[c.id],6);
- assert.equal(await t.bal(t.hunter2)-hb2,TIERS[0]-fee(TIERS[0])+STAKE);assert.equal((await t.sub(c.id)).awarded,1);
- // 3) hunter disputes with a bond; arbiter rules higher => bond back, hunter paid the higher tier
- const d=await t.submit(id,4,4);await t.bw('accept',[d.id,1],3);
- const hb3=await t.bal(t.hunter);await t.rejects(t.bw('dispute',[d.id],5),/Not your decided/);await t.bw('dispute',[d.id],4);
- assert.equal(hb3-await t.bal(t.hunter),STAKE,'dispute bond locked');assert.equal((await t.sub(d.id)).bond,STAKE);assert.equal((await t.sub(d.id)).status,Status.Disputed);await t.solvent();
- await t.rejects(t.bw('resolveDispute',[d.id,4,true],4),/Only the arbiter/);await t.rejects(t.bw('resolveDispute',[d.id,4,true],3),/Only the arbiter/);await t.rejects(t.bw('resolveDispute',[d.id,5,true],1),/Above claimed/);
- const hb4=await t.bal(t.hunter);await t.bw('resolveDispute',[d.id,4,true],1);
- assert.equal(await t.bal(t.hunter)-hb4,TIERS[3]-fee(TIERS[3])+2n*STAKE,'full payout + stake + bond');
- assert.equal((await t.br('creatorStats',[t.creator]))[3],1,'overturn recorded against the project');
- // 4) arbiter sides with the project's lower award => bond is burned, stake returned
- const e=await t.submit(id,4,3);await t.bw('accept',[e.id,2],3);await t.bw('dispute',[e.id],4);
- const burnBefore=await t.bal(BURN),hb5=await t.bal(t.hunter);await t.bw('resolveDispute',[e.id,2,true],1);
- assert.equal(await t.bal(t.hunter)-hb5,TIERS[1]-fee(TIERS[1])+STAKE);assert.equal(await t.bal(BURN)-burnBefore,STAKE,'losing dispute burns only the bond');
- await t.rejects(t.bw('resolveDispute',[e.id,2,true],1),/Not disputed/);
+ const first=await t.submit(id,5,2);const sf=await t.seat(first.id,{from:REV0});await t.judge(first.id,sf.panel,[2,2,2]);
+ assert.equal((await t.sub(first.id)).outcome,Outcome.Valid);
+ const owedAfterFirst=await t.br('totalOwed');
+ // a duplicate vote must point at an earlier live submission of the same bounty from ANOTHER hunter: self-reference and the future are refused
+ const dup=await t.submit(id,6,2);const sd=await t.seat(dup.id,{from:REV0+6});
+ await t.castVote(dup.id,sd.panel[0],DUP,dup.id);await t.castVote(dup.id,sd.panel[1],DUP,first.id+99n);await t.castVote(dup.id,sd.panel[2],DUP,first.id);
+ await t.rejects(t.openVote(dup.id,sd.panel[0],DUP,dup.id),/DuplicateMustReference/);await t.rejects(t.openVote(dup.id,sd.panel[1],DUP,first.id+99n),/DuplicateMustReference/);
+ await t.openVote(dup.id,sd.panel[2],DUP,first.id);
+ await t.warp(49*H);await t.bw('finalizeJudgment',[dup.id],0);                                           // 1 of 3 revealed: no quorum
+ assert.equal((await t.sub(dup.id)).outcome,Outcome.NoQuorum);
+ const s3=await t.submit(id,7,2);const s3s=await t.seat(s3.id,{from:REV0+12});
+ await t.judge(s3.id,s3s.panel,[DUP,DUP,DUP],first.id);
+ const sb=await t.sub(s3.id);assert.equal(sb.outcome,Outcome.Duplicate);assert.equal(sb.duplicateOf,first.id);assert.equal(sb.awarded,0);
+ const tr=await t.br('tapResult',[s3.lockId]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,STAKE,0n,0n],'good-faith duplicate: TAP returned');
+ assert.equal(await t.br('strikes',[t.hunter3]),0n);
+ for(const a of s3s.panel){const r=await t.br('tapResult',[s3s.locks[a]]);assert.deepEqual([r[0],r[1],r[2],r[3]],[true,STAKE,0n,0n],'aligned reviewers get the TAP back; no NIB for a duplicate');}
+ assert.equal(await t.br('totalOwed'),owedAfterFirst,'only the first, valid report generated reviewer NIB');
  await t.solvent();
 });
 
-test('rejections: reasons, duplicate priority rules, stake burn vs refund, arbitrated reversal',async()=>{
+test('inconclusive, no quorum and no panel: nobody is paid, honest parties are made whole, no-shows are slashed',async()=>{
  const t=await setup();const id=await t.create();
- const first=await t.submit(id,4,2);        // earliest valid commit
- const second=await t.submit(id,5,2);       // later duplicate
- const third=await t.submit(id,6,2);
- await t.rejects(t.bw('reject',[second.id,0,0n],3),/Reason required/);await t.rejects(t.bw('reject',[second.id,2,1n],3),/duplicateOf only/);
- await t.rejects(t.bw('reject',[second.id,1,0n],3),/earlier submission/);await t.rejects(t.bw('reject',[second.id,1,second.id],3),/earlier submission/);
- await t.rejects(t.bw('reject',[first.id,1,second.id],3),/earlier submission/);             // cannot call the EARLIER commit a duplicate of a later one
- await t.rejects(t.bw('reject',[second.id,1,99n],3),/earlier submission/);
- await t.rejects(t.bw('reject',[second.id,2,0n],4),/Only the creator/);
- await t.bw('reject',[second.id,1,first.id],3);
- let s=await t.sub(second.id);assert.equal(s.status,Status.Decided);assert.equal(s.reason,Reason.Duplicate);assert.equal(s.duplicateOf,first.id);
- // duplicate of a submission that was itself rejected as invalid is refused
- await t.bw('reject',[first.id,2,0n],3);
- await t.rejects(t.bw('reject',[third.id,1,first.id],3),/not valid/);
- // a duplicate ruling returns the stake when it stands
- const hb=await t.bal(t.hunter2);await t.warp(3*DAY+5);await t.bw('finalize',[second.id],7);
- assert.equal(await t.bal(t.hunter2)-hb,STAKE,'duplicate: stake back, no payout');assert.equal((await t.sub(second.id)).awarded,0);
- // an invalid rejection that stands burns the stake
- const burn0=await t.bal(BURN),h0=await t.bal(t.hunter);await t.bw('finalize',[first.id],7);
- assert.equal(await t.bal(BURN)-burn0,STAKE);assert.equal(await t.bal(t.hunter),h0,'no refund for a rejection that stood');
- assert.equal((await t.br('hunterStats',[t.hunter]))[1],1);assert.equal((await t.br('creatorStats',[t.creator]))[2],2);
- // hunter concedes explicitly
- const c=await t.submit(id,4,1);await t.bw('reject',[c.id,3,0n],3);const b0=await t.bal(BURN);await t.bw('acceptDecision',[c.id],4);assert.equal(await t.bal(BURN)-b0,STAKE);
- // hunter disputes a wrong rejection; arbiter reverses it: full payout, stake + bond back
- const d=await t.submit(id,5,4);await t.bw('reject',[d.id,4,0n],3);await t.bw('dispute',[d.id],5);
- const h1=await t.bal(t.hunter2);await t.bw('resolveDispute',[d.id,4,false],1);assert.equal(await t.bal(t.hunter2)-h1,TIERS[3]-fee(TIERS[3])+2n*STAKE);
- // arbiter upholds a rejection: burn bond; stake burned unless returnStake
- const e=await t.submit(id,6,2);await t.bw('reject',[e.id,2,0n],3);await t.bw('dispute',[e.id],6);
- const b1=await t.bal(BURN);await t.bw('resolveDispute',[e.id,0,false],1);assert.equal(await t.bal(BURN)-b1,2n*STAKE);
- const f=await t.submit(id,6,2);await t.bw('reject',[f.id,2,0n],3);await t.bw('dispute',[f.id],6);
- const b2=await t.bal(BURN),h2=await t.bal(t.hunter3);await t.bw('resolveDispute',[f.id,0,true],1);assert.equal(await t.bal(BURN)-b2,STAKE,'arbiter may return the stake of an honest-but-wrong report');assert.equal(await t.bal(t.hunter3)-h2,STAKE);
- await t.bw('reject',[third.id,2,0n],3);await t.warp(3*DAY+5);await t.bw('finalize',[third.id],7);
- assert.equal((await t.bnty(id)).pending,0);
+ const first=await t.submit(id,5,2);const sf=await t.seat(first.id,{from:REV0});await t.judge(first.id,sf.panel,[2,2,2]);
+ // inconclusive: one valid, one invalid, one duplicate -> no majority
+ const b=await t.submit(id,6,2);const sb=await t.seat(b.id,{from:REV0+6});
+ const owed=await t.br('totalOwed');
+ await t.castVote(b.id,sb.panel[0],2);await t.castVote(b.id,sb.panel[1],0);await t.castVote(b.id,sb.panel[2],DUP,first.id);
+ for(const [i,v,d] of [[0,2,0n],[1,0,0n],[2,DUP,first.id]] as const)await t.openVote(b.id,sb.panel[i],v,d);
+ await t.bw('finalizeJudgment',[b.id],0);
+ assert.equal((await t.sub(b.id)).outcome,Outcome.Inconclusive);assert.equal(await t.br('totalOwed'),owed);
+ for(const a of sb.panel){const r=await t.br('tapResult',[sb.locks[a]]);assert.deepEqual([r[0],r[1],r[2],r[3]],[true,STAKE,0n,0n],'no verdict, no slashing');}
+ assert.deepEqual([...(await t.br('tapResult',[b.lockId]))],[true,STAKE,0n,0n]);assert.equal(await t.br('strikes',[t.hunter2]),0n);
+ // no quorum: only 1 of 3 reveals
+ const c=await t.submit(id,7,2);const sc=await t.seat(c.id,{from:REV0+12});
+ await t.judge(c.id,sc.panel,[2,null,null]);
+ assert.equal((await t.sub(c.id)).outcome,Outcome.NoQuorum);
+ const trs=await Promise.all(sc.panel.map(i=>t.br('tapResult',[sc.locks[i]])));
+ assert.deepEqual([trs[0][1],trs[0][3]],[STAKE,0n],'the one who revealed gets the TAP back');
+ assert.deepEqual([trs[1][1],trs[1][3]],[0n,STAKE],'no-shows are slashed');
+ assert.equal(await t.br('strikes',[t.accounts[sc.panel[1]].address]),1n);
+ assert.deepEqual([...(await t.br('tapResult',[c.lockId]))],[true,STAKE,0n,0n],'the hunter is made whole when the panel failed');
  await t.solvent();
 });
 
-test('project silence: hunter escalates after the review window (no bond); arbiter ruling and timeout fallbacks',async()=>{
- const t=await setup();const id=await t.create({review:3});
- const s=await t.submit(id,4,3);
- await t.rejects(t.bw('escalate',[s.id],4),/review window still open/);await t.rejects(t.bw('escalate',[s.id],5),/Not your revealed/);
- await t.warp(3*DAY+10);
- await t.rejects(t.bw('escalate',[s.id],5),/Not your revealed/);
- await t.bw('escalate',[s.id],4);
- let sb=await t.sub(s.id);assert.equal(sb.status,Status.Disputed);assert.equal(sb.escalated,true);assert.equal(sb.bond,0n);assert.equal((await t.br('creatorStats',[t.creator]))[4],1,'silence is recorded');
- await t.rejects(t.bw('accept',[s.id,3],3),/Not awaiting review/);    // the project lost its chance to decide
- await t.rejects(t.bw('claimArbiterTimeout',[s.id],5),/still has time/);
- const hb=await t.bal(t.hunter);await t.bw('resolveDispute',[s.id,2,true],1);
- assert.equal(await t.bal(t.hunter)-hb,TIERS[1]-fee(TIERS[1])+STAKE);
- // arbiter silent for 14 days: hunter gets the LOWEST tier (project silent) plus stake; the rest returns to the project
- const u=await t.submit(id,5,4);await t.warp(3*DAY+10);await t.bw('escalate',[u.id],5);
- const bBefore=await t.bnty(id);await t.warp(14*DAY+10);
- const h2=await t.bal(t.hunter2);await t.bw('claimArbiterTimeout',[u.id],6);
- assert.equal(await t.bal(t.hunter2)-h2,TIERS[0]-fee(TIERS[0])+STAKE);const bAfter=await t.bnty(id);assert.equal(bAfter.reserved,0n);assert.equal(bAfter.available,bBefore.available+TIERS[3]-TIERS[0]+TIERS[3]-TIERS[3]+ (bBefore.reserved-TIERS[3]));
- // late decision is allowed only while the hunter has not escalated: project answers after the window but before escalation
- const late=await t.submit(id,4,2);await t.warp(3*DAY+10);await t.bw('reject',[late.id,2,0n],3);assert.equal((await t.sub(late.id)).status,Status.Decided);
- // timeout after a dispute of a project downgrade keeps at least the project's own award
- const v=await t.submit(id,5,4);await t.bw('accept',[v.id,3],3);await t.bw('dispute',[v.id],5);await t.warp(14*DAY+10);
- const h3=await t.bal(t.hunter2);await t.bw('claimArbiterTimeout',[v.id],4);assert.equal(await t.bal(t.hunter2)-h3,TIERS[2]-fee(TIERS[2])+2n*STAKE,'project award + stake + bond back');
+test('selection: window extension, too few applicants, randomness, seed-block rules, expiry',async()=>{
+ const t=await setup();const id=await t.create();
+ const s=await t.submit(id,5,2);
+ await t.rejects(t.bw('startSelection',[s.id],0),/NotReadyForSelection/);
+ await t.apply(s.id,REV0);await t.apply(s.id,REV0+1);await t.apply(s.id,REV0+2);await t.apply(s.id,REV0+3);   // 4 < 2x panel (6)
+ await t.rejects(t.bw('selectPanel',[s.id],0),/NoSelectionRunning/);
+ await t.warp(49*H);await t.bw('startSelection',[s.id],0);                                           // first call only extends the window once
+ assert.equal((await t.sub(s.id)).extended,true);assert.equal((await t.sub(s.id)).seedBlock,0n);
+ await t.rejects(t.apply(s.id,REV0+4,STAKE).then(()=>t.bw('startSelection',[s.id],0)),/NotReadyForSelection/);
+ await t.warp(49*H);await t.bw('startSelection',[s.id],0);                                           // 5 >= panel size: the draw starts
+ const sb=await t.sub(s.id);assert.ok(sb.seedBlock>0n);
+ await t.rejects(t.bw('selectPanel',[s.id],0),/WaitForTheSeedBlock/);   // the seed block is not mined yet: nobody can pre-compute the draw
+ await t.rejects(t.apply(s.id,REV0+5),/ApplicationsClosed/);
+ await t.rejects(t.bw('startSelection',[s.id],0),/SelectionAlreadyRunning/);
+ await t.mine(1);
+ await t.bw('selectPanel',[s.id],0);
+ const panel=await t.br('panelOf',[s.id]);assert.equal(panel.length,3);assert.equal(new Set(panel).size,3);
+ const pool=(await t.br('applicantsOf',[s.id])) as string[];for(const p of panel)assert.ok(pool.includes(p));
+ await t.rejects(t.bw('selectPanel',[s.id],0),/NoSelectionRunning/);
+ // a stale seed block (>200 blocks) cannot be used (the draw would be predictable): start again
+ const s2=await t.submit(id,6,2);for(let i=0;i<6;i++)await t.apply(s2.id,REV0+10+i);
+ await t.warp(49*H);await t.bw('startSelection',[s2.id],0);await t.mine(205);
+ await t.rejects(t.bw('selectPanel',[s2.id],0),/SeedBlockExpired/);
+ await t.bw('startSelection',[s2.id],0);await t.mine(1);await t.bw('selectPanel',[s2.id],0);
+ // different seeds give different draws (not a fixed order)
+ const draws=new Set<string>();
+ for(let k=0;k<4;k++){const sk=await t.submit(await t.create({scope:'r'+k}),k%2?7:8,2);const r=await t.seat(sk.id,{n:12,from:REV0});draws.add(r.panel.join(','));}
+ assert.ok(draws.size>1,'the draw varies');
+ // too few applicants: after the extension the report is released without a verdict and nobody is penalised
+ const s3=await t.submit(id,7,2);await t.apply(s3.id,REV0+16);await t.apply(s3.id,REV0+17);
+ await t.warp(49*H);await t.bw('startSelection',[s3.id],0);await t.warp(49*H);await t.bw('startSelection',[s3.id],0);
+ assert.equal((await t.sub(s3.id)).outcome,Outcome.NoPanel);
+ assert.equal(await t.br('strikes',[t.hunter3]),0n);
+ const tr=await t.br('tapResult',[s3.lockId]);assert.deepEqual([tr[0],tr[1],tr[2],tr[3]],[true,STAKE,0n,0n]);
+ assert.equal(await t.br('reviewerActive',[t.accounts[REV0+16].address]),0n);
  await t.solvent();
 });
 
-test('escrow protection: no withdrawal before the end, while pending, or during a cancel cooldown; cancel is delayed; extend only lengthens',async()=>{
- const t=await setup();const id=await t.create({days:20});
- await t.rejects(t.bw('withdraw',[id],3),/still open/);await t.rejects(t.bw('withdraw',[id],4),/Only the creator/);await t.rejects(t.bw('withdraw',[id],1),/Only the creator/);
- await t.rejects(t.bw('requestCancel',[id],4),/Only the creator/);
- await t.rejects(t.bw('extend',[id,BigInt(await t.now()+5*DAY)],3),/Invalid end time/);                // cannot shorten
- await t.bw('extend',[id,BigInt(await t.now()+60*DAY)],3);assert.ok((await t.bnty(id)).endsAt>BigInt(await t.now()+59*DAY));
- await t.rejects(t.bw('extend',[id,BigInt(await t.now()+400*DAY)],3),/Invalid end time/);
- await t.bw('topUp',[id,E(10000)],3);assert.equal((await t.bnty(id)).available,DEPOSIT+E(10000));await t.rejects(t.bw('topUp',[id,0n],3),/Invalid amount/);
- // cancel: starts a 7 day cooldown; commits still accepted during it; withdrawal only afterwards
- await t.bw('requestCancel',[id],3);
- await t.rejects(t.bw('requestCancel',[id],3),/already closing/);await t.rejects(t.bw('topUp',[id,E(1)],3),/not open/);await t.rejects(t.bw('extend',[id,BigInt(await t.now()+90*DAY)],3),/not open/);
- await t.rejects(t.bw('withdraw',[id],3),/still open/);
- const s=await t.commit(id,4,1);                                                                          // hunters can still submit during the cooldown
- await t.warp(7*DAY+10);
- assert.equal(await t.br('isOpen',[id]),false);await t.rejects(t.commit(id,5),/Bounty not open/);
- await t.rejects(t.bw('withdraw',[id],3),/Submissions still pending/);                                    // pending commit blocks withdrawal
- await t.warp(DAY);await t.bw('expireCommit',[s.id],5);                                                   // commit expires (unrevealed)
- // reveal a different one so we test pending-blocks-withdrawal through revealed/decided/disputed too
- const t2=await setup();const id2=await t2.create({days:15});const s2=await t2.submit(id2,4,2);await t2.warp(15*DAY+120);
- await t2.rejects(t2.bw('withdraw',[id2],3),/Submissions still pending/);
- await t2.bw('reject',[s2.id,2,0n],3);await t2.rejects(t2.bw('withdraw',[id2],3),/Submissions still pending/);                    // decided but not final
- await t2.bw('dispute',[s2.id],4);await t2.rejects(t2.bw('withdraw',[id2],3),/Submissions still pending/);                         // disputed
- await t2.bw('resolveDispute',[s2.id,2,true],1);
- const cb=await t2.bal(t2.creator),avail=(await t2.bnty(id2)).available;await t2.bw('withdraw',[id2],3);
- assert.equal(await t2.bal(t2.creator)-cb,avail);assert.equal(avail,DEPOSIT-TIERS[1],'only the unpaid remainder is withdrawable');assert.equal((await t2.bnty(id2)).closed,true);
- await t2.rejects(t2.bw('withdraw',[id2],3),/Already withdrawn/);assert.equal(await t2.br('totalEscrow'),0n);assert.equal(await t2.bal(t2.bounty),0n);
- // original bounty: after expiry nothing pending => full withdrawal incl. top up
- const before=await t.bal(t.creator);await t.bw('withdraw',[id],3);assert.equal(await t.bal(t.creator)-before,DEPOSIT+E(10000)+0n);
- await t.rejects(t.commit(id,4),/Bounty not open/);
- await t.solvent();await t2.solvent();
+test('sealed votes: only seated reviewers, commit-reveal, wrong preimage rejected, reveal only after the vote window, finalize only when complete',async()=>{
+ const t=await setup();const id=await t.create();const s=await t.submit(id,5,2);const {panel,rest}=await t.seat(s.id);
+ await t.rejects(t.castVote(s.id,rest[0],2),/NotASeatedReviewer/);await t.rejects(t.castVote(s.id,5,2),/NotASeatedReviewer/);await t.rejects(t.castVote(s.id,4,2),/NotASeatedReviewer/);
+ await t.rejects(t.bw('commitVote',[s.id,'0x'+'00'.repeat(32)],panel[0]),/NotASeatedReviewer/);
+ await t.castVote(s.id,panel[0],2);await t.rejects(t.castVote(s.id,panel[0],0),/NotASeatedReviewer/);
+ await t.rejects(t.openVote(s.id,panel[0],2),/NotTheRevealPhase/);                                       // votes stay sealed while voting is open
+ await t.castVote(s.id,panel[1],2);
+ await t.rejects(t.bw('finalizeJudgment',[s.id],0),/VotesAreStillOpen/);
+ await t.warp(73*H);
+ await t.rejects(t.castVote(s.id,panel[2],2),/VotingClosed/);
+ await t.rejects(t.openVote(s.id,panel[0],1),/VoteDoesNotMatch/);await t.rejects(t.openVote(s.id,panel[2],2),/NoSealedVoteToOpen/);await t.rejects(t.openVote(s.id,panel[0],9),/VoteDoesNotMatch/);
+ await t.openVote(s.id,panel[0],2);await t.rejects(t.openVote(s.id,panel[0],2),/NoSealedVoteToOpen/);
+ await t.rejects(t.bw('finalizeJudgment',[s.id],0),/VotesAreStillOpen/);
+ // an out-of-range verdict can be committed but never opened
+ const t2=await setup();const i2=await t2.create();const s2=await t2.submit(i2,5,2);const p2=await t2.seat(s2.id);
+ for(let i=0;i<3;i++)await t2.castVote(s2.id,p2.panel[i],i===0?9:2);
+ await t2.rejects(t2.openVote(s2.id,p2.panel[0],9),/InvalidVerdict/);
+ await t2.openVote(s2.id,p2.panel[1],2);await t2.openVote(s2.id,p2.panel[2],2);await t2.warp(49*H);await t2.bw('finalizeJudgment',[s2.id],0);
+ assert.equal((await t2.sub(s2.id)).outcome,Outcome.Valid,'2 of 3 is the quorum: the vote that can never be opened counts as absent');
+ assert.equal(await t2.br('strikes',[t2.accounts[p2.panel[0]].address]),1n);
 });
 
-test('arbiter powers are bounded: cannot touch escrow, cannot be a party, cannot rule on undisputed or above the claim; rotation is public and delayed',async()=>{
- const t=await setup();const id=await t.create();const s=await t.submit(id,4,2);
- const bal0=await t.bal(t.bounty);
- await t.rejects(t.bw('resolveDispute',[s.id,2,true],1),/Not disputed/);                               // cannot rule before a dispute exists
- await t.rejects(t.bw('withdraw',[id],1),/Only the creator/);await t.rejects(t.bw('accept',[s.id,2],1),/Only the creator/);await t.rejects(t.bw('reject',[s.id,2,0n],1),/Only the creator/);
- await t.rejects(t.bw('finalize',[s.id],1),/Not finalisable/);await t.rejects(t.bw('expireCommit',[s.id],1),/Not expired/);
- assert.equal(await t.bal(t.bounty),bal0);
- // rotation: only the arbiter proposes, 14 day delay, only the proposed address accepts
- await t.rejects(t.bw('proposeArbiter',[t.hunter],4),/Only the arbiter/);await t.rejects(t.bw('proposeArbiter',[t.arbiter],1),/Invalid arbiter/);await t.rejects(t.bw('proposeArbiter',[t.zeroAddress],1),/Invalid arbiter/);await t.rejects(t.bw('proposeArbiter',[t.bounty],1),/Invalid arbiter/);
- await t.bw('proposeArbiter',[t.deployer],1);
- await t.rejects(t.bw('acceptArbiter',[],0),/Not ready/);await t.warp(14*DAY+10);await t.rejects(t.bw('acceptArbiter',[],5),/Not ready/);
- await t.bw('cancelArbiterChange',[],1);await t.rejects(t.bw('acceptArbiter',[],0),/Not ready/);
- await t.bw('proposeArbiter',[t.deployer],1);await t.warp(14*DAY+10);await t.bw('acceptArbiter',[],0);
- assert.equal((await t.br('arbiter')).toLowerCase(),t.deployer.toLowerCase());await t.rejects(t.bw('proposeArbiter',[t.hunter],1),/Only the arbiter/);
- // the new arbiter cannot be a party to the dispute it rules on
- await t.bw('reject',[s.id,2,0n],3);await t.bw('dispute',[s.id],4);
- await t.rejects(t.bw('resolveDispute',[s.id,2,true],1),/Only the arbiter/);                          // old arbiter lost the role
- await t.bw('resolveDispute',[s.id,2,true],0);
- await t.solvent();
+test('reviewers are paid in NIB only on a valid report: split among aligned reviewers only, dust to the hunter, pull-payment',async()=>{
+ const t=await setup({reviewerBps:2000n});const tiers=[E(10001)];const id=await t.create({tiers,deposit:E(30003),panel:5,stake:1000n});
+ const s=await t.submit(id,5,1);const {panel}=await t.seat(s.id,{panel:5});
+ const hunterBefore=await t.bal(t.hunter);
+ await t.judge(s.id,panel,[1,1,1,0,null]);
+ const sb=await t.sub(s.id);assert.equal(sb.outcome,Outcome.Valid);assert.equal(sb.aligned,3);
+ const pay=tiers[0],f=fee(pay),per=pool(pay)/3n;
+ assert.equal(await t.bal(t.hunter)-hunterBefore,pay-f-per*3n,'rounding dust and the unaligned share go to the hunter');
+ assert.equal(await t.br('rewardOf',[t.accounts[panel[0]].address]),per);assert.equal(await t.br('rewardOf',[t.accounts[panel[3]].address]),0n);assert.equal(await t.br('rewardOf',[t.accounts[panel[4]].address]),0n);
+ assert.equal(await t.br('strikes',[t.accounts[panel[4]].address]),1n);await t.solvent();
+ for(const i of [0,1,2])await t.bw('claimReward',[],panel[i]);assert.equal(await t.br('totalOwed'),0n);await t.solvent();assert.equal(await t.br('totalReviewerPaid'),per*3n);
 });
 
-test('arbiter that is also a party is refused (conflict of interest) and a creator cannot arbitrate its own dispute',async()=>{
- const t=await setup();
- // the creator becomes the arbiter AFTER creating the bounty and the hunter disputes: it still cannot rule on its own bounty
- const id=await t.create();const s=await t.submit(id,4,2);await t.bw('reject',[s.id,2,0n],3);await t.bw('dispute',[s.id],4);
- await t.bw('proposeArbiter',[t.creator],1);await t.warp(14*DAY+10);await t.bw('acceptArbiter',[],3);
- await t.rejects(t.bw('resolveDispute',[s.id,0,false],3),/Arbiter is a party/);
- await t.warp(14*DAY+10);await t.bw('claimArbiterTimeout',[s.id],5); // the permissionless timeout still resolves it
- assert.equal((await t.sub(s.id)).status,Status.Settled);
- await t.solvent();
+test('creator side: topUp, extend, cancel cooldown, withdraw only when nothing is pending; nobody else can touch the escrow',async()=>{
+ const t=await setup();const id=await t.create();
+ await t.bw('topUp',[id,E(1000)],4);assert.equal((await t.bnty(id)).available,DEPOSIT+E(1000));
+ await t.rejects(t.bw('topUp',[id,E(1)],5),/OnlyTheCreator/);await t.rejects(t.bw('topUp',[id,0n],4),/InvalidAmount/);
+ await t.rejects(t.bw('withdraw',[id],4),/BountyStillOpen/);await t.rejects(t.bw('withdraw',[id],5),/OnlyTheCreator/);
+ const e=(await t.bnty(id)).endsAt;await t.bw('extend',[id,e+BigInt(DAY)],4);await t.rejects(t.bw('extend',[id,e],4),/InvalidEndTime/);
+ const s=await t.commit(id,5,2);
+ await t.bw('requestCancel',[id],4);await t.rejects(t.bw('requestCancel',[id],4),/BountyNotOpenOrAlready/);
+ await t.rejects(t.bw('topUp',[id,1n],4),/BountyNotOpen/);
+ await t.warp(8*DAY);
+ await t.rejects(t.commit(id,6,2),/BountyNotOpen/);
+ await t.rejects(t.bw('withdraw',[id],4),/SubmissionsStillPending/);
+ await t.bw('expireCommit',[s.id],0);
+ const before=await t.bal(t.creator);const avail=(await t.bnty(id)).available;
+ await t.bw('withdraw',[id],4);assert.equal(await t.bal(t.creator)-before,avail);assert.equal(await t.bal(t.bounty),0n);
+ await t.rejects(t.bw('withdraw',[id],4),/AlreadyWithdrawn/);await t.solvent();
 });
 
-test('token safety: fee-on-transfer tokens are rejected and a hostile transfer callback cannot re-enter',async()=>{
- const tax=await setup({token:'TaxToken'});
- await tax.rejects(tax.create(),/Fee-on-transfer/);assert.equal(await tax.bal(tax.bounty),0n);assert.equal(await tax.br('totalEscrow'),0n);
- const t=await setup({token:'HookToken'});const id=await t.create();const s=await t.commit(id,4,2);
- // arm the token so the stake/payout transfers try to call back into accept/withdraw/commit/reveal
- for(const [label,data] of [
-  ['accept',encodeFunctionData({abi:t.bb.abi,functionName:'accept',args:[s.id,2]})],
-  ['withdraw',encodeFunctionData({abi:t.bb.abi,functionName:'withdraw',args:[id]})],
-  ['reveal',encodeFunctionData({abi:t.bb.abi,functionName:'reveal',args:[s.id,2,s.reportHash,s.salt]})],
-  ['commit',encodeFunctionData({abi:t.bb.abi,functionName:'commit',args:[id,keccak256(toHex('z'))]})]] as [string,`0x${string}`][]){
-  await t.w(t.nib,t.nibArt.abi,'arm',[t.bounty,data],0);
-  await t.reveal(s).catch(()=>{});                 // first call reveals (hook fires on the stake-free path only when armed during transfers)
-  void label;
- }
- // deterministic check: arm, then settle (payout transfers fire the hook) and assert it could not re-enter
- const t3=await setup({token:'HookToken'});const id3=await t3.create();const s3=await t3.submit(id3,4,2);
- await t3.w(t3.nib,t3.nibArt.abi,'arm',[t3.bounty,encodeFunctionData({abi:t3.bb.abi,functionName:'withdraw',args:[id3]})],0);
- await t3.bw('accept',[s3.id,2],3);
- assert.equal(await t3.r(t3.nib,t3.nibArt.abi,'reentered'),true,'the hook fired');assert.equal(await t3.r(t3.nib,t3.nibArt.abi,'reentrySucceeded'),false,'re-entry was blocked');
- await t3.solvent();
+test('signer rotation: guardian only, public 7-day delay, anyone activates, old tickets stop working',async()=>{
+ const t=await setup();const id=await t.create();
+ await t.rejects(t.bw('proposeSigner',[t.hunter],5),/OnlyTheGuardian/);await t.rejects(t.bw('proposeSigner',[t.signer],2),/InvalidSigner/);await t.rejects(t.bw('proposeSigner',[t.zeroAddress],2),/InvalidSigner/);
+ await t.bw('proposeSigner',[t.accounts[10].address],2);
+ await t.rejects(t.bw('activateSigner',[],0),/NotReady/);
+ const old=await t.ticket(1,t.hunter,id,STAKE);
+ await t.warp(7*DAY+5);await t.bw('activateSigner',[],0);
+ assert.equal((await t.br('ticketSigner')).toLowerCase(),t.accounts[10].address.toLowerCase());
+ const rep=t.report();await t.rejects(t.bw('commit',[id,t.commitHash(id,t.hunter,2,rep.reportHash,rep.salt),old.tap,old.lockId,BigInt(await t.now()+999),old.signature],5),/InvalidTAPTicket|TicketExpired/);
+ await t.commit(id,5,2,rep,STAKE,await t.ticket(1,t.hunter,id,STAKE,{signerIdx:10}));
+ await t.bw('proposeSigner',[t.accounts[11].address],2);await t.bw('cancelSignerChange',[],2);await t.warp(8*DAY);await t.rejects(t.bw('activateSigner',[],0),/NotReady/);
+ // the guardian can never touch escrow
+ await t.rejects(t.bw('withdraw',[id],2),/OnlyTheCreator/);
 });
 
-test('randomised abuse run: any order of actions keeps the contract solvent and every submission terminates',async()=>{
- const t=await setup();
- let seed=20261031;const rnd=(n:number)=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed%n;};
- const ids:bigint[]=[await t.create({deposit:E(2_000_000),scope:'a'}),await t.create({deposit:E(800_000),scope:'b',who:7,review:3})];
- const subs:any[]=[];const hunters=[4,5,6];
- const attempt=async(p:Promise<any>)=>{try{await p;return true;}catch{return false;}};
- for(let step=0;step<140;step++){
-  const op=rnd(12);const sBy=subs.length?subs[rnd(subs.length)]:null;const bid=ids[rnd(2)],creatorOf=bid===ids[0]?3:7;
-  if(op<=2){const w=hunters[rnd(3)];try{subs.push(await t.commit(bid,w,1+rnd(4)));}catch{}}
-  else if(op===3&&sBy)await attempt(t.reveal(sBy));
-  else if(op===4&&sBy)await attempt(t.bw('accept',[sBy.id,1+rnd(4)],(await t.bnty(sBy.bountyId??bid)).creator.toLowerCase()===t.accounts[3].address.toLowerCase()?3:7));
-  else if(op===5&&sBy){const bnty=(await t.sub(sBy.id)).bountyId;const cr=(await t.bnty(bnty)).creator.toLowerCase()===t.accounts[3].address.toLowerCase()?3:7;await attempt(t.bw('reject',[sBy.id,1+rnd(4),BigInt(rnd(5))],cr));}
-  else if(op===6&&sBy)await attempt(t.bw('dispute',[sBy.id],sBy.who));
-  else if(op===7&&sBy)await attempt(t.bw('escalate',[sBy.id],sBy.who));
-  else if(op===8&&sBy)await attempt(t.bw('resolveDispute',[sBy.id,rnd(5),rnd(2)===1],1));
-  else if(op===9&&sBy)await attempt(t.bw(['finalize','expireCommit','claimArbiterTimeout','acceptDecision'][rnd(4)],[sBy.id],sBy.who));
-  else if(op===10)await t.warp((rnd(4)+1)*DAY);
-  else if(op===11)await attempt(t.bw('topUp',[bid,E(1000)],creatorOf));
-  await t.solvent('step '+step);
- }
- // drain: let every clock run out and resolve everything permissionlessly, then both creators can withdraw everything that is left.
- for(let round=0;round<4;round++){
-  await t.warp(31*DAY);
-  for(const s of subs){const st=(await t.sub(s.id)).status;
-   if(st===Status.Committed)await attempt(t.bw('expireCommit',[s.id],5));
-   if(st===Status.Revealed)await attempt(t.bw('escalate',[s.id],s.who));
-   if(st===Status.Decided)await attempt(t.bw('finalize',[s.id],5));
-   if(st===Status.Disputed)await attempt(t.bw('claimArbiterTimeout',[s.id],5));
-  }
- }
- await t.warp(400*DAY);
- for(const s of subs){const st=(await t.sub(s.id)).status;
-  if(st===Status.Committed)await t.bw('expireCommit',[s.id],5);
-  if(st===Status.Revealed){await t.bw('escalate',[s.id],s.who);await t.warp(15*DAY);await t.bw('claimArbiterTimeout',[s.id],5);}
-  if(st===Status.Decided){await t.bw('finalize',[s.id],5);} if(st===Status.Disputed){await t.bw('claimArbiterTimeout',[s.id],5);}
- }
- for(const s of subs){const st=(await t.sub(s.id)).status;assert.ok(st===Status.Settled||st===Status.Expired,'submission '+s.id+' ended in status '+st);}
- for(const [bid,who] of [[ids[0],3],[ids[1],7]] as const){assert.equal((await t.bnty(bid)).pending,0);assert.equal((await t.bnty(bid)).reserved,0n);await t.bw('withdraw',[bid],who);}
- assert.equal(await t.br('totalEscrow'),0n);assert.equal(await t.br('totalStakes'),0n);assert.equal(await t.bal(t.bounty),0n,'every NIB is accounted for: nothing is stuck and nothing leaked');
+test('NIB safety: fee-on-transfer tokens are refused; a reentrant token cannot double-claim or unbalance the books',async()=>{
+ const tax=await setup({token:'TaxToken'});await tax.rejects(tax.create(),/FeeOnTransfer/);
+ const t=await setup({token:'HookToken'});const id=await t.create();
+ const s=await t.submit(id,5,2);const {panel}=await t.seat(s.id);await t.judge(s.id,panel,[2,2,2]);
+ const per=pool(TIERS[1])/3n;
+ await t.w(t.nib,t.nibArt.abi,'arm',[t.bounty,(await import('viem')).encodeFunctionData({abi:t.bb.abi,functionName:'claimReward',args:[]})]);
+ await t.bw('claimReward',[],panel[0]);
+ assert.equal(await t.br('rewardOf',[t.accounts[panel[0]].address]),0n);
+ assert.equal(await t.r(t.nib,t.nibArt.abi,'reentrySucceeded'),false,'reentrant claim is blocked');
+ assert.equal(await t.bal(t.accounts[panel[0]].address)>=per,true);await t.solvent();
+});
+
+test('solvency across a mixed run: balance always equals escrow plus unclaimed reviewer rewards',async()=>{
+ const t=await setup();const id=await t.create({panel:3});
+ const flows=[[5,[2,2,2]],[6,[0,0,0]],[7,[1,1,0]]] as const;let from=REV0;
+ for(const [h,votes] of flows){const s=await t.submit(id,h,2);const seated=await t.seat(s.id,{from});await t.judge(s.id,seated.panel,[...votes]);from+=6;await t.solvent('after '+h);}
+ const open=await t.commit(id,5,2);await t.warp(25*H);await t.bw('expireCommit',[open.id],0);await t.solvent('after expiry');
+ assert.ok((await t.br('totalFees'))>0n);
+ assert.equal((await t.br('totalPaid'))+(await t.br('totalFees'))+(await t.br('totalOwed'))+(await t.br('totalReviewerPaid'))>0n,true);
 });
