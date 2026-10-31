@@ -10,6 +10,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#11120f" />
+        <meta name="google-adsense-account" content="ca-pub-4335473733432150" />
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4335473733432150" crossOrigin="anonymous" />
         <link rel="stylesheet" href="/style.css" />
         <link rel="stylesheet" href="/motion.css" />
         <link rel="stylesheet" href="/i18n.css" />
