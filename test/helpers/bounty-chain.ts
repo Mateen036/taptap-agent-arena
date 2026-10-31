@@ -39,7 +39,9 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const m=mockArtifacts(),bb=bountyArtifact();
  const send=async(hash:any)=>{const r=await client.waitForTransactionReceipt({hash});if(r.status!=='success')throw Error('reverted');return r;};
  const deploy=async(a:any,args:any[]=[],who=0)=>(await send(await wallets[who].deployContract({abi:a.abi,bytecode:a.bytecode||'0x'+a.evm.bytecode.object,args} as any))).contractAddress!;
- const w=(address:any,abi:any,fn:string,args:any[]=[],who=0,value=0n)=>wallets[who].writeContract({address,abi,functionName:fn,args,value,gas:5_000_000n} as any).then(send);
+ const w=(address:any,abi:any,fn:string,args:any[]=[],who=0,value=0n)=>wallets[who].writeContract({address,abi,functionName:fn,args,value,gas:5_000_000n} as any).then(send).catch(async(e:any)=>{if(e?.message!=='reverted')throw e;
+  // With explicit gas the tx is mined and reverts silently: replay it as a call from the same account to recover the revert reason.
+  try{await client.simulateContract({address,abi,functionName:fn,args,value,account:accounts[who]} as any);}catch(s:any){e.details=String(s?.details||s?.shortMessage||s?.message||'');}throw e;});
  const r=(address:any,abi:any,fn:string,args:any[]=[])=>client.readContract({address,abi,functionName:fn,args} as any) as Promise<any>;
  const [deployer,arbiter,feeTo,creator,hunter,hunter2,hunter3,creator2]=accounts.map(a=>a.address);
  // `pin` copies the deployed runtime code to fixed addresses, so code that pins production addresses (the connector) can be tested end to end.
