@@ -77,6 +77,7 @@ After receipt and runtime verification, set these public-address environment var
 - `NFT_LOGS_RPC_URL` (optional): RPC used only for `eth_getLogs`. BNB's `bsc-dataseed` nodes reject log queries, so without this the sales index tries `NFT_RPC_URL`, `BSC_RPC_URL`, then a public node.
 - `NFT_LP_VAULT`: verified `NibLPVault` address.
 - `NFT_COLLECTION_BIDS`: verified `NibCollectionBids` address (collection-wide bids). Leave unset until the contract is deployed and `scripts/nib-collection-bids-deploy.ts verify` passes. While unset the market tab hides the feature, the API reports `collectionBids.configured=false`, and requests are refused. The API also cross-checks the contract's collection, Agent ID registry, fee rates and fee recipient (it must equal the marketplace's) before enabling it.
+- `NIB_VAULT_V2`: verified `NibVaultV2` address (treasury-managed NIB vault). Leave unset until the contract is deployed and `scripts/nib-vault-v2-deploy.ts verify` passes. While unset the NFT page shows no V2 notice and the API reports `vaultV2.configured=false`.
 - `NFT_FEE_RECIPIENT`: optional, must match the marketplace’s immutable recipient; defaults to the LP vault. For a treasury, supply the same public address to deployment planning, preview, and verification with `--fee-recipient ADDRESS`, then set this environment variable. Changing the recipient changes the marketplace’s CREATE2 address and requires a new preview. Trading fees never increase primary mint prices.
 
 Redeploy the exact GitHub commit. The API verifies chain 56, payment token, registry, price, cap, wallet limit, vault/router/WBNB, Chainlink BNB/USD feed and native-market/collection links before enabling NFT actions. Missing configuration shows an honest deployment-pending gallery with disabled minting/trading. Incorrect contracts fail closed. Apply the additive Drizzle migrations through the existing build pipeline.
@@ -113,3 +114,15 @@ One bidder escrows BNB for N NFTs at price P each plus the 2% buyer fee (`N × (
 - Deployment: `npx tsx scripts/nib-collection-bids-deploy.ts plan|dryrun|preview|execute|verify`. `plan` and `dryrun` are read-only. `execute` requires `--approve-deployment` after the user approves the exact preview. The address is deterministic (CREATE2), so the connector pins it.
 - Chat commands: `do nft-collection-bid --bnb P --qty N [--days D]`, `do nft-collection-accept <bidId> <tokenId>`, `do nft-collection-cancel <bidId>`, `do nft-collection-book`. All keep the preview then `execute --approve` flow; selling needs the usual one-NFT approval first.
 - Site: the market tab shows the collection-bid section only when `NFT_COLLECTION_BIDS` is configured and validated.
+
+## NibVaultV2 (treasury-managed NIB vault)
+
+`contracts/NibVaultV2.sol` is a separate, simple vault owned by the project treasury (`Ownable2Step`, `ReentrancyGuard`, `SafeERC20`). **Its liquidity is not locked.** NIB is an immutable constructor argument, so there is no propose/activate step and no timelock: the treasury can add liquidity as soon as the vault is funded.
+
+- Anyone can deposit BNB (plain transfer), or any token (plain transfer or `depositToken`).
+- Owner only: `addLiquidityBNB` / `addLiquidityUSDT` (PancakeSwap V2 router, LP tokens held by the vault, mins and a 30 minute deadline required), `removeLiquidityBNB` / `removeLiquidityUSDT` (proceeds stay in the vault), `withdrawToken` (any token including LP), `withdrawBNB`, `withdrawAll(tokens)`. Withdrawals always go to `owner()`; there is no other recipient and no generic call.
+- `renounceOwnership` is disabled; ownership transfers are two-step. No fees, pause or upgrade path. Every action emits an event.
+- The old `NibLPVault` is unchanged.
+- Deploy: `npx tsx scripts/nib-vault-v2-deploy.ts plan|dryrun|preview|execute --approve-deployment|verify` (CREATE2, address known up front). Compile: `node scripts/compile-vault-v2.mjs` (standalone, writes `artifacts/NibVaultV2*.json`); BscScan input: `artifacts/NibVaultV2-standard-input.json`.
+- Tests: `npx tsx --test test/nib-vault-v2.test.ts` (local AMM mock). Set `NIB_FORK_RPC=https://bsc-dataseed.bnbchain.org` to also run the BSC mainnet-fork test against the real PancakeSwap V2 router, NIB and treasury.
+- Site: once `NIB_VAULT_V2` is set, the NFT page's LP panel shows (EN and 中文) the refund commitment and a short factual line that the vault is managed by the treasury and funds can be withdrawn.

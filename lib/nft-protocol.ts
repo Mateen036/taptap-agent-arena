@@ -48,6 +48,8 @@ export const nftVaultAbi=parseAbi(['function wrappedNative() view returns(addres
 export const nftConfigAbi=parseAbi(['function owner() view returns(address)']);
 export type NftAddresses={collection:`0x${string}`;market:`0x${string}`;vault:`0x${string}`;collectionBids?:`0x${string}`|null};
 export type NftTransaction={chainId:56;from:`0x${string}`;to:`0x${string}`;value:string;data:`0x${string}`};
+/** The treasury-managed V2 vault disclosure stays hidden everywhere until NIB_VAULT_V2 is a valid address. */
+export function nibVaultV2Address(env:{NIB_VAULT_V2?:string}):`0x${string}`|null{const a=env.NIB_VAULT_V2;return typeof a==='string'&&isAddress(a)&&!/^0x0{40}$/i.test(a)?a as `0x${string}`:null;}
 /** The collection-bid contract is optional and stays hidden everywhere until NFT_COLLECTION_BIDS is a valid address. */
 export function nftCollectionBidsAddress(env:{NFT_COLLECTION_BIDS?:string}):`0x${string}`|null{const a=env.NFT_COLLECTION_BIDS;return typeof a==='string'&&isAddress(a)&&!/^0x0{40}$/i.test(a)?a as `0x${string}`:null;}
 export function nftConfig(env:{NFT_COLLECTION?:string;NFT_MARKETPLACE?:string;NFT_LP_VAULT?:string}):NftAddresses|null{

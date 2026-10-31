@@ -958,5 +958,11 @@ add(
 ["This bid can no longer be filled.","此出价已无法再成交。"],
 ["Collection bids are not live yet.","系列出价尚未上线。"]
 );
+/* ---------- treasury-managed V2 vault notice ---------- */
+add(
+["TapTap is an experiment. If the experiment fails, paid minters will be refunded in the asset they paid with.","TapTap 是一项实验。如果实验失败，付费铸造者将以其支付时使用的资产获得退款。"],
+["The V2 vault is managed by the treasury (funds can be withdrawn to process refunds and liquidity).","V2 金库由国库管理（资金可被提取，用于处理退款和流动性）。"],
+["View V2 vault","查看 V2 金库"]
+);
 (root.TAPTAP_I18N_PAIRS=P);
 })(typeof window!=='undefined'?window:globalThis);

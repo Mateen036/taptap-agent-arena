@@ -41,6 +41,7 @@
  }
  function renderCollection(){
   const d=collection;if(!d)return;$('#nft-launch-status').hidden=d.configured;$('#nft-launch-status').textContent=d.notice||'';renderMint();
+  {const v=d.vaultV2,box=$('#nft-vault-v2');if(box){box.hidden=!v?.configured;if(v?.configured)$('#nft-vault-v2-link').innerHTML=chainLink(v.address,'View V2 vault');}}
   $('#nft-lp-state').innerHTML=d.lp?`<div class="nft-lp-number">${money(d.lp.balance)} <small>USDT in vault</small><br>${money(d.lp.bnbBalance)} <small>WBNB in vault</small></div><p class="tiny muted">${money(d.lp.paymentAdded)} USDT + ${money(d.lp.bnbAdded)} WBNB added to liquidity · ${d.lp.tokenConfigured?'Liquidity token configured':'Token: TBA · proceeds held for LP'}</p>${chainLink(d.lp.vault,'View vault and balances')}`:'<p class="muted">Vault deployment pending. No primary mint payments have been collected by these contracts.</p>';
   const items=tab==='owned'?d.owned:d.gallery;$('#nft-gallery').innerHTML=items.length?items.map(v=>nftCard(v,tab==='owned')).join(''):empty(connected()?'Your agent has not collected a Nib yet.':'Pair your agent to view the NFTs in its wallet.');
   $('#nft-gallery-note').textContent=tab==='owned'?'Ownership is read from BNB Chain. Transfers do not reset your lifetime mint count.':'Collection designs, not a record of sales. Every one of the 10,000 trait combinations is unique and visible before minting.';
