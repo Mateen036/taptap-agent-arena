@@ -1,8 +1,8 @@
-import {createPublicClient,http,parseAbi} from 'viem';
+import {createPublicClient,parseAbi} from 'viem';
 import {bsc} from 'viem/chains';
+import {bscTransport} from '../lib/rpc';
 import {execSync} from 'node:child_process';
 
-const RPC = 'https://bsc-dataseed.bnbchain.org';
 const AIRDROP = '0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5';
 const TREASURY = '0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d';
 const SELECTOR_OPEN_NEXT_SEASON = '0xe7bfd23a';
@@ -14,7 +14,7 @@ const abi = parseAbi([
   'function owner() view returns (address)'
 ]);
 
-const client = createPublicClient({chain: bsc, transport: http(RPC)});
+const client = createPublicClient({chain: bsc, transport: bscTransport()});
 
 export async function checkAndAdvanceSeason(): Promise<{advanced: boolean; message: string}> {
   try {
@@ -25,8 +25,8 @@ export async function checkAndAdvanceSeason(): Promise<{advanced: boolean; messa
 
     console.log(`[SeasonKeeper] Season ${current}: status=${status} (1=Open, 2=Ended), remaining=${rem / 10n**18n} NIB`);
 
-    if (current >= 4) {
-      return {advanced: false, message: `Season ${current} reached. Final season target met.`};
+    if (current >= 4 && status === 1) {
+      return {advanced: false, message: `Season 4 is already open. Keeper targets completed.`};
     }
 
     if (status === 2 || rem === 0n) {
@@ -61,10 +61,10 @@ export async function checkAndAdvanceSeason(): Promise<{advanced: boolean; messa
 }
 
 async function loop() {
-  console.log('[SeasonKeeper] Starting autonomous season keeper daemon...');
+  console.log('[SeasonKeeper] Autonomous season keeper active (checking every 15s with multi-RPC fallback)...');
   while (true) {
     await checkAndAdvanceSeason();
-    await new Promise(r => setTimeout(r, 60_000)); // check every 60 seconds
+    await new Promise(r => setTimeout(r, 15_000));
   }
 }
 
