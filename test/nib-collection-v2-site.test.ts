@@ -36,6 +36,8 @@ test('NFT_COLLECTION_V2 switches the whole site to V2 and hides v1',async()=>{
   await f.write(col,v2.abi,'finalizeAirdrop',[],0);await f.write(col,v2.abi,'setMintOpen',[true],0);
   s=await snap();assert.equal(s.status,'live');assert.equal(s.mintOpen,true);assert.equal(s.minted,5);
   assert.deepEqual([s.v2.airdropCount,s.v2.bonusCount,s.v2.ownerMinted,s.v2.publicMinted],[1,2,2,0]);
+  // Free mints are per wallet and public-mint only: an airdropped / bonus / owner-minted wallet still has all 3 free mints, so every V1 holder gets 3 free V2 mints.
+  for(const w of [a[1],a[3],a[4],a[2]]){const sw=await nftSnapshot(env,w,url,Date.now()) as any;assert.equal(sw.wallet.minted,0,'airdropped NFTs must not count as minted');assert.equal(sw.wallet.freeRemaining,3);assert.equal(sw.wallet.freeAvailable,true);assert.equal(sw.wallet.remaining,10);}
   // Game gate + multiplier read V2 holdings only: wallet 1 holds v1 id 1 AND airdropped V2 id 1; wallet 2 holds nothing on V2.
   const policy={active:true,version:2 as const,formula:'5*owned' as const,scope:'earned_tap_only' as const};
   const g1=await gameAccess({...env,_utilityPolicy:policy},a[1]);assert.equal(g1.canPlay,true);assert.equal(g1.owned,1);assert.equal(g1.multiplier,'5');assert.equal(g1.collection?.toLowerCase(),col.toLowerCase());

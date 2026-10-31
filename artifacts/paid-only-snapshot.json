@@ -1,0 +1,110 @@
+{
+ "chainId": 56,
+ "block": "130772440",
+ "takenAt": "2026-10-31T01:53:47.335Z",
+ "v1": "0x7374f0379F5b2689B906D47Da708B394F1910B23",
+ "v2": "0xdA35ed11057Cd85Eb338a637f5509080F617a810",
+ "registry": "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F",
+ "v1Minted": 1187,
+ "holders": [
+  {
+   "id": 156,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 157,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 158,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 159,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 160,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 161,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 162,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 163,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 164,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 165,
+   "owner": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "hasAgentId": true
+  },
+  {
+   "id": 283,
+   "owner": "0xe752167Cff197DF876398d6E3C666C5056898026",
+   "hasAgentId": true
+  },
+  {
+   "id": 285,
+   "owner": "0xe752167Cff197DF876398d6E3C666C5056898026",
+   "hasAgentId": true
+  },
+  {
+   "id": 286,
+   "owner": "0xe752167Cff197DF876398d6E3C666C5056898026",
+   "hasAgentId": true
+  }
+ ],
+ "bonus": [
+  {
+   "wallet": "0x67E576995f5c41c0cC160a5C648fb35d6F6ED43b",
+   "paidMints": 9,
+   "usd": "9.00",
+   "bonusNfts": 180,
+   "hasAgentId": true
+  },
+  {
+   "wallet": "0xe752167Cff197DF876398d6E3C666C5056898026",
+   "paidMints": 2,
+   "usd": "2.00",
+   "bonusNfts": 40,
+   "hasAgentId": true
+  }
+ ],
+ "totals": {
+  "airdropIds": 13,
+  "bonusNfts": 220,
+  "recipients": 1176,
+  "withoutAgentId": []
+ },
+ "crossCheck": {
+  "mintedBySum": "1187",
+  "v1Minted": 1187,
+  "usdtPaidByWallet": {
+   "0xe752167cff197df876398d6e3c666c5056898026": "2 USDT"
+  },
+  "refundsCsv": {
+   "rows": 2,
+   "matches": true,
+   "diffs": []
+  }
+ }
+}

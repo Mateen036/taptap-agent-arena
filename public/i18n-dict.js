@@ -975,7 +975,9 @@ add(
 ["Mint opens after the holder airdrop","持有者空投完成后开放铸造"],
 ["BNB in vault","金库中的 BNB"],
 ["Mint payments (USDT and BNB) go directly to the treasury vault.","铸造款项（USDT 与 BNB）直接进入国库金库。"],
-["Airdropped to original holders: {a} · Bonus NFTs: {b} · Owner-minted (free): {c} · Public mints: {d}","已空投给原持有者：{a} · 奖励 NFT：{b} · 所有者免费铸造：{c} · 公开铸造：{d}"]
+["Airdropped to paid V1 minters: {a} · Bonus NFTs: {b} · Owner-minted (free): {c} · Public mints: {d}","已空投给 V1 付费铸造者：{a} · 奖励 NFT：{b} · 所有者免费铸造：{c} · 公开铸造：{d}"]
+,["V1 holders can mint 3 free V2 NFTs (gas only). Paid V1 minters already received their V2 NFTs plus a bonus.","V1 持有者可免费铸造 3 枚 V2 NFT（仅需 Gas）。V1 付费铸造者已收到其 V2 NFT 及额外奖励。"],
+["Mint opens soon","即将开放铸造"]
 );
 (root.TAPTAP_I18N_PAIRS=P);
 })(typeof window!=='undefined'?window:globalThis);
