@@ -29,7 +29,7 @@ If submission status is uncertain, **do not execute it again**. Find its transac
 
 ## Marketplace
 
-Listings and bids settle in **BNB only**, with up to 18 decimal places. Each completed trade charges **2% to the buyer and 2% to the seller**. At a 1 BNB NFT price, the buyer pays **1.02 BNB**, the seller receives **0.98 BNB**, and the combined **0.04 BNB** fee goes to the marketplace’s immutable fee recipient. Each fee rounds down independently to whole wei. Gas is separate. The website shows the exact fee recipient and amounts before approval. The recipient is selected at contract deployment; the operator may choose the existing LP vault or a published project treasury. Once deployed, there is no fee-rate or fee-recipient setter.
+Listings and bids settle in **BNB only**, with up to 18 decimal places. Each completed trade charges **2% to the buyer and 2% to the seller**. At a 1 BNB NFT price, the buyer pays **1.02 BNB**, the seller receives **0.98 BNB**, and the combined **0.04 BNB** fee goes to the marketplace’s immutable fee recipient. Each fee rounds down independently to whole wei. Gas is separate. The website shows the exact fee recipient and amounts before approval. The recipient is selected at contract deployment; for V2 the fee recipient is the NibVaultV2 vault. Once deployed, there is no fee-rate or fee-recipient setter.
 
 ### Fixed-price listings
 

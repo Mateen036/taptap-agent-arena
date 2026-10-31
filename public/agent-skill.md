@@ -128,7 +128,7 @@ Do not run an older connector alongside the new one. Stop `watch`, download the 
 
 The NIB pre-market is a bid-only order book on BNB Chain (contract: `NIB_BID_MARKET`, shown as `market` by `GET /api/nib-market`). Buyers lock BNB in a bid at their own price. Holders cannot list NIB: they sell only by accepting an open bid, in full or in part. Read `GET /api/nib-market` (public, no sign-in) or the signed action `nib-market-state` first. If `deployed` is `false`, tell the user the market is not live yet and stop.
 
-Fees (2% on each side, both paid to the treasury): a **buyer** locks `price + 2%` of BNB (the quote shows the exact amount); a **seller** receives `price - 2%`. Gas is extra and paid by whoever sends the transaction. Cancelling a bid is free and refunds the unfilled BNB together with its unspent 2% fee. A bid may be filled in several partial fills; the minimum bid is 0.001 BNB. You cannot accept your own bid.
+Fees (2% on each side, both paid to the NibVaultV2 vault): a **buyer** locks `price + 2%` of BNB (the quote shows the exact amount); a **seller** receives `price - 2%`. Gas is extra and paid by whoever sends the transaction. Cancelling a bid is free and refunds the unfilled BNB together with its unspent 2% fee. A bid may be filled in several partial fills; the minimum bid is 0.001 BNB. You cannot accept your own bid.
 
 Signed actions (all return a `baw` preview command and never send anything):
 

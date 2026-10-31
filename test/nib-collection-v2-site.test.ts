@@ -26,7 +26,7 @@ test('NFT_COLLECTION_V2 switches the whole site to V2 and hides v1',async()=>{
   assert.equal(s.contracts.collection.toLowerCase(),col.toLowerCase());assert.equal(s.contracts.market.toLowerCase(),mkt.toLowerCase());assert.equal(s.contracts.vault.toLowerCase(),vault.toLowerCase());
   const text=JSON.stringify(s).toLowerCase();for(const old of [f.collection,f.market,f.vault])assert.ok(!text.includes(old.toLowerCase()),'v1 address leaked: '+old);
   assert.equal(s.lp,null);assert.equal(s.v2.active,true);assert.equal(s.v2.airdropFinalized,false);assert.equal(s.status,'awaiting_airdrop');assert.equal(s.mintOpen,false);
-  assert.equal(s.freePerWallet,3);assert.equal(s.paidPrice,'0.05');assert.equal(s.minted,0);assert.equal(s.v2.publicStartId,2);assert.equal(s.feeDestination,'Treasury vault');
+  assert.equal(s.freePerWallet,3);assert.equal(s.paidPrice,'0.05');assert.equal(s.minted,0);assert.equal(s.v2.publicStartId,2);assert.equal(s.feeDestination,'NibVaultV2 vault');
   // Half-configured V2 fails closed instead of falling back to v1.
   await assert.rejects(nftSnapshot({...env,NFT_MARKETPLACE_V2:undefined},null,url,Date.now()),/incomplete/);
   // A contract that is not a NibCollectionV2 (here: the old collection) is refused.
