@@ -24,14 +24,14 @@ export function mockArtifacts(){if(compiled)return compiled;const out=JSON.parse
 export const bountyArtifact=()=>JSON.parse(fs.readFileSync('artifacts/NibBugBounty.json','utf8'));
 export const FEE_BPS=200n,REVIEWER_BPS=2000n,MIN_DEPOSIT=E(10000),MIN_TIER=E(10000);
 export const TIERS=[E(10000),E(25000),E(50000),E(100000)],STAKE=1000n,DEPOSIT=E(300000);
-export const Status={None:0,Committed:1,Applying:2,Voting:3,Settled:4} as const;
+export const Status={None:0,Committed:1,Applying:2,Voting:3,Settled:4,Rejected:5,Appealed:6} as const;
 export const Outcome={None:0,Valid:1,Invalid:2,Duplicate:3,Inconclusive:4,NoQuorum:5,NoPanel:6,Unrevealed:7} as const;
 export const DUP=255;
 const providers:any[]=[];export const closeAll=()=>Promise.all(providers.splice(0).map(p=>p.disconnect()));
-// wallet indexes: 0 deployer, 1 ticket signer, 2 guardian, 3 fee recipient (the vault), 4 creator, 5 hunter, 6 hunter2, 7 hunter3, 8 creator2, 9..28 reviewers
-export const REV0=9;
+// wallet indexes: 30 owner (the treasury: decides appeals only), 0 deployer, 1 ticket signer, 2 guardian, 3 fee recipient (the vault), 4 creator, 5 hunter, 6 hunter2, 7 hunter3, 8 creator2, 9..28 reviewers
+export const REV0=9,OWNER=30;
 export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint;reviewerBps?:bigint;server?:boolean;pin?:{nib:string;bounty:string;registry?:string}}={}){
- const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:30},miner:{blockGasLimit:30000000}};
+ const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:31},miner:{blockGasLimit:30000000}};
  // `server:true` also exposes the chain over HTTP, so lib code that talks to BSC_RPC_URL can be tested against it.
  let rpc='';let provider:any;
  if(opts.server){const server=ganache.server(cfg);await server.listen(0,'127.0.0.1');provider=server.provider;rpc='http://127.0.0.1:'+server.address().port;providers.push({disconnect:()=>server.close()});}
@@ -47,12 +47,12 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
   try{await provider.request({method:'eth_call',params:[{from:accounts[who].address,to:address,data:encodeFunctionData({abi,functionName:fn,args} as any),value:value?toHex(value):undefined},'latest']});}
   catch(s:any){let d=String(s?.message||'');try{if(s?.data)d+=' '+decodeErrorResult({abi:[...abi,...bb.abi.filter((x:any)=>x.type==='error')],data:s.data}).errorName;}catch{d+=' '+String(s.data||'');}e.details=d;}throw e;});
  const r=(address:any,abi:any,fn:string,args:any[]=[])=>client.readContract({address,abi,functionName:fn,args} as any) as Promise<any>;
- const [deployer,signer,guardian,feeTo,creator,hunter,hunter2,hunter3,creator2]=accounts.map(a=>a.address);
+ const [deployer,signer,guardian,feeTo,creator,hunter,hunter2,hunter3,creator2]=accounts.map(a=>a.address),owner=accounts[OWNER].address;
  // `pin` copies the deployed runtime code to fixed addresses, so code that pins production addresses (the connector) can be tested end to end.
  const putCode=async(from:any,to:string)=>{await provider.request({method:'evm_setAccountCode',params:[to,await client.getCode({address:from})]});return to as any;};
  const nibName=opts.token||'MockNib',nibArt=m[nibName],nib=opts.pin?await putCode(await deploy(nibArt),opts.pin.nib):await deploy(nibArt),registry=opts.pin?.registry?await putCode(await deploy(m.MockIdentity),opts.pin.registry):await deploy(m.MockIdentity);
  const feeBps=opts.feeBps??FEE_BPS,reviewerBps=opts.reviewerBps??REVIEWER_BPS;
- const cargs=[nib,registry,signer,guardian,feeTo,feeBps,reviewerBps,MIN_DEPOSIT,MIN_TIER];
+ const cargs=[nib,registry,signer,guardian,feeTo,feeBps,reviewerBps,MIN_DEPOSIT,MIN_TIER,owner];
  const bounty=opts.pin?await (async()=>{
   // storage written by the constructor (the rotatable ticket signer) is not part of the code, so it is copied slot by slot
   const real=await deploy(bb,cargs),at=await putCode(real,opts.pin!.bounty);
@@ -63,7 +63,7 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const bal=(a:any)=>r(nib,nibArt.abi,'balanceOf',[a]) as Promise<bigint>;
  const idy=(a:any,n=1n)=>w(registry,m.MockIdentity.abi,'set',[a,n]);
  for(const i of [4,5,6,7,8]){await idy(accounts[i].address);await mint(accounts[i].address,E(10_000_000));await approve(i);}
- for(let i=REV0;i<accounts.length;i++)await idy(accounts[i].address);
+ for(let i=REV0;i<OWNER;i++)await idy(accounts[i].address);
  const bw=(fn:string,args:any[]=[],who=0)=>w(bounty,bb.abi,fn,args,who).catch((e:any)=>{if(e.message==='reverted')e.message='reverted: '+fn+' by account '+who;if(e.details)e.message+=' / '+String(e.details).slice(0,200);throw e;}),br=(fn:string,args:any[]=[])=>r(bounty,bb.abi,fn,args);
  const now=async()=>Number((await client.getBlock()).timestamp);
  const warp=async(s:number)=>{await provider.request({method:'evm_increaseTime',params:[s]});await provider.request({method:'evm_mine',params:[]});};
@@ -111,8 +111,10 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
   await bw('finalizeJudgment',[id],0);
  };
  const settleValid=async(bountyId:bigint,hunterIdx:number,severity=2,votes?:(number|null)[])=>{const s=await submit(bountyId,hunterIdx,severity);const seated=await seat(s.id);await judge(s.id,seated.panel,votes??seated.panel.map(()=>severity));return {s,...seated};};
+ // A rejected (invalid / duplicate) report is provisional: once the appeal window passes unused anyone closes it.
+ const closeRejection=async(id:bigint)=>{await warp(3*DAY+5);await bw('resolveRejection',[id,0],0);};
  const solvent=async(label='')=>{const [held,escrow,owed]=await Promise.all([bal(bounty),br('totalEscrow'),br('totalOwed')]);if(held!==escrow+owed)throw Error(`INSOLVENT ${label}: balance ${held} != escrow ${escrow} + owed ${owed}`);};
  const rejects=async(p:Promise<any>,re?:RegExp)=>{try{await p;}catch(e:any){if(re&&!re.test(String(e?.shortMessage||'')+String(e?.details||'')+String(e?.message||'')))throw Error('Reverted with a different reason than expected '+re+': '+String(e?.details||e?.shortMessage||e?.message).slice(0,300));return;}throw Error('Expected a revert'+(re?' matching '+re:''));};
  const keys=Object.values(provider.getInitialAccounts()).map((a:any)=>a.secretKey as string);
- return {provider,rpc,keys,voteSalt,client,accounts,wallets,m,bb,deployer,signer,guardian,feeTo,creator,hunter,hunter2,hunter3,creator2,nib,nibArt,registry,bounty,deploy,w,r,bw,br,mint,approve,bal,idy,now,warp,mine,scopeHash,create,ticket,commitHash,report,commit,reveal,submit,apply,seat,voteHash,castVote,openVote,judge,settleValid,sub,bnty,solvent,rejects,zeroAddress,bountyArt:bb};
+ return {provider,rpc,keys,voteSalt,client,accounts,wallets,m,bb,deployer,signer,guardian,owner,feeTo,creator,hunter,hunter2,hunter3,creator2,nib,nibArt,registry,bounty,deploy,w,r,bw,br,mint,approve,bal,idy,now,warp,mine,scopeHash,create,ticket,commitHash,report,commit,reveal,submit,apply,seat,voteHash,castVote,openVote,judge,settleValid,closeRejection,sub,bnty,solvent,rejects,zeroAddress,bountyArt:bb};
 }

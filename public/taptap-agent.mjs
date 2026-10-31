@@ -18904,7 +18904,7 @@ import path2 from "node:path";
 import fs from "node:fs";
 import path from "node:path";
 import crypto3 from "node:crypto";
-var NIB_BUG_BOUNTY = "0x2f6AED3292c92a130FaaB8D5665B73E932DD0231";
+var NIB_BUG_BOUNTY = "0x9E2b99C67201e953d33613B53dB80442D27024fE";
 var NIB_TOKEN_PIN = "0x1F11d9feAF354aD31861B4fa26759349e2860cFb";
 var MAX_REPORT_BYTES = 49152;
 var MAX_SCOPE_BYTES = 16384;
@@ -18924,6 +18924,8 @@ var bountyCallAbi = parseAbi([
   "function commitVote(uint256 submissionId,bytes32 voteHash)",
   "function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)",
   "function finalizeJudgment(uint256 submissionId)",
+  "function appeal(uint256 submissionId)",
+  "function resolveRejection(uint256 submissionId,uint8 severity)",
   "function claimReward()"
 ]);
 var approveAbi = parseAbi(["function approve(address,uint256) returns (bool)"]);
@@ -19346,7 +19348,7 @@ var bountyState = async (ctx) => {
     throw e;
   }
 };
-var STEP_COMMAND = { reveal: "bounty-reveal <bounty id>", expire: "bounty-expire", apply: "bounty-review", select: "bounty-select", "start-selection": "bounty-start-selection", vote: "bounty-vote --verdict \u2026", "open-vote": "bounty-open-vote", finalize: "bounty-finalize" };
+var STEP_COMMAND = { reveal: "bounty-reveal <bounty id>", expire: "bounty-expire", apply: "bounty-review", select: "bounty-select", "start-selection": "bounty-start-selection", vote: "bounty-vote --verdict \u2026", "open-vote": "bounty-open-vote", finalize: "bounty-finalize", appeal: "bounty-appeal", "owner-decision": "bounty-resolve <sid> --severity 0-4 (owner only)", "finalize-rejection": "bounty-finalize-rejection" };
 async function bountyPrepare(ctx, label, payload, spec, hint) {
   const r = await act(ctx, "bounty-tx", payload), b = r.bugBounty, steps = b?.steps || [];
   if (!steps.length) fail("The site returned no transaction.");
@@ -19372,7 +19374,9 @@ var SIMPLE_BOUNTY = {
   "bounty-expire": { server: "expire", fn: "expireCommit", label: "Expire an unrevealed commit (the hunter's TAP stake is forfeited)" },
   "bounty-start-selection": { server: "start-selection", fn: "startSelection", label: "Start the random draw of the review panel", hint: "A block or two later run: do bounty-select <submissionId>" },
   "bounty-select": { server: "select", fn: "selectPanel", label: "Draw the review panel at random from the applicants" },
-  "bounty-finalize": { server: "finalize", fn: "finalizeJudgment", label: "Count the panel's votes, pay out and settle every TAP stake" }
+  "bounty-finalize": { server: "finalize", fn: "finalizeJudgment", label: "Count the panel's votes, pay out and settle every TAP stake" },
+  "bounty-appeal": { server: "appeal", fn: "appeal", label: "Appeal a rejected report: the owner (treasury) then decides this one report (your TAP stays locked, the payout stays reserved)" },
+  "bounty-finalize-rejection": { server: "finalize-rejection", fn: "resolveRejection", label: "Close a rejected report once no appeal can change it (the panel verdict stands)", extra: ["0"] }
 };
 var verdictOf = (f) => {
   const v = String(f.verdict ?? fail("Give --verdict invalid | 1-4 (severity you judge it to deserve) | duplicate --duplicate-of <earlier submission id>.")).toLowerCase();
@@ -19412,6 +19416,7 @@ async function bountyCmd(ctx, cmd, rest, f) {
       const todo = [...(m.you.mySubmissions || []).filter((s) => s.status !== "Settled").map((s) => "#" + s.id + " (your report, bounty #" + s.bountyId + ") " + s.status + (s.next?.step ? " \u2192 " + STEP_COMMAND[s.next.step] : "")), ...(m.you.myReviews || []).filter((s) => s.status !== "Settled").map((s) => "#" + s.id + " (you review) " + s.reviewer.state + (s.next?.step ? " \u2192 " + STEP_COMMAND[s.next.step] : ""))];
       if (todo.length) ctx.out("Your open items: " + todo.join("; "));
       if (m.you.myBounties?.length) ctx.out("Your bounties: " + m.you.myBounties.map((i) => "#" + i).join(", "));
+      if (m.you.appealsToDecide?.length) ctx.out("Appeals waiting for the owner's decision: " + m.you.appealsToDecide.map((s) => "#" + s.id + " (bounty #" + s.bountyId + ", claimed " + s.claimed + ", decide by " + new Date(s.appeal.by * 1e3).toISOString() + ")").join("; ") + " \u2192 bounty-resolve <sid> --severity 0-4");
       ctx.out("TAP for stakes: " + m.you.tap.available + " available, " + m.you.tap.locked + " locked" + (Number(m.you.rewardNib) > 0 ? " \xB7 NIB reviewer reward to claim: " + m.you.rewardNib + " (do bounty-claim)" : "") + (m.you.reputation.cooldownUntil ? " \xB7 cooling down until " + new Date(m.you.reputation.cooldownUntil * 1e3).toISOString() : ""));
     }
     return m;
@@ -19533,7 +19538,11 @@ async function bountyCmd(ctx, cmd, rest, f) {
   const simple = SIMPLE_BOUNTY[cmd];
   if (simple) {
     const id = bidId(rest[0]);
-    return bountyPrepare(ctx, simple.label + " (#" + id + ")", simple.server === "expire" ? { fn: "expire", id } : { fn: simple.server, submissionId: id }, { fn: simple.fn, args: [id] }, simple.hint);
+    return bountyPrepare(ctx, simple.label + " (#" + id + ")", simple.server === "expire" ? { fn: "expire", id } : { fn: simple.server, submissionId: id }, { fn: simple.fn, args: [id, ...simple.extra || []] }, simple.hint);
+  }
+  if (cmd === "bounty-resolve") {
+    const id = bidId(rest[0]), sv = posInt(String(f.severity ?? fail("Give --severity 0 (reject for good) or 1-4 (approve at that tier, up to the claim).")), "--severity", 0, 4);
+    return bountyPrepare(ctx, "Owner decision on appealed submission #" + id + (sv === 0 ? ": reject for good" : ": approve at severity " + sv) + " (final)", { fn: "resolve", submissionId: id, severity: sv }, { fn: "resolveRejection", args: [id, String(sv)] });
   }
   return fail("Unknown bounty command.");
 }
@@ -19985,6 +19994,9 @@ var DO_HELP = `Plain-chat commands (the agent runs these; the user just says it)
   do bounty-report <sid>                read a report (hunter, the project after reveal, the drawn panel)
   do bounty-vote <sid> --verdict invalid|1-4|duplicate [--duplicate-of N]   panelist: seal your vote (within 72h)
   do bounty-open-vote <sid> | bounty-finalize <sid>   open your vote \xB7 anyone: count votes, pay out, settle TAP
+  do bounty-appeal <sid>                hunter: appeal a rejected (invalid/duplicate) report within 3 days; the owner then decides it
+  do bounty-resolve <sid> --severity 0-4   owner (treasury) only: decide an appeal for good (0 = reject, 1-4 = approve up to the claim)
+  do bounty-finalize-rejection <sid>    anyone: close a rejection after the appeal window passed unused or the owner let it lapse
   do bounty-claim                       reviewers: pull your NIB reward
   do bounty-expire <sid>                anyone: close a commit that was never revealed (hunter's TAP is forfeited)
   do bounty-create --tiers 10000,25000,50000,100000 --deposit 300000 --days 30 --panel 3 --scope-file scope.md [--tap-stake N]   (lowest tier at least 10,000 NIB)

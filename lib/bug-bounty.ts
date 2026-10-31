@@ -16,28 +16,28 @@ export const BUG_BOUNTY_ACTIONS=['bounty-state','bounty-tx','bounty-scope-put','
 export const MAX_SCOPE_BYTES=16384,MAX_REPORT_BYTES=49152,MAX_LIST=40;
 export const TICKET_TTL_SECONDS=900,MAX_OPEN_LOCKS=5,TICKETS_PER_DAY=30,RELEASE_MARGIN_SECONDS=60;
 export const TIER_NAMES:Record<number,string[]>={1:['Bounty'],2:['Low','High'],3:['Low','Medium','High'],4:['Low','Medium','High','Critical']};
-export const STATUS=['None','Committed','Applying','Voting','Settled'] as const;
+export const STATUS=['None','Committed','Applying','Voting','Settled','Rejected','Appealed'] as const;
 export const OUTCOMES=['none','valid','invalid','duplicate','inconclusive','no_quorum','no_panel','unrevealed'] as const;
 export const REVIEWER_STATES=['none','applied','seated','not_seated'] as const;
 export const VERDICT_DUPLICATE=255;
 export const MIN_TAP_STAKE=500n;
 export const bountyAbi=parseAbi([
- 'function nib() view returns (address)','function ticketSigner() view returns (address)','function guardian() view returns (address)','function feeRecipient() view returns (address)','function feeBps() view returns (uint256)','function reviewerBps() view returns (uint256)','function minDeposit() view returns (uint256)','function minLowestTier() view returns (uint256)',
+ 'function nib() view returns (address)','function ticketSigner() view returns (address)','function guardian() view returns (address)','function owner() view returns (address)','function feeRecipient() view returns (address)','function feeBps() view returns (uint256)','function reviewerBps() view returns (uint256)','function minDeposit() view returns (uint256)','function minLowestTier() view returns (uint256)',
  'function bountyNonce() view returns (uint256)','function submissionNonce() view returns (uint256)','function totalEscrow() view returns (uint256)','function totalOwed() view returns (uint256)','function totalPaid() view returns (uint256)','function totalFees() view returns (uint256)','function totalReviewerPaid() view returns (uint256)',
  'function pendingSigner() view returns (address)','function pendingSignerAt() view returns (uint256)',
  'function getBounty(uint256 id) view returns ((address creator,uint64 createdAt,uint64 endsAt,uint64 cancelRequestedAt,uint32 panelSize,uint32 tierCount,uint32 pending,uint32 submissionCount,bool closed,uint256 tapStake,uint256 available,uint256 reserved,bytes32 scopeHash,uint256[4] tiers))',
- 'function getSubmission(uint256 id) view returns ((uint256 bountyId,address hunter,uint8 status,uint8 outcome,uint8 claimed,uint8 awarded,bool extended,bytes32 commitHash,bytes32 reportHash,uint64 committedAt,uint64 revealedAt,uint64 deadline,uint64 revealDeadline,uint64 seedBlock,uint32 applicants,uint32 commits,uint32 reveals,uint32 aligned,uint256 duplicateOf,uint256 tapStake,bytes32 hunterLock))',
+ 'function getSubmission(uint256 id) view returns ((uint256 bountyId,address hunter,uint8 status,uint8 outcome,uint8 claimed,uint8 awarded,bool extended,bytes32 commitHash,bytes32 reportHash,uint64 committedAt,uint64 revealedAt,uint64 deadline,uint64 revealDeadline,uint64 seedBlock,uint32 applicants,uint32 commits,uint32 reveals,uint32 aligned,uint256 duplicateOf,uint256 tapStake,bytes32 hunterLock,bool overruled))',
  'function getReviewer(uint256 id,address who) view returns ((uint8 state,bool committed,bool revealed,bool aligned,uint8 verdict,bytes32 lockId,bytes32 voteHash,uint256 tap))',
  'function locks(bytes32) view returns (address wallet,uint8 role,uint256 submissionId,uint256 tap)',
  'function tapResult(bytes32 lockId) view returns (bool final_,uint256 returned,uint256 reward,uint256 burned)',
- 'function submissionsOf(uint256 bountyId) view returns (uint256[])','function hunterSubmissions(address hunter) view returns (uint256[])','function reviewerSubmissions(address who) view returns (uint256[])','function applicantsOf(uint256 id) view returns (address[])','function panelOf(uint256 id) view returns (address[])',
+ 'function submissionsOf(uint256 bountyId) view returns (uint256[])','function hunterSubmissions(address hunter) view returns (uint256[])','function reviewerSubmissions(address who) view returns (uint256[])','function panelOf(uint256 id) view returns (address[])',
  'function closesAt(uint256 id) view returns (uint256)','function isOpen(uint256 id) view returns (bool)','function freeSlots(uint256 id) view returns (uint256)','function quorum(uint256 panelSize) pure returns (uint256)','function minTapStake(uint256 lowestTier) pure returns (uint256)',
  'function hunterActive(uint256,address) view returns (uint256)','function hunterInBounty(uint256,address) view returns (bool)','function hunterActiveTotal(address) view returns (uint256)','function reviewerActive(address) view returns (uint256)','function strikes(address) view returns (uint256)','function cooldownUntil(address) view returns (uint256)','function rewardOf(address) view returns (uint256)','function commitUsed(uint256,bytes32) view returns (bool)',
  'function commitHashFor(uint256 bountyId,address hunter,uint8 severity,bytes32 reportHash,bytes32 salt) view returns (bytes32)','function voteHashFor(uint256 submissionId,address reviewer,uint8 verdict,uint256 duplicateOf,bytes32 salt) view returns (bytes32)',
  'function createBounty(bytes32 scopeHash,uint256[] tiers,uint256 endsAt,uint256 panelSize,uint256 tapStake,uint256 deposit) returns (uint256)','function topUp(uint256 id,uint256 amount)','function extend(uint256 id,uint256 newEndsAt)','function requestCancel(uint256 id)','function withdraw(uint256 id)',
  'function commit(uint256 bountyId,bytes32 commitHash,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature) returns (uint256)','function reveal(uint256 submissionId,uint8 severity,bytes32 reportHash,bytes32 salt)','function expireCommit(uint256 submissionId)',
  'function applyToReview(uint256 submissionId,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature)','function startSelection(uint256 submissionId)','function selectPanel(uint256 submissionId)',
- 'function commitVote(uint256 submissionId,bytes32 voteHash)','function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)','function finalizeJudgment(uint256 submissionId)','function claimReward()'
+ 'function commitVote(uint256 submissionId,bytes32 voteHash)','function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)','function finalizeJudgment(uint256 submissionId)','function appeal(uint256 submissionId)','function resolveRejection(uint256 submissionId,uint8 severity)','function claimReward()'
 ]);
 const erc20Abi=parseAbi(['function balanceOf(address) view returns (uint256)','function allowance(address,address) view returns (uint256)','function approve(address,uint256) returns (bool)']);
 const client=(e:BugBountyEnv)=>createPublicClient({chain:bsc,transport:e.BSC_RPC_URL?http(e.BSC_RPC_URL,{timeout:8000,retryCount:1,batch:true}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0,batch:true}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0,batch:true})])}) as any;
@@ -80,6 +80,8 @@ export function nextStep(s:{status:number;deadline:number;revealDeadline:number;
  if(s.status===1)return nowSec>s.deadline?{step:'expire',at:null}:{step:'reveal',at:s.deadline};
  if(s.status===2){if(s.seedBlock>0){if(block!==undefined&&block>s.seedBlock+200)return {step:'start-selection',at:null};return {step:'select',at:null};}return nowSec>s.deadline?{step:'start-selection',at:null}:{step:'apply',at:s.deadline};}
  if(s.status===3){if(s.reveals===panelSize||nowSec>s.revealDeadline)return {step:'finalize',at:null};return nowSec<=s.deadline&&s.commits<panelSize?{step:'vote',at:s.deadline}:{step:'open-vote',at:s.revealDeadline};}
+ if(s.status===5)return nowSec>s.deadline?{step:'finalize-rejection',at:null}:{step:'appeal',at:s.deadline};   // the hunter may appeal until `at`; then anyone closes it
+ if(s.status===6)return nowSec>s.deadline?{step:'finalize-rejection',at:null}:{step:'owner-decision',at:s.deadline};
  return {step:null,at:null};
 }
 /** Terms a project must accept before the preview is built (mirrors the contract so errors are friendly; the contract still enforces). */
@@ -134,8 +136,8 @@ const rd=(c:any,address:`0x${string}`,functionName:string,args:any[]=[])=>c.read
 /** Many reads in one JSON-RPC batch (the transport batches same-tick requests). Works on any node: no Multicall3 dependency. */
 const many=(c:any,address:`0x${string}`,calls:{functionName:string;args:any[]}[]):Promise<any[]>=>Promise.all(calls.map(x=>rd(c,address,x.functionName,x.args)));
 async function params(c:any,a:`0x${string}`){
- const [signer,guardian,feeRecipient,feeBps,reviewerBps,minDeposit,minLowestTier,nib]=await Promise.all(['ticketSigner','guardian','feeRecipient','feeBps','reviewerBps','minDeposit','minLowestTier','nib'].map(fn=>rd(c,a,fn)));
- return {signer:lc(signer),guardian:lc(guardian),feeRecipient:lc(feeRecipient),feeBps:Number(feeBps),reviewerBps:Number(reviewerBps),minDeposit:minDeposit as bigint,minLowestTier:minLowestTier as bigint,nib:lc(nib)};
+ const [signer,guardian,owner,feeRecipient,feeBps,reviewerBps,minDeposit,minLowestTier,nib]=await Promise.all(['ticketSigner','guardian','owner','feeRecipient','feeBps','reviewerBps','minDeposit','minLowestTier','nib'].map(fn=>rd(c,a,fn)));
+ return {signer:lc(signer),guardian:lc(guardian),owner:lc(owner),feeRecipient:lc(feeRecipient),feeBps:Number(feeBps),reviewerBps:Number(reviewerBps),minDeposit:minDeposit as bigint,minLowestTier:minLowestTier as bigint,nib:lc(nib)};
 }
 const bountyView=(id:bigint,b:any,closesAt:bigint,freeSlots:bigint,nowSec:number)=>{
  const tiers=(b.tiers as bigint[]).slice(0,b.tierCount).map((t,i)=>({severity:i+1,label:tierLabel(b.tierCount,i+1),nib:nibText(t),raw:t.toString()}));
@@ -145,7 +147,7 @@ const bountyView=(id:bigint,b:any,closesAt:bigint,freeSlots:bigint,nowSec:number
 };
 const submissionView=(id:bigint,s:any,tierCount:number|undefined,panelSize:number,nowSec:number)=>({id:id.toString(),bountyId:s.bountyId.toString(),hunter:lc(s.hunter),status:STATUS[s.status]||'Unknown',outcome:OUTCOMES[s.outcome]||'none',claimed:s.claimed||null,claimedLabel:s.claimed&&tierCount?tierLabel(tierCount,s.claimed):null,awarded:s.awarded||null,awardedLabel:s.awarded&&tierCount?tierLabel(tierCount,s.awarded):null,
  commitHash:s.commitHash,reportHash:s.status>=2?s.reportHash:null,committedAt:Number(s.committedAt),revealedAt:Number(s.revealedAt)||null,deadline:Number(s.deadline),revealDeadline:Number(s.revealDeadline)||null,applicants:Number(s.applicants),votesSealed:Number(s.commits),votesOpened:Number(s.reveals),alignedReviewers:Number(s.aligned),
- duplicateOf:s.duplicateOf>0n?s.duplicateOf.toString():null,tapStake:s.tapStake.toString(),next:nextStep({status:s.status,deadline:Number(s.deadline),revealDeadline:Number(s.revealDeadline),seedBlock:Number(s.seedBlock),reveals:Number(s.reveals),commits:Number(s.commits)},panelSize,nowSec)});
+ duplicateOf:s.duplicateOf>0n?s.duplicateOf.toString():null,tapStake:s.tapStake.toString(),appeal:{open:s.status===5,pending:s.status===6,overruled:!!s.overruled,by:s.status===5||s.status===6?Number(s.deadline):null},next:nextStep({status:s.status,deadline:Number(s.deadline),revealDeadline:Number(s.revealDeadline),seedBlock:Number(s.seedBlock),reveals:Number(s.reveals),commits:Number(s.commits)},panelSize,nowSec)});
 
 /* ---------- TAP point stakes: lock ledger, signed tickets, settlement from the chain ---------- */
 const q=(e:BugBountyEnv,sql:string,...args:any[])=>e.DB.prepare(sql).bind(...args);
@@ -225,7 +227,7 @@ export async function bugBountyState(e:BugBountyEnv,wallet:string|null,now:numbe
   const bounties=ids.map((id,i)=>{const b=raw[i*3],v:any=bountyView(id,b,raw[i*3+1],raw[i*3+2],nowSec),t=text.get(id.toString());
    // The scope text is only shown when it matches the hash the project committed on-chain.
    return {...v,scope:t&&scopeHash(t)===b.scopeHash?{text:t,verified:true}:{text:null,verified:false}};});
-  const out:any={enabled:true,live:true,chainId:56,contract:address,token:tokenAddress(e),params:{ticketSigner:p.signer,guardian:p.guardian,feeBps:p.feeBps,reviewerBps:p.reviewerBps,feeRecipient:p.feeRecipient,minDeposit:nibText(p.minDeposit),minLowestTier:nibText(p.minLowestTier),
+  const out:any={enabled:true,live:true,chainId:56,contract:address,token:tokenAddress(e),params:{ticketSigner:p.signer,guardian:p.guardian,owner:p.owner,appealWindowDays:3,ownerDecisionWindowDays:14,feeBps:p.feeBps,reviewerBps:p.reviewerBps,feeRecipient:p.feeRecipient,minDeposit:nibText(p.minDeposit),minLowestTier:nibText(p.minLowestTier),
    tapStakeRule:'1% of the lowest tier at 10 TAP per NIB, at least 500 TAP, up to 10x that (set by the project). TAP only, never NIB.',panelSizes:[3,5,7,9],minDurationDays:14,maxDurationDays:365,revealWindowHours:24,applyWindowHours:48,voteWindowHours:72,voteRevealWindowHours:48,cancelCooldownDays:7,
    maxOpenSubmissionsPerBounty:20,maxActivePerHunterPerBounty:3,maxActivePerHunter:5,maxActiveReviewsPerAgent:5,
    signerChange:ps!==ZERO?{proposed:lc(ps),effectiveAt:Number(psAt)}:null},
@@ -241,7 +243,8 @@ export async function bugBountyState(e:BugBountyEnv,wallet:string|null,now:numbe
    const fresh=await first(e,'SELECT * FROM agents WHERE wallet=?',lc(wallet));
    out.you={wallet:lc(wallet),tap:{available:fresh?pointBalance(fresh).toString():'0',locked:locks.filter((l:any)=>l.status==='open').reduce((s:bigint,l:any)=>s+BigInt(l.tap),0n).toString(),locks},
     reputation:{strikes:Number(strikes),cooldownUntil:Number(cool)>nowSec?Number(cool):null},rewardNib:nibText(reward),
-    myBounties:bounties.filter(b=>b.creator===lc(wallet)).map(b=>b.id),
+    isOwner:lc(wallet)===p.owner,myBounties:bounties.filter(b=>b.creator===lc(wallet)).map(b=>b.id),
+    ...(lc(wallet)===p.owner?{appealsToDecide:await (async()=>{const sn=await rd(c,address,'submissionNonce') as bigint,ids2:bigint[]=[];for(let i=sn;i>0n&&ids2.length<60;i--)ids2.push(i);const ss=await many(c,address,ids2.map(i=>({functionName:'getSubmission',args:[i]})));const out2:any[]=[];for(let k=0;k<ids2.length;k++)if(ss[k].status===6){const b:any=await panelOf(ss[k].bountyId);out2.push(submissionView(ids2[k],ss[k],b.tiers.length,b.panelSize,nowSec));}return out2;})()}:{}),
     mySubmissions:await Promise.all(mineIds.map((id,i)=>view(id,hs[i]))),
     myReviews:await Promise.all(revIds.map(async(id,i)=>({...await view(id,rs[i]),reviewer:{state:REVIEWER_STATES[rv[i].state],sealed:rv[i].committed,opened:rv[i].revealed,aligned:rv[i].state===2&&rs[i].status===4?rv[i].aligned:null,lockId:rv[i].lockId}})))};
   }
@@ -265,7 +268,7 @@ const PREVIEW_NOTE='Run the baw preview, show the user the parsed call, gas and 
 const id256=(v:any,label='id')=>{try{const n=BigInt(String(v??''));if(n<=0n||n>=2n**64n)throw 0;return n;}catch{return fail(400,`Give a numeric ${label}.`);}};
 const sev=(v:any,max=4)=>{const n=Number(v);if(!Number.isInteger(n)||n<1||n>max)fail(400,`severity must be a whole number from 1 to ${max}.`);return n;};
 const hex32=(v:any,label:string)=>typeof v==='string'&&/^0x[0-9a-fA-F]{64}$/.test(v)?v as `0x${string}`:fail(400,`${label} must be a 32-byte hex value.`);
-export const BOUNTY_FUNCTIONS=['create','topup','extend','cancel','withdraw','commit','reveal','expire','apply','start-selection','select','vote','open-vote','finalize','claim'] as const;
+export const BOUNTY_FUNCTIONS=['create','topup','extend','cancel','withdraw','commit','reveal','expire','apply','start-selection','select','vote','open-vote','finalize','appeal','resolve','finalize-rejection','claim'] as const;
 /** Builds one previewable step, or two when an exact-amount NIB approval is needed first. `commit` and `apply` also lock the TAP stake and return the signed ticket. */
 export async function bountyTxAction(e:BugBountyEnv,a:any,payload:any,now:number){
  const {address,c}=await requireContract(e);await requireGameAccess(e,a);
@@ -278,14 +281,14 @@ export async function bountyTxAction(e:BugBountyEnv,a:any,payload:any,now:number
  const subOf=async(id:bigint)=>{const s=await rd(c,address,'getSubmission',[id]);if(s.hunter===ZERO)fail(404,'That submission does not exist.');return s;};
  const creatorOnly=(b:any)=>{if(lc(b.creator)!==w)fail(403,'Only the project that created this bounty can do that.');};
  const stateIs=(s:any,want:number[],msg:string)=>{if(!want.includes(s.status))fail(409,msg+' (it is '+STATUS[s.status]+').');};
- const roleHolder=()=>{if(w===p.guardian||w===p.signer)fail(403,'The guardian and the ticket signer cannot take part in bounties.');};
+ const roleHolder=()=>{if(w===p.guardian||w===p.signer||w===p.owner)fail(403,'The guardian, the ticket signer and the owner cannot take part in bounties.');};
  const cooldown=async()=>{const cd=Number(await rd(c,address,'cooldownUntil',[wallet]));if(nowSec<cd)fail(409,'You are cooling down after a penalty until '+iso(cd)+'.');};
  const tapNeed=(have:bigint,need:bigint)=>{if(have<need)fail(409,`You need ${need} TAP available to stake.`);};
  if(fn==='create'){
   const t=createTerms(payload,p,nowSec);roleHolder();
   need=t.deposit;call={name:'createBounty',args:[t.scopeHash,t.tiers,t.endsAt,t.panelSize,t.tapStake,t.deposit]};
   summary={fn,escrowedNib:nibText(t.deposit),tiers:t.tiers.map((x:bigint,i:number)=>({label:tierLabel(t.tiers.length,i+1),nib:nibText(x),hunterGetsNibApprox:nibText(splitPayout(x,p.feeBps,p.reviewerBps,Number(t.panelSize)).hunter)})),endsAt:iso(t.endsAt),days:t.days,panelSize:Number(t.panelSize),quorum:quorum(Number(t.panelSize)),tapStakePerReport:t.tapStake.toString(),scopeHash:t.scopeHash,
-   rules:['The NIB is escrowed now and cannot be withdrawn before the end date, nor while any submission is pending, nor during the 7-day cancel cooldown.','You do not judge reports and cannot overrule the panel: a random panel of '+Number(t.panelSize)+' other TapTap AI agents does, by sealed vote. You pay only for reports the panel judges valid.',
+   rules:['The NIB is escrowed now and cannot be withdrawn before the end date, nor while any submission is pending, nor during the 7-day cancel cooldown.','You do not judge reports: a random panel of '+Number(t.panelSize)+' other TapTap AI agents does, by sealed vote. A hunter can appeal a rejected report once, and then only the owner (the treasury) can overrule the panel on that one report (3 days to appeal, 14 days for the owner to decide, and the payout stays reserved meanwhile). You pay only for reports that are judged valid.',
     'On a valid report the payout is split: '+(p.feeBps/100)+'% platform fee to the vault, '+(p.reviewerBps/100)+'% shared by the reviewers who voted with the outcome, the rest to the hunter. You fund the bounty in NIB only; hunters and reviewers stake TAP points, never NIB.','Next: publish the scope text with `do bounty-scope <id> --file scope.md` once this confirms.']};
  }else if(fn==='topup'){
   const id=id256(payload.id),b=await bountyOf(id);creatorOnly(b);const amount=nibAmount(payload.amount,'amount');need=amount;call={name:'topUp',args:[id,amount]};summary={fn,bountyId:id.toString(),addNib:nibText(amount)};
@@ -308,7 +311,7 @@ export async function bountyTxAction(e:BugBountyEnv,a:any,payload:any,now:number
   const stake=payload.stake===undefined||payload.stake===null||payload.stake===''?b.tapStake:BigInt(String(payload.stake).match(/^\d{1,12}$/)?payload.stake:fail(400,'stake must be a whole number of TAP points.'));if(stake<b.tapStake)fail(400,`This bounty requires at least ${b.tapStake} TAP staked per report.`);
   const ticket=await issueTicket(e,c,address,a,1,id,stake,now);
   call={name:'commit',args:[id,ch,stake,ticket.lockId,BigInt(ticket.deadline),ticket.signature]};
-  summary={fn,bountyId:id.toString(),tapStakeLocked:stake.toString(),ticket:{lockId:ticket.lockId,expiresAt:iso(ticket.deadline)},stakeNote:'Your TAP points are locked now (not NIB). They come back when your report is judged valid, or is a good-faith duplicate, or the panel fails to reach a verdict. They are forfeited (burned, and shared with the reviewers who judged it invalid) if the panel judges the report invalid, or you do not reveal within 24 hours. If you do not send the transaction within 15 minutes the TAP is returned automatically.',
+  summary={fn,bountyId:id.toString(),tapStakeLocked:stake.toString(),ticket:{lockId:ticket.lockId,expiresAt:iso(ticket.deadline)},stakeNote:'Your TAP points are locked now (not NIB). They come back when your report is judged valid, or is a good-faith duplicate, or the panel fails to reach a verdict. They are forfeited (burned, and shared with the reviewers who judged it invalid) if the panel judges the report invalid and the rejection stands (you can appeal a rejection within 3 days: the owner then decides that one report), or you do not reveal within 24 hours. If you do not send the transaction within 15 minutes the TAP is returned automatically.',
    mustRevealWithin:'24 hours after this confirms, or the TAP stake is forfeited.'};
   warnings.push('Do not lose the salt and report file the connector saved locally: they are needed to reveal. Reveal inside the 24-hour window.');
  }else if(fn==='reveal'){
@@ -353,6 +356,19 @@ export async function bountyTxAction(e:BugBountyEnv,a:any,payload:any,now:number
   const id=id256(payload.submissionId??payload.id,'submission id'),s=await subOf(id),b=await bountyOf(s.bountyId);stateIs(s,[3],'Only a submission under judgment can be finalised');
   if(Number(s.reveals)!==Number(b.panelSize)&&nowSec<=Number(s.revealDeadline))fail(409,'Votes are still open until '+iso(s.revealDeadline)+'.');
   call={name:'finalizeJudgment',args:[id]};summary={fn,submissionId:id.toString(),effect:'Counts the opened votes, pays out (or not), settles every TAP stake and slashes absent or dissenting reviewers. Anyone may call it.'};
+ }else if(fn==='appeal'){
+  const id=id256(payload.submissionId??payload.id,'submission id'),s=await subOf(id);stateIs(s,[5],'Only a report the panel rejected can be appealed');
+  if(lc(s.hunter)!==w)fail(403,'Only the hunter who submitted this report can appeal it.');if(nowSec>Number(s.deadline))fail(409,'The appeal window closed '+iso(s.deadline)+'.');
+  call={name:'appeal',args:[id]};summary={fn,submissionId:id.toString(),claimedSeverity:s.claimed,effect:'Asks the owner (the treasury) to review this one rejected report. Until it decides (at most 14 days) the payout stays reserved and your TAP stays locked. If the owner approves it, the bounty pays the tier it decides (up to the one you claimed) and your TAP is returned. If it rejects it, or does not answer in 14 days, the panel verdict stands: your TAP is burned if the panel judged it invalid.'};
+ }else if(fn==='resolve'){
+  const id=id256(payload.submissionId??payload.id,'submission id'),s=await subOf(id);stateIs(s,[6],'Only an appealed report can be decided');
+  if(w!==p.owner)fail(403,'Only the owner (the treasury wallet '+p.owner+') can decide an appeal.');if(nowSec>Number(s.deadline))fail(409,'The owner decision window closed '+iso(s.deadline)+'. Anyone can close it now with finalize-rejection.');
+  const sv=Number(payload.severity??0);if(!Number.isInteger(sv)||sv<0||sv>Number(s.claimed))fail(400,'severity must be 0 (reject for good) or a tier from 1 to the claimed '+s.claimed+' (approve).');
+  call={name:'resolveRejection',args:[id,sv]};summary={fn,submissionId:id.toString(),decision:sv===0?'reject for good':'approve at severity '+sv,final:true,effect:sv===0?'The panel verdict stands. The reserved payout returns to the bounty, the hunter\'s TAP is burned if the panel judged it invalid.':'Pays the hunter from the bounty\'s reserved escrow (2% fee, 20% of this payout shared by the reviewers who voted with the final outcome). The hunter\'s TAP is returned and reviewers who voted otherwise are not slashed. This decision is final.'};
+ }else if(fn==='finalize-rejection'){
+  const id=id256(payload.submissionId??payload.id,'submission id'),s=await subOf(id);stateIs(s,[5,6],'Only a rejected report can be closed this way');
+  if(nowSec<=Number(s.deadline))fail(409,(s.status===5?'The hunter can still appeal until ':'The owner can still decide until ')+iso(s.deadline)+'.');
+  call={name:'resolveRejection',args:[id,0]};summary={fn,submissionId:id.toString(),effect:'Closes the rejected report with the panel verdict: the reserved payout returns to the bounty, TAP stakes settle. Anyone may call it once no appeal can change it.'};
  }else{
   const owed=await rd(c,address,'rewardOf',[wallet]);if(owed===0n)fail(409,'You have no NIB reviewer reward to claim.');
   call={name:'claimReward',args:[]};summary={fn,claimNib:nibText(owed)};
@@ -397,7 +413,7 @@ export async function reportPutAction(e:BugBountyEnv,a:any,payload:any,now:numbe
  else await q(e,'INSERT INTO bounty_reports(submission_id,bounty_id,hunter,report_hash,iv,ciphertext,created_at) VALUES(?,?,?,?,?,?,?)',sid.toString(),s.bountyId.toString(),lc(a.wallet),rh,sealed.iv,sealed.ciphertext,now).run();
  return {bugBounty:{action:'report-put',submissionId:sid.toString(),stored:true,note:'Stored encrypted. Only you, the project (after you reveal on-chain) and the review panel drawn for it can read it. Reveal within 24 hours of your commit.'}};
 }
-/** Who may read a report: the hunter always; the project once the hunter revealed on-chain; a panelist once seated (while voting and after). Applicants who were not drawn never can. */
+/** Who may read a report: the hunter always; the project once the hunter revealed on-chain; a panelist once seated (while voting and after); the owner while it is appealed. Applicants who were not drawn never can. */
 export async function reportGetAction(e:BugBountyEnv,a:any,payload:any,now:number){
  const {address,c}=await requireContract(e);await reportKey(e);const sid=id256(payload?.submissionId,'submission id');
  const s=await rd(c,address,'getSubmission',[sid]);if(s.hunter===ZERO)fail(404,'That submission does not exist.');
@@ -407,7 +423,8 @@ export async function reportGetAction(e:BugBountyEnv,a:any,payload:any,now:numbe
  let allowed=isHunter,role=isHunter?'hunter':'';
  if(!allowed&&isCreator&&s.status>=2){allowed=true;role='creator';}
  if(!allowed&&s.status>=3){const r=await rd(c,address,'getReviewer',[sid,a.wallet]);if(r.state===2){allowed=true;role='panelist';}}
- if(!allowed)fail(403,isCreator?'The report is readable by the project only after the hunter reveals it on-chain.':'Only the hunter, the project (after reveal) and the drawn review panel can read this report.');
+ if(!allowed&&s.status===6&&lc(await rd(c,address,'owner'))===w){allowed=true;role='owner';}   // the owner reads only the reports that were appealed to it
+ if(!allowed)fail(403,isCreator?'The report is readable by the project only after the hunter reveals it on-chain.':'Only the hunter, the project (after reveal), the drawn review panel and, for an appealed report, the owner can read this report.');
  if(!row)fail(404,'No report is stored for this submission.');
  if(!isHunter&&lc(row.report_hash)!==lc(s.reportHash))fail(409,'The stored report does not match the hash revealed on-chain. Treat it as invalid.');
  const body=await openReport(e,sid.toString(),row.report_hash,row);

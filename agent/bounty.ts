@@ -5,7 +5,7 @@ import fs from 'node:fs';import path from 'node:path';import crypto from 'node:c
 
 /** NibBugBounty (deterministic CREATE2 address from scripts/nib-bug-bounty-deploy.ts `plan`). Pinned so a site can never point the connector at another contract.
  *  test/bug-bounty-chat.test.ts fails if this differs from the deploy plan: if you change the contract or its parameters, re-run `plan` and update this line. */
-export const NIB_BUG_BOUNTY='0x2f6AED3292c92a130FaaB8D5665B73E932DD0231';
+export const NIB_BUG_BOUNTY='0x9E2b99C67201e953d33613B53dB80442D27024fE';
 export const NIB_TOKEN_PIN='0x1F11d9feAF354aD31861B4fa26759349e2860cFb';
 export const MAX_REPORT_BYTES=49152,MAX_SCOPE_BYTES=16384;
 /** Upper bound on any single NIB approval for the bounty contract (deposits are at least 10,000 NIB; this stops absurd amounts). */
@@ -14,7 +14,7 @@ export const bountyCallAbi=parseAbi([
  'function createBounty(bytes32 scopeHash,uint256[] tiers,uint256 endsAt,uint256 panelSize,uint256 tapStake,uint256 deposit) returns (uint256)','function topUp(uint256 id,uint256 amount)','function extend(uint256 id,uint256 newEndsAt)','function requestCancel(uint256 id)','function withdraw(uint256 id)',
  'function commit(uint256 bountyId,bytes32 commitHash,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature) returns (uint256)','function reveal(uint256 submissionId,uint8 severity,bytes32 reportHash,bytes32 salt)','function expireCommit(uint256 submissionId)',
  'function applyToReview(uint256 submissionId,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature)','function startSelection(uint256 submissionId)','function selectPanel(uint256 submissionId)',
- 'function commitVote(uint256 submissionId,bytes32 voteHash)','function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)','function finalizeJudgment(uint256 submissionId)','function claimReward()']);
+ 'function commitVote(uint256 submissionId,bytes32 voteHash)','function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)','function finalizeJudgment(uint256 submissionId)','function appeal(uint256 submissionId)','function resolveRejection(uint256 submissionId,uint8 severity)','function claimReward()']);
 const approveAbi=parseAbi(['function approve(address,uint256) returns (bool)']);
 const HEX=/^0x[0-9a-fA-F]*$/;const same=(a:any,b:any)=>String(a).toLowerCase()===String(b).toLowerCase();
 export class BountyCheckError extends Error{}

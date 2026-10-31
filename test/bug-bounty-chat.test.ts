@@ -37,6 +37,9 @@ test('validation: a hostile or buggy site cannot slip a different call past the 
  // a function the contract has but the user did not ask for
  no(tx('claimReward',[]),{fn:'commit',args:['7',H,'1000',null,null,null]},/Unexpected function/);ok(tx('claimReward',[]),{fn:'claimReward',args:[]});
  no(tx('revealVote',[3n,2,0n,H]),{fn:'revealVote',args:['3','4','0',H]},/Argument 2/);ok(tx('revealVote',[3n,2,0n,H]),{fn:'revealVote',args:['3','2','0',H]});
+ // appeals: the hunter's appeal and the owner's decision are checked argument by argument like every other call
+ ok(tx('appeal',[5n]),{fn:'appeal',args:['5']});no(tx('appeal',[6n]),{fn:'appeal',args:['5']},/Argument 1/);
+ ok(tx('resolveRejection',[5n,2]),{fn:'resolveRejection',args:['5','2']});no(tx('resolveRejection',[5n,4]),{fn:'resolveRejection',args:['5','2']},/Argument 2/);no(tx('resolveRejection',[5n,2]),{fn:'appeal',args:['5']},/Unexpected function/);
  ok(tx('applyToReview',[3n,1000n,L,BigInt(now+900),SIG]),{fn:'applyToReview',args:['3','1000',null,null,null],endsAtRange:[now-60,now+1800],endsAtIndex:3});
  // create: tiers, panel size, TAP stake, deposit exactly; the end time inside the window the user asked for
  const tiers=[E(10000),E(25000)],create=(over:any={})=>tx('createBounty',[over.scope??scopeHashOf(SCOPE),over.tiers??tiers,BigInt(over.ends??now+30*DAY),over.panel??3n,over.stake??1000n,over.deposit??E(300000)]);

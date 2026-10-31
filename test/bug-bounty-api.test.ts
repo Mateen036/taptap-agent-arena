@@ -171,10 +171,36 @@ test('invalid report: the hunter\'s TAP is burned and shared with the reviewers 
  const panel=(await t.br('panelOf',[BigInt(h.sid)]) as string[]).map(a=>t.accounts.findIndex(x=>x.address===a)),bid=BigInt(h.sid);
  for(const i of panel)await w.go(i,{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,i,0)});for(const i of panel)await w.go(i,{fn:'open-vote',submissionId:h.sid,verdict:0,salt:t.voteSalt(bid,i)});
  const nib=await t.bal(t.accounts[5].address);await w.go(0,{fn:'finalize',submissionId:h.sid});await t.solvent();assert.equal(await t.bal(t.accounts[5].address),nib);
+ // a rejection stays open for the 3-day appeal window; the TAP stays locked until it is closed for good
+ assert.equal((await w.state(5)).you.mySubmissions[0].status,'Rejected');assert.equal(await w.tap(5),TAP0-1000n);
+ await t.warp(3*DAY+5);assert.equal((await w.state(5)).you.mySubmissions[0].next.step,'finalize-rejection');await w.go(0,{fn:'finalize-rejection',submissionId:h.sid});
  for(const i of [5,...reviewers])await w.state(i);
  assert.equal(await w.tap(5),TAP0-1000n,'forfeited');for(const i of panel)assert.equal(await w.tap(i),TAP0+333n,'stake back + 1000/3 of the forfeited stake');
  const s=await w.state(5);assert.equal(s.you.mySubmissions[0].outcome,'invalid');assert.equal(s.you.tap.locks[0].burned,'1000');
  assert.equal((await w.state(panel[0])).you.tap.locks.find((l:any)=>l.role==='reviewer').reward,'333');
+});
+test('appeal: the hunter appeals a rejection, only the owner decides, an overturn pays the claim tier and returns the TAP',async()=>{
+ const w=await world();const {t}=w;const reviewers=[9,10,11,12,13,14],OWNER=30;await w.fund([4,5,OWNER,...reviewers]);
+ const id=await newBounty(w);const h=await hunt(w,id,5,3,'Real finding that the panel wrongly rejected; full PoC and impact in this long text.');
+ for(const i of reviewers)await w.go(i,{fn:'apply',submissionId:h.sid});await t.warp(48*3600+5);await w.go(0,{fn:'start-selection',submissionId:h.sid});await t.mine(2);await w.go(0,{fn:'select',submissionId:h.sid});
+ const panel=(await t.br('panelOf',[BigInt(h.sid)]) as string[]).map(a=>t.accounts.findIndex(x=>x.address===a)),bid=BigInt(h.sid);
+ for(const i of panel)await w.go(i,{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,i,0)});for(const i of panel)await w.go(i,{fn:'open-vote',submissionId:h.sid,verdict:0,salt:t.voteSalt(bid,i)});
+ await w.go(0,{fn:'finalize',submissionId:h.sid});await t.solvent();
+ let s=await w.state(5);assert.equal(s.you.mySubmissions[0].status,'Rejected');assert.equal(s.you.mySubmissions[0].next.step,'appeal');assert.equal(s.you.mySubmissions[0].appeal.open,true);
+ // only the hunter appeals; the owner and strangers cannot decide an unappealed report
+ assert.notEqual(await status(w.tx(6,{fn:'appeal',submissionId:h.sid})),200,'a stranger cannot appeal');
+ await assert.rejects(w.go(OWNER,{fn:'resolve',submissionId:h.sid,severity:2}));
+ await w.go(5,{fn:'appeal',submissionId:h.sid});s=await w.state(5);assert.equal(s.you.mySubmissions[0].status,'Appealed');assert.equal(await w.tap(5),TAP0-1000n,'still locked while the owner decides');
+ // the owner sees the appealed report and the queue; nobody else outside the panel does
+ assert.equal((await w.act(OWNER,'bounty-report-get',{submissionId:h.sid})).bugBounty.role,'owner');assert.equal((await w.state(OWNER)).you.isOwner,true);assert.equal((await w.state(OWNER)).you.appealsToDecide.length,1);
+ assert.equal(await status(w.act(4,'bounty-report-get',{submissionId:h.sid})),200,'the project can read it after reveal');
+ // the owner cannot approve above the claim, and a stranger cannot decide
+ await assert.rejects(w.go(OWNER,{fn:'resolve',submissionId:h.sid,severity:4}));await assert.rejects(w.go(5,{fn:'resolve',submissionId:h.sid,severity:2}));
+ const before=await t.bal(t.accounts[5].address);await w.go(OWNER,{fn:'resolve',submissionId:h.sid,severity:2});await t.solvent();
+ s=await w.state(5);const sub=s.you.mySubmissions[0];assert.equal(sub.status,'Settled');assert.equal(sub.outcome,'valid');assert.equal(sub.awarded,2);assert.equal(sub.appeal.overruled,true);
+ assert.ok(await t.bal(t.accounts[5].address)>before,'the hunter is paid');
+ for(const i of [5,...panel])await w.state(i);
+ assert.equal(await w.tap(5),TAP0,'the hunter\'s TAP is returned');for(const i of panel)assert.equal(await w.tap(i),TAP0,'dissenting reviewers are not slashed when the owner overrules them');
 });
 test('TAP tickets: unused tickets are refunded, a live ticket is reused (never locked twice), and nothing is deducted when it cannot be issued',async()=>{
  const w=await world();const {t}=w;await w.fund([4,5]);const id=await newBounty(w);

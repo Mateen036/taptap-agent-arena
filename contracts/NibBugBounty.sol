@@ -3,25 +3,28 @@ pragma solidity ^0.8.27;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 interface INibBugBountyIdentity { function balanceOf(address) external view returns (uint256); }
 
 /// @title NibBugBounty
 /// @notice Escrowed NIB bug bounties judged by a panel of other TapTap agents. Projects fund a bounty up front with fixed severity payouts.
 /// Hunters commit a hash of their report (the report stays off-chain), stake TAP points (off-chain game points, never NIB), and reveal.
 /// A panel of 3-9 other agents, drawn at random from volunteers who also stake TAP, votes with commit-reveal. The panel's verdict decides
-/// the payout; there is no owner, no arbiter and no admin path to the escrow.
+/// the payout, with ONE exception: a hunter whose report was judged invalid or duplicate may APPEAL it, and then the `owner` (the treasury)
+/// decides that single report for good (approve at a severity up to the claim, or reject). The owner can decide nothing else: it cannot touch
+/// the escrow, a bounty, fees, the panel draw, or any report that was not appealed.
 ///
 /// MONEY (NIB, on-chain, fully escrowed):
-///   valid report  -> fee (2%) to the fee recipient, reviewers (20%) split among the reviewers who voted with the outcome, the rest to the hunter.
+///   valid report  -> fee (2%) to the fee recipient, reviewers (20% of THIS payout) split among the reviewers who voted with the final outcome,
+///                    the rest to the hunter.
 ///   anything else -> the reserved payout goes back to the bounty's balance. The project never pays for a report that is not valid.
+///   rejected      -> (invalid / duplicate) the payout stays reserved for the appeal window, then returns to the bounty unless the owner approves it.
 /// TAP POINTS (off-chain game points, held by the TapTap server): a signed ticket proves a lock of TAP was taken. This contract records the
 /// lock and, once a submission settles, `tapResult(lockId)` states exactly what the server must do with it (return, burn, pay a reward).
 /// The ticket signer can only gate WHO may take part (spam control). It cannot move NIB, change a verdict, or pick the panel.
 ///
-/// TRUST MODEL: escrow is held by this contract only. Every wait is bounded by a permissionless timeout. The one rotatable role is the ticket
-/// signer (changed by the guardian through a public 7-day delay). A compromised signer could let sybil wallets past the TAP gate; they would
+/// TRUST MODEL: escrow is held by this contract only. Every wait is bounded by a permissionless timeout (an appeal the owner never answers is
+/// closed with the panel's verdict by anyone). The one rotatable role is the ticket signer (changed by the guardian through a public 7-day delay).
+/// The owner's only power is the appeal decision: at worst it can force payment of one appealed report up to the tier the hunter claimed. A compromised signer could let sybil wallets past the TAP gate; they would
 /// still need an Agent ID each and a random draw into a panel, and they risk slashing, but the project's tier payout per report is the exposure.
 contract NibBugBounty is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -29,11 +32,11 @@ contract NibBugBounty is ReentrancyGuard {
     error MissingContracts(); // Missing contracts
     error InvalidSigner(); // Invalid signer
     error InvalidGuardian(); // Invalid guardian
+    error InvalidOwner(); // Invalid owner
     error InvalidFeeRecipient(); // Invalid fee recipient
     error FeeTooHigh(); // Fee too high
     error ReviewerShareTooHigh(); // Reviewer share too high
     error InvalidMinimums(); // Invalid minimums
-    error UnknownSeverity(); // Unknown severity
     error AgentIDRequired(); // Agent ID required
     error RoleHolderCannotCreateBounties(); // Role holder cannot create bounties
     error ScopeHashRequired(); // Scope hash required
@@ -90,46 +93,55 @@ contract NibBugBounty is ReentrancyGuard {
     error NothingToClaim(); // Nothing to claim
     error OnlyTheGuardian(); // Only the guardian
     error NotReady(); // Not ready
+    error NotRejected(); // Not a rejected report
+    error OnlyTheHunter(); // Only the hunter
+    error AppealWindowPassed(); // Appeal window passed
+    error AppealWindowStillOpen(); // Appeal window still open
+    error SeverityAboveTheClaim(); // Severity above the claim
+    error OwnerStillDeciding(); // Owner still deciding
     error LockAlreadyUsed(); // Lock already used
     error TicketExpired(); // Ticket expired
     error InvalidTAPTicket(); // Invalid TAP ticket
     error FeeOnTransferTokensUnsupported(); // Fee-on-transfer tokens unsupported
 
     // ---- rules (constants) ----
-    uint256 public constant MAX_TIERS = 4;
-    uint256 public constant MIN_DURATION = 14 days;
-    uint256 public constant MAX_DURATION = 365 days;
-    uint256 public constant REVEAL_WINDOW = 24 hours;       // hunter must reveal after committing
-    uint256 public constant APPLY_WINDOW = 48 hours;        // volunteers may apply to review after a reveal
-    uint256 public constant VOTE_WINDOW = 72 hours;         // sealed votes
-    uint256 public constant VOTE_REVEAL_WINDOW = 48 hours;  // votes are opened
-    uint256 public constant CANCEL_COOLDOWN = 7 days;
-    uint256 public constant SIGNER_CHANGE_DELAY = 7 days;
-    uint256 public constant SELECTION_BLOCKS = 200;         // the seed block hash must still be available
-    uint256 public constant MIN_PANEL = 3;
-    uint256 public constant MAX_PANEL = 9;
-    uint256 public constant MAX_APPLICANTS = 40;
-    uint256 public constant MAX_OPEN_SUBMISSIONS = 20;      // unresolved submissions per bounty
-    uint256 public constant MAX_ACTIVE_PER_HUNTER = 3;      // unresolved submissions per hunter per bounty
-    uint256 public constant MAX_ACTIVE_HUNTER_TOTAL = 5;    // unresolved submissions per hunter across all bounties
-    uint256 public constant MAX_ACTIVE_REVIEWS = 5;         // open applications or panel seats per reviewer
-    uint256 public constant MIN_TAP_STAKE = 500;            // TAP points
-    uint256 public constant MAX_STRIKE_DAYS = 7;
-    uint256 public constant MAX_FEE_BPS = 500;              // protocol fee never above 5%
-    uint256 public constant MAX_REVIEWER_BPS = 3000;        // reviewer share never above 30%
-    uint8 public constant VERDICT_DUPLICATE = 255;
+    uint256 internal constant MAX_TIERS = 4;
+    uint256 internal constant MIN_DURATION = 14 days;
+    uint256 internal constant MAX_DURATION = 365 days;
+    uint256 internal constant REVEAL_WINDOW = 24 hours;       // hunter must reveal after committing
+    uint256 internal constant APPLY_WINDOW = 48 hours;        // volunteers may apply to review after a reveal
+    uint256 internal constant VOTE_WINDOW = 72 hours;         // sealed votes
+    uint256 internal constant VOTE_REVEAL_WINDOW = 48 hours;  // votes are opened
+    uint256 internal constant CANCEL_COOLDOWN = 7 days;
+    uint256 internal constant SIGNER_CHANGE_DELAY = 7 days;
+    uint256 internal constant SELECTION_BLOCKS = 200;         // the seed block hash must still be available
+    uint256 internal constant MIN_PANEL = 3;
+    uint256 internal constant MAX_PANEL = 9;
+    uint256 internal constant MAX_APPLICANTS = 40;
+    uint256 internal constant MAX_OPEN_SUBMISSIONS = 20;      // unresolved submissions per bounty
+    uint256 internal constant MAX_ACTIVE_PER_HUNTER = 3;      // unresolved submissions per hunter per bounty
+    uint256 internal constant MAX_ACTIVE_HUNTER_TOTAL = 5;    // unresolved submissions per hunter across all bounties
+    uint256 internal constant MAX_ACTIVE_REVIEWS = 5;         // open applications or panel seats per reviewer
+    uint256 internal constant MIN_TAP_STAKE = 500;            // TAP points
+    uint256 internal constant APPEAL_WINDOW = 3 days;         // a hunter may appeal a rejection (invalid / duplicate) within this time
+    uint256 internal constant OWNER_DECISION_WINDOW = 14 days; // the owner decides an appeal within this time, else the panel's verdict stands
+    uint256 internal constant MAX_STRIKE_DAYS = 7;
+    uint256 internal constant MAX_FEE_BPS = 500;              // protocol fee never above 5%
+    uint256 internal constant MAX_REVIEWER_BPS = 3000;        // reviewer share never above 30%
+    uint8 internal constant VERDICT_DUPLICATE = 255;
 
     // ---- immutable economics ----
     IERC20 public immutable nib;
     INibBugBountyIdentity public immutable agentIdRegistry;
     address public immutable feeRecipient;
     address public immutable guardian;        // may only rotate the ticket signer (publicly, with a delay)
+    address public immutable owner;           // may only decide appealed reports (approve up to the claim, or reject for good)
     uint256 public immutable feeBps;          // taken from a valid payout, paid to feeRecipient
     uint256 public immutable reviewerBps;     // taken from a valid payout, shared by the reviewers who voted with the outcome
     uint256 public immutable minDeposit;
     uint256 public immutable minLowestTier;
 
-    enum Status { None, Committed, Applying, Voting, Settled }
+    enum Status { None, Committed, Applying, Voting, Settled, Rejected, Appealed }
     enum Outcome { None, Valid, Invalid, Duplicate, Inconclusive, NoQuorum, NoPanel, Unrevealed }
     enum Role { None, Hunter, Reviewer }
     enum RState { None, Applied, Selected, NotSelected }
@@ -142,7 +154,7 @@ contract NibBugBounty is ReentrancyGuard {
     struct Submission {
         uint256 bountyId; address hunter; Status status; Outcome outcome; uint8 claimed; uint8 awarded; bool extended;
         bytes32 commitHash; bytes32 reportHash; uint64 committedAt; uint64 revealedAt; uint64 deadline; uint64 revealDeadline; uint64 seedBlock;
-        uint32 applicants; uint32 commits; uint32 reveals; uint32 aligned; uint256 duplicateOf; uint256 tapStake; bytes32 hunterLock;
+        uint32 applicants; uint32 commits; uint32 reveals; uint32 aligned; uint256 duplicateOf; uint256 tapStake; bytes32 hunterLock; bool overruled;
     }
     struct Reviewer { RState state; bool committed; bool revealed; bool aligned; uint8 verdict; bytes32 lockId; bytes32 voteHash; uint256 tap; }
     struct Lock { address wallet; Role role; uint256 submissionId; uint256 tap; }
@@ -175,7 +187,7 @@ contract NibBugBounty is ReentrancyGuard {
     mapping(address => uint256) public cooldownUntil;
     mapping(address => uint256) public rewardOf;
 
-    event BountyCreated(uint256 indexed id, address indexed creator, bytes32 scopeHash, uint256[] tiers, uint256 endsAt, uint256 panelSize, uint256 tapStake, uint256 deposit);
+    event BountyCreated(uint256 indexed id, address indexed creator, bytes32 scopeHash, uint256 endsAt, uint256 panelSize, uint256 tapStake, uint256 deposit);
     event BountyToppedUp(uint256 indexed id, uint256 amount, uint256 available);
     event BountyExtended(uint256 indexed id, uint256 endsAt);
     event CancelRequested(uint256 indexed id, uint256 closesAt);
@@ -185,24 +197,28 @@ contract NibBugBounty is ReentrancyGuard {
     event Applied(uint256 indexed id, address indexed reviewer, bytes32 lockId, uint256 tap, uint256 applicants);
     event ApplyExtended(uint256 indexed id, uint256 applyBy);
     event SelectionStarted(uint256 indexed id, uint256 seedBlock);
-    event PanelSelected(uint256 indexed id, address[] panel, uint256 voteBy, uint256 revealBy);
+    event PanelSelected(uint256 indexed id, uint256 voteBy, uint256 revealBy);
     event VoteCommitted(uint256 indexed id, address indexed reviewer);
     event VoteRevealed(uint256 indexed id, address indexed reviewer, uint8 verdict);
     event Settled(uint256 indexed id, uint256 indexed bountyId, address indexed hunter, uint8 outcome, uint8 awarded, uint256 hunterPay, uint256 fee, uint256 reviewerPool, uint256 alignedReviewers);
     event RewardClaimed(address indexed reviewer, uint256 amount);
+    event Rejected(uint256 indexed id, uint256 indexed bountyId, address indexed hunter, uint8 outcome, uint256 appealBy);
+    event AppealFiled(uint256 indexed id, address indexed hunter, uint256 decideBy);
+    event AppealDecided(uint256 indexed id, address indexed owner, uint8 severity);
     event SignerProposed(address indexed proposed, uint256 effectiveAt);
     event SignerChanged(address indexed previous, address indexed current);
 
-    constructor(address nib_, address registry_, address signer_, address guardian_, address feeRecipient_, uint256 feeBps_, uint256 reviewerBps_, uint256 minDeposit_, uint256 minLowestTier_) {
+    constructor(address nib_, address registry_, address signer_, address guardian_, address feeRecipient_, uint256 feeBps_, uint256 reviewerBps_, uint256 minDeposit_, uint256 minLowestTier_, address owner_) {
         require(nib_.code.length > 0 && registry_.code.length > 0, MissingContracts());
         require(signer_ != address(0) && signer_ != address(this) && signer_ != nib_, InvalidSigner());
         require(guardian_ != address(0) && guardian_ != address(this) && guardian_ != nib_, InvalidGuardian());
         require(feeRecipient_ != address(0) && feeRecipient_ != address(this) && feeRecipient_ != nib_, InvalidFeeRecipient());
+        require(owner_ != address(0) && owner_ != address(this) && owner_ != nib_, InvalidOwner());
         require(feeBps_ <= MAX_FEE_BPS, FeeTooHigh());
         require(reviewerBps_ <= MAX_REVIEWER_BPS, ReviewerShareTooHigh());
         require(minLowestTier_ >= 100 && minDeposit_ >= minLowestTier_, InvalidMinimums());
         nib = IERC20(nib_); agentIdRegistry = INibBugBountyIdentity(registry_); ticketSigner = signer_; guardian = guardian_; feeRecipient = feeRecipient_;
-        feeBps = feeBps_; reviewerBps = reviewerBps_; minDeposit = minDeposit_; minLowestTier = minLowestTier_;
+        feeBps = feeBps_; reviewerBps = reviewerBps_; minDeposit = minDeposit_; minLowestTier = minLowestTier_; owner = owner_;
     }
 
     // ------------------------------------------------------------------ views
@@ -212,16 +228,10 @@ contract NibBugBounty is ReentrancyGuard {
     function submissionsOf(uint256 bountyId) external view returns (uint256[] memory) { return _bountySubs[bountyId]; }
     function hunterSubmissions(address hunter) external view returns (uint256[] memory) { return _hunterSubs[hunter]; }
     function reviewerSubmissions(address who) external view returns (uint256[] memory) { return _reviewerSubs[who]; }
-    function applicantsOf(uint256 id) external view returns (address[] memory) { return _applicants[id]; }
     function panelOf(uint256 id) external view returns (address[] memory) { return _panel[id]; }
     function quorum(uint256 panelSize) public pure returns (uint256) { return (2 * panelSize + 2) / 3; }
     /// @return the least TAP stake a bounty with this lowest tier may demand: 1% of the tier at 10 TAP per NIB, never below MIN_TAP_STAKE.
     function minTapStake(uint256 lowestTier) public pure returns (uint256) { uint256 t = lowestTier / 1e19; return t < MIN_TAP_STAKE ? MIN_TAP_STAKE : t; }
-    function tierPayout(uint256 bountyId, uint256 severity) public view returns (uint256) {
-        Bounty storage b = _bounties[bountyId];
-        require(severity >= 1 && severity <= b.tierCount, UnknownSeverity());
-        return b.tiers[severity - 1];
-    }
     function closesAt(uint256 id) public view returns (uint256) {
         Bounty storage b = _bounties[id];
         if (b.cancelRequestedAt == 0) return b.endsAt;
@@ -246,28 +256,24 @@ contract NibBugBounty is ReentrancyGuard {
         Lock storage l = locks[lockId];
         if (l.role == Role.None) return (false, 0, 0, 0);
         Submission storage s = _subs[l.submissionId];
-        if (l.role == Role.Hunter) {
-            if (s.status != Status.Settled) return (false, 0, 0, 0);
-            if (s.outcome == Outcome.Invalid || s.outcome == Outcome.Unrevealed) return (true, 0, 0, l.tap);
-            return (true, l.tap, 0, 0);
-        }
         Reviewer storage r = _rev[l.submissionId][l.wallet];
-        if (r.state == RState.NotSelected) return (true, l.tap, 0, 0);
-        if (r.state == RState.Applied) { if (s.status == Status.Settled) return (true, l.tap, 0, 0); return (false, 0, 0, 0); } // selection not done yet
+        if (l.role == Role.Reviewer && r.state == RState.NotSelected) return (true, l.tap, 0, 0);          // not drawn: released at once
         if (s.status != Status.Settled) return (false, 0, 0, 0);
-        if (!r.revealed) return (true, 0, 0, l.tap);                                       // a seated reviewer who never opened a vote is slashed
-        if (s.outcome == Outcome.Inconclusive || s.outcome == Outcome.NoQuorum) return (true, l.tap, 0, 0);
-        if (!r.aligned) return (true, 0, 0, l.tap);                                         // voted against the consensus
-        uint256 rew = (s.outcome == Outcome.Invalid && s.aligned > 0) ? s.tapStake / s.aligned : 0;
-        return (true, l.tap, rew, 0);
+        Outcome o = s.outcome;
+        bool burn;
+        if (l.role == Role.Hunter) { burn = o == Outcome.Invalid || o == Outcome.Unrevealed; return (true, burn ? 0 : l.tap, 0, burn ? l.tap : 0); }
+        if (r.state == RState.Applied || (r.revealed && (o == Outcome.Inconclusive || o == Outcome.NoQuorum))) return (true, l.tap, 0, 0);
+        if (!r.revealed) return (true, 0, 0, l.tap);                                                     // a seated reviewer who never opened a vote is slashed
+        if (!r.aligned) { burn = !s.overruled; return (true, burn ? 0 : l.tap, 0, burn ? l.tap : 0); }                  // voted against the consensus (not slashed when the owner overruled the panel)
+        return (true, l.tap, (o == Outcome.Invalid && !s.overruled && s.aligned > 0) ? s.tapStake / s.aligned : 0, 0);
     }
 
     // ------------------------------------------------------------------ project side
     /// @notice Create a bounty and escrow `deposit` NIB (approve this contract first). `tiers` are the fixed payouts for severity 1..n.
     /// `panelSize` (odd, 3 to 9) is how many reviewers judge each report; `tapStake` is the TAP every hunter and reviewer locks per report.
     function createBounty(bytes32 scopeHash, uint256[] calldata tiers, uint256 endsAt, uint256 panelSize, uint256 tapStake, uint256 deposit) external nonReentrant returns (uint256 id) {
-        require(agentIdRegistry.balanceOf(msg.sender) > 0, AgentIDRequired());
-        require(msg.sender != guardian && msg.sender != ticketSigner, RoleHolderCannotCreateBounties());
+        _agent();
+        require(!_holder(msg.sender), RoleHolderCannotCreateBounties());
         require(scopeHash != bytes32(0), ScopeHashRequired());
         require(tiers.length >= 1 && tiers.length <= MAX_TIERS, E1To4SeverityTiers());
         require(tiers[0] >= minLowestTier, LowestTierBelowMinimum());
@@ -285,7 +291,7 @@ contract NibBugBounty is ReentrancyGuard {
         for (uint256 i = 0; i < tiers.length; i++) b.tiers[i] = tiers[i];
         totalEscrow += deposit;
         _pull(msg.sender, deposit);
-        emit BountyCreated(id, msg.sender, scopeHash, tiers, endsAt, panelSize, tapStake, deposit);
+        emit BountyCreated(id, msg.sender, scopeHash, endsAt, panelSize, tapStake, deposit);
     }
     function topUp(uint256 id, uint256 amount) external nonReentrant {
         Bounty storage b = _bounties[id];
@@ -329,8 +335,8 @@ contract NibBugBounty is ReentrancyGuard {
     function commit(uint256 bountyId, bytes32 commitHash, uint256 tapStake, bytes32 lockId, uint256 deadline, bytes calldata signature) external nonReentrant returns (uint256 id) {
         Bounty storage b = _bounties[bountyId];
         require(isOpen(bountyId), BountyNotOpen());
-        require(agentIdRegistry.balanceOf(msg.sender) > 0, AgentIDRequired());
-        require(msg.sender != b.creator && msg.sender != guardian && msg.sender != ticketSigner, NotAllowedToSubmit());
+        _agent();
+        require(msg.sender != b.creator && !_holder(msg.sender), NotAllowedToSubmit());
         require(block.timestamp >= cooldownUntil[msg.sender], CoolingDownAfterAPenalty());
         require(commitHash != bytes32(0) && !commitUsed[bountyId][commitHash], CommitAlreadyUsed());
         require(b.pending < MAX_OPEN_SUBMISSIONS, TooManyOpenSubmissions());
@@ -378,8 +384,8 @@ contract NibBugBounty is ReentrancyGuard {
     function applyToReview(uint256 submissionId, uint256 tapStake, bytes32 lockId, uint256 deadline, bytes calldata signature) external nonReentrant {
         Submission storage s = _subs[submissionId]; Bounty storage b = _bounties[s.bountyId];
         require(s.status == Status.Applying && s.seedBlock == 0 && block.timestamp <= s.deadline, ApplicationsClosed());
-        require(agentIdRegistry.balanceOf(msg.sender) > 0, AgentIDRequired());
-        require(msg.sender != s.hunter && msg.sender != b.creator && msg.sender != guardian && msg.sender != ticketSigner && msg.sender != feeRecipient, ConflictOfInterest());
+        _agent();
+        require(msg.sender != s.hunter && msg.sender != b.creator && msg.sender != feeRecipient && !_holder(msg.sender), ConflictOfInterest());
         require(!hunterInBounty[s.bountyId][msg.sender], HuntersOfThisBountyCannot());
         require(_rev[submissionId][msg.sender].state == RState.None, AlreadyApplied());
         require(_applicants[submissionId].length < MAX_APPLICANTS, ApplicantListIsFull());
@@ -426,7 +432,7 @@ contract NibBugBounty is ReentrancyGuard {
             else { r.state = RState.NotSelected; reviewerActive[pool[i]]--; }
         }
         s.status = Status.Voting; s.deadline = uint64(block.timestamp + VOTE_WINDOW); s.revealDeadline = uint64(block.timestamp + VOTE_WINDOW + VOTE_REVEAL_WINDOW);
-        emit PanelSelected(submissionId, _panel[submissionId], s.deadline, s.revealDeadline);
+        emit PanelSelected(submissionId, s.deadline, s.revealDeadline);
     }
     /// @notice Sealed vote: keccak256(abi.encode(chainid, this, submissionId, you, verdict, duplicateOf, salt)). Verdict 0 = not valid,
     /// 1..n = valid at that severity, 255 = duplicate of an earlier submission (duplicateOf).
@@ -458,38 +464,62 @@ contract NibBugBounty is ReentrancyGuard {
         require(s.reveals == b.panelSize || block.timestamp > s.revealDeadline, VotesAreStillOpen());
         address[] storage panel = _panel[submissionId];
         uint256 n = panel.length; uint256 R = s.reveals;
-        if (R < quorum(b.panelSize)) { _penalizeNoShows(submissionId, panel); _close(submissionId, Outcome.NoQuorum, 0); return; }
         uint256 valid; uint256 dup; uint256 invalid; uint8[9] memory sev;
         for (uint256 i = 0; i < n; i++) {
             Reviewer storage r = _rev[submissionId][panel[i]];
-            if (!r.revealed) continue;
+            reviewerActive[panel[i]]--;
+            if (!r.revealed) { _penalize(panel[i]); continue; }       // no-shows are slashed whatever the verdict
             if (r.verdict == 0) invalid++;
             else if (r.verdict == VERDICT_DUPLICATE) dup++;
             else { sev[valid++] = r.verdict > s.claimed ? s.claimed : r.verdict; }
         }
         Outcome out; uint8 award;
-        if (valid * 2 > R) {
+        if (R < quorum(b.panelSize)) out = Outcome.NoQuorum;
+        else if (valid * 2 > R) {
             for (uint256 i = 1; i < valid; i++) { uint8 x = sev[i]; uint256 j = i; while (j > 0 && sev[j - 1] > x) { sev[j] = sev[j - 1]; j--; } sev[j] = x; }
             out = Outcome.Valid; award = sev[(valid - 1) / 2];
         } else if (dup * 2 > R) out = Outcome.Duplicate;
         else if (invalid * 2 > R) out = Outcome.Invalid;
         else out = Outcome.Inconclusive;
-        uint256 aligned;
-        for (uint256 i = 0; i < n; i++) {
-            Reviewer storage r = _rev[submissionId][panel[i]];
-            if (!r.revealed) { _penalize(panel[i]); continue; }
-            if (out == Outcome.Inconclusive) continue;
-            bool ok;
-            if (out == Outcome.Valid) { uint8 v = r.verdict > s.claimed ? s.claimed : r.verdict; ok = r.verdict != 0 && r.verdict != VERDICT_DUPLICATE && (v > award ? v - award : award - v) <= 1; }
-            else if (out == Outcome.Invalid) ok = r.verdict == 0;
-            else ok = r.verdict == VERDICT_DUPLICATE;
-            r.aligned = ok;
-            if (ok) { aligned++; if (strikes[panel[i]] > 0) strikes[panel[i]]--; }
-            else { _penalize(panel[i]); }
+        if (out == Outcome.Invalid || out == Outcome.Duplicate) {
+            // A rejection is provisional: the payout stays reserved while the hunter may appeal. Scoring the reviewers waits for the final word.
+            s.status = Status.Rejected; s.outcome = out; s.deadline = uint64(block.timestamp + APPEAL_WINDOW);
+            emit Rejected(submissionId, s.bountyId, s.hunter, uint8(out), s.deadline);
+            return;
         }
-        s.aligned = uint32(aligned);
-        if (out != Outcome.Valid) s.duplicateOf = out == Outcome.Duplicate ? s.duplicateOf : 0;
         _close(submissionId, out, award);
+    }
+
+    // ------------------------------------------------------------------ appeals (invalid / duplicate verdicts only)
+    /// @notice The hunter appeals a report the panel rejected (invalid or duplicate), within APPEAL_WINDOW of the verdict. The escrow for the
+    /// claimed tier stays reserved and the TAP stakes stay locked until the owner decides (or OWNER_DECISION_WINDOW passes).
+    function appeal(uint256 submissionId) external nonReentrant {
+        Submission storage s = _subs[submissionId];
+        require(s.status == Status.Rejected, NotRejected());
+        require(s.hunter == msg.sender, OnlyTheHunter());
+        require(block.timestamp <= s.deadline, AppealWindowPassed());
+        s.status = Status.Appealed; s.deadline = uint64(block.timestamp + OWNER_DECISION_WINDOW);
+        emit AppealFiled(submissionId, msg.sender, s.deadline);
+    }
+    /// @notice Closes a rejected report for good. While an appeal is pending only the owner may call it: `severity` 0 keeps the rejection,
+    /// 1..claimed approves it at that tier (paid from the bounty's reserved escrow, fee and reviewer share as usual, the hunter's TAP is returned
+    /// and reviewers who voted against the owner are not slashed). Once the appeal window passed unused, or the owner let an appeal lapse,
+    /// anyone may call it (`severity` is ignored) and the panel's verdict stands. The owner can decide nothing else.
+    function resolveRejection(uint256 submissionId, uint8 severity) external nonReentrant {
+        Submission storage s = _subs[submissionId];
+        require(s.status == Status.Rejected || s.status == Status.Appealed, NotRejected());
+        if (block.timestamp <= s.deadline) {
+            require(s.status == Status.Appealed, AppealWindowStillOpen());
+            require(msg.sender == owner, OwnerStillDeciding());
+            emit AppealDecided(submissionId, msg.sender, severity);
+            if (severity > 0) {
+                require(severity <= s.claimed, SeverityAboveTheClaim());
+                s.overruled = true; s.duplicateOf = 0;
+                _close(submissionId, Outcome.Valid, severity);
+                return;
+            }
+        }
+        _close(submissionId, s.outcome, 0);
     }
     /// @notice Reviewers collect their NIB share (a pull payment, so one failing transfer can never block a settlement).
     function claimReward() external nonReentrant {
@@ -522,19 +552,19 @@ contract NibBugBounty is ReentrancyGuard {
     function _ticket(uint8 kind, address wallet, uint256 scopeId, uint256 tap, bytes32 lockId, uint256 deadline, bytes calldata signature) private view {
         require(lockId != bytes32(0) && locks[lockId].role == Role.None, LockAlreadyUsed());
         require(block.timestamp <= deadline, TicketExpired());
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(ticketDigest(kind, wallet, scopeId, tap, lockId, deadline));
-        (address signer, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
-        require(err == ECDSA.RecoverError.NoError && signer == ticketSigner, InvalidTAPTicket());
+        require(signature.length == 65, InvalidTAPTicket());
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", ticketDigest(kind, wallet, scopeId, tap, lockId, deadline)));
+        address signer = ecrecover(digest, uint8(signature[64]), bytes32(signature[0:32]), bytes32(signature[32:64]));
+        require(signer != address(0) && signer == ticketSigner, InvalidTAPTicket());
     }
+    function _agent() private view { require(agentIdRegistry.balanceOf(msg.sender) > 0, AgentIDRequired()); }
+    function _holder(address who) private view returns (bool) { return who == guardian || who == ticketSigner || who == owner; }
     function _penalize(address who) private {
         uint256 k = strikes[who] + 1; strikes[who] = k;
         cooldownUntil[who] = block.timestamp + (k > MAX_STRIKE_DAYS ? MAX_STRIKE_DAYS : k) * 1 days;
     }
-    function _penalizeNoShows(uint256 submissionId, address[] storage panel) private {
-        for (uint256 i = 0; i < panel.length; i++) if (!_rev[submissionId][panel[i]].revealed) { _penalize(panel[i]); }
-    }
     function _validForPriority(Submission storage t) private view returns (bool) {
-        return t.status == Status.Applying || t.status == Status.Voting || (t.status == Status.Settled && t.outcome == Outcome.Valid);
+        return t.status == Status.Applying || t.status == Status.Voting || t.status == Status.Appealed || (t.status == Status.Settled && t.outcome == Outcome.Valid);
     }
     function _noPanel(uint256 submissionId) private {
         address[] storage list = _applicants[submissionId];
@@ -548,7 +578,23 @@ contract NibBugBounty is ReentrancyGuard {
         uint256 pay = outcome == Outcome.Valid ? b.tiers[awarded - 1] : 0;
         b.reserved -= reservedAmt; b.available += reservedAmt - pay; b.pending--;
         hunterActive[s.bountyId][s.hunter]--; hunterActiveTotal[s.hunter]--;
-        if (s.status == Status.Voting) { address[] storage p = _panel[id]; for (uint256 i = 0; i < p.length; i++) reviewerActive[p[i]]--; }
+        address[] storage p = _panel[id];
+        if (outcome <= Outcome.Inconclusive) {            // score the panel against the final outcome (aligned reviewers earn the share; the others are struck unless the owner overruled)
+            uint256 aligned;
+            for (uint256 i = 0; i < p.length; i++) {
+                Reviewer storage r = _rev[id][p[i]];
+                if (!r.revealed || outcome == Outcome.Inconclusive) continue;
+                bool ok;
+                if (outcome == Outcome.Valid) { uint8 v = r.verdict > s.claimed ? s.claimed : r.verdict; ok = r.verdict != 0 && r.verdict != VERDICT_DUPLICATE && (v > awarded ? v - awarded : awarded - v) <= 1; }
+                else if (outcome == Outcome.Invalid) ok = r.verdict == 0;
+                else ok = r.verdict == VERDICT_DUPLICATE;
+                r.aligned = ok;
+                if (ok) { aligned++; if (strikes[p[i]] > 0) strikes[p[i]]--; }
+                else if (!s.overruled) _penalize(p[i]);
+            }
+            s.aligned = uint32(aligned);
+            if (outcome != Outcome.Duplicate && outcome != Outcome.Valid) s.duplicateOf = 0;
+        }
         s.status = Status.Settled; s.outcome = outcome; s.awarded = awarded;
         uint256 fee; uint256 pool; uint256 toHunter;
         if (pay > 0) {
@@ -557,7 +603,7 @@ contract NibBugBounty is ReentrancyGuard {
             uint256 distributed = per * s.aligned;
             toHunter = pay - fee - distributed;                      // rounding dust and any unclaimed share go to the hunter
             totalEscrow -= pay; totalOwed += distributed; totalPaid += toHunter; totalFees += fee;
-            if (per > 0) { address[] storage p2 = _panel[id]; for (uint256 i = 0; i < p2.length; i++) { Reviewer storage r = _rev[id][p2[i]]; if (r.aligned) { rewardOf[p2[i]] += per; } } }
+            if (per > 0) { for (uint256 i = 0; i < p.length; i++) { if (_rev[id][p[i]].aligned) rewardOf[p[i]] += per; } }
             pool = distributed;
             if (strikes[s.hunter] > 0) strikes[s.hunter]--;
         } else if (outcome == Outcome.Invalid) { _penalize(s.hunter); }
