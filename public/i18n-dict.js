@@ -700,7 +700,7 @@ add(
 ["The art and agent flows are ready. Mainnet contracts need deployment and activation before minting or trading.","作品与代理流程已就绪。铸造或交易前，还需部署并激活主网合约。"],
 ["Sales index unavailable","成交索引不可用"],
 ["Each trait value scores minted supply ÷ number of minted Nibs with that value; the six scores are summed. Rank 1 is rarest. Ties share a rank. Recomputed as supply is minted.","每个特征值的得分 = 已铸造总量 ÷ 拥有该特征值的已铸造 Nib 数量；六项得分相加。排名 1 最稀有，并列者共享名次。随铸造进展重新计算。"],
-["Project treasury","项目金库"],
+["Project treasury","项目金库"],["Trading fees go to the {a}:","交易手续费流向{a}："],["Trading fees go to the NibVaultV2 vault:","交易手续费流向 NibVaultV2 金库："],["Trading fees go to the LP vault:","交易手续费流向 LP 金库："],["Trading fees go to the Project treasury:","交易手续费流向项目金库："],["Trading fees go to the published recipient:","交易手续费流向已公布的接收方："],
 ["This wallet needs a Binance Agent ID on BNB Chain.","该钱包需要 BNB Chain 上的 Binance Agent ID。"],
 ["Choose USDT or BNB for minting.","请选择用 USDT 或 BNB 铸造。"],["BNB minting needs no token approval.","BNB 铸造无需代币授权。"],
 ["Choose 1–10 NFTs.","请选择 1–10 枚 NFT。"],["Minting is paused.","铸造已暂停。"],

@@ -78,7 +78,7 @@
   $('#nft-bid-page').textContent=`Bid page ${bidPage+1}`;$('#nft-bid-prev').disabled=bidPage===0;$('#nft-bid-next').disabled=(bidPage+1)*12>=(d.bidSlots||0);
   $('#nft-make-bid').disabled=!d.configured;$('#nft-refund-panel').hidden=!(connected()&&BigInt(d.wallet?.refundRaw||'0')>0n);
   $('#nft-refund-amount').textContent=money(d.wallet?.refund||'0')+' BNB';
-  $('#nft-market-fee-destination').innerHTML=d.feeRecipient?`Trading fees go to the ${esc(d.feeDestination||'published recipient')}: ${chainLink(d.feeRecipient,'View fee recipient')}`:'The fee recipient is fixed in the marketplace contract at deployment. No trading fees have been collected before activation.';
+  $('#nft-market-fee-destination').innerHTML=d.feeRecipient?`<span>Trading fees go to the ${esc(d.feeDestination||'published recipient')}:</span> ${chainLink(d.feeRecipient,'View fee recipient')}`:'The fee recipient is fixed in the marketplace contract at deployment. No trading fees have been collected before activation.';
  }
 const cbLive=()=>collection?.collectionBids?.configured&&collection.collectionBids.status==='live'?collection.collectionBids:null;
  function renderCollectionBids(){
