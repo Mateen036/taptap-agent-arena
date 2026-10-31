@@ -27,7 +27,7 @@ export async function eligible(wallet:string,env:Env){
 }
 async function body(r:Request){if(!r.headers.get('content-type')?.includes('application/json'))fail(415,'Use application/json.');let size=0;const chunks:Uint8Array[]=[];const reader=r.body?.getReader()??fail(400,'JSON body is required.');if(!reader)fail(400,'JSON body is required.');while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>16384){await reader.cancel();fail(413,'Request is too large.');}chunks.push(value);}try{const all=new Uint8Array(size);let n=0;for(const chunk of chunks){all.set(chunk,n);n+=chunk.length;}const b=JSON.parse(new TextDecoder().decode(all));if(!b||typeof b!=='object'||Array.isArray(b))throw Error();return b;}catch{fail(400,'Invalid JSON object.');}}
 const stmt=(e:Env,q:string,...args:any[])=>e.DB.prepare(q).bind(...args);
-const first=(e:Env,q:string,...args:any[])=>stmt(e,q,...args).first<any>();
+const first=async(e:Env,q:string,...args:any[])=>((await stmt(e,q,...args).first()) as any);
 async function own(e:Env,r:Request){const a=await first(e,'SELECT * FROM agents WHERE user_id=?',uid(r));if(!a||!a.connected)fail(409,'Pair a verified agent first.');return a;}
 async function active(e:Env,wallet:string){return first(e,"SELECT * FROM commands WHERE wallet=? AND status='running' ORDER BY created_at DESC LIMIT 1",wallet);}
 async function cas(e:Env,a:any,fields:Record<string,any>,kind:string,delta:number|bigint,detail:string,extra:D1PreparedStatement[]=[]){
@@ -43,10 +43,10 @@ const guard=(a:any)=>[a.wallet,a._event??=id()];
 async function snapshot(e:Env,a:any,accessOverride?:any){
  const c=await active(e,a.wallet),access=accessOverride||await gameAccessSnapshot(e,a.wallet),exact=(await utilityPolicy(e)).active;
  const session=await first(e,'SELECT expires_at,last_seen_at FROM sessions WHERE wallet=? AND revoked=0 AND expires_at>? ORDER BY expires_at DESC LIMIT 1',a.wallet,Date.now());
- const logs=await stmt(e,'SELECT * FROM ledger WHERE wallet=? ORDER BY created_at DESC LIMIT 20',a.wallet).all<any>();
- const commandRows=await stmt(e,'SELECT * FROM commands WHERE wallet=? ORDER BY created_at DESC LIMIT 10',a.wallet).all<any>();
- const claimed=await stmt(e,'SELECT mission FROM mission_claims WHERE wallet=?',a.wallet).all<any>();
- return {wallet:a.wallet,name:a.name,points:exact?publicPoints(pointBalance(a)):a.points,earned:exact?publicPoints(earnedBalance(a)):a.earned,taps:a.taps,runs:a.runs,power:power(a),capacity:capacity(a),speed:speed(a),energy:energyAt(a,Date.now(),!!c),levels:[a.power_level,a.tank_level,a.speed_level],connected:!!a.connected,updatedAt:a.updated_at,claimed:claimed.results.map((x:any)=>x.mission),upgrades:[0,1,2].map(i=>({cost:upgradeCost(a,i),level:a[['power_level','tank_level','speed_level'][i]]})),commands:commandRows.results.map(v=>({...v,earned:exact?publicPoints(v.earned_exact??v.earned):v.earned})),logs:logs.results.map(v=>({...v,delta:exact?publicPoints(v.delta_exact??v.delta):v.delta})),sessionOnline:!!session,runnerOnline:!!session&&Date.now()-session.last_seen_at<15000,sessionExpiresAt:session?.expires_at||null,lastSeenAt:session?.last_seen_at||null,gameAccess:access,missions:missions.map((m,i)=>({...m,baseReward:m.reward,reward:exact&&access.canPlay?publicPoints(BigInt(m.reward)*BigInt(access.multiplier)):m.reward,progress:Math.min(m.goal,a[m.key]),claimed:claimed.results.some((v:any)=>v.mission===i)}))};
+ const logs=((await stmt(e,'SELECT * FROM ledger WHERE wallet=? ORDER BY created_at DESC LIMIT 20',a.wallet).all()) as any);
+ const commandRows=((await stmt(e,'SELECT * FROM commands WHERE wallet=? ORDER BY created_at DESC LIMIT 10',a.wallet).all()) as any);
+ const claimed=((await stmt(e,'SELECT mission FROM mission_claims WHERE wallet=?',a.wallet).all()) as any);
+ return {wallet:a.wallet,name:a.name,points:exact?publicPoints(pointBalance(a)):a.points,earned:exact?publicPoints(earnedBalance(a)):a.earned,taps:a.taps,runs:a.runs,power:power(a),capacity:capacity(a),speed:speed(a),energy:energyAt(a,Date.now(),!!c),levels:[a.power_level,a.tank_level,a.speed_level],connected:!!a.connected,updatedAt:a.updated_at,claimed:claimed.results.map((x:any)=>x.mission),upgrades:[0,1,2].map(i=>({cost:upgradeCost(a,i),level:a[['power_level','tank_level','speed_level'][i]]})),commands:commandRows.results.map((v:any)=>({...v,earned:exact?publicPoints(v.earned_exact??v.earned):v.earned})),logs:logs.results.map((v:any)=>({...v,delta:exact?publicPoints(v.delta_exact??v.delta):v.delta})),sessionOnline:!!session,runnerOnline:!!session&&Date.now()-session.last_seen_at<15000,sessionExpiresAt:session?.expires_at||null,lastSeenAt:session?.last_seen_at||null,gameAccess:access,missions:missions.map((m,i)=>({...m,baseReward:m.reward,reward:exact&&access.canPlay?publicPoints(BigInt(m.reward)*BigInt(access.multiplier)):m.reward,progress:Math.min(m.goal,a[m.key]),claimed:claimed.results.some((v:any)=>v.mission===i)}))};
 }
 /** Shared by the browser endpoints and the signed agent actions (command-create, mission-claim). */
 async function queueCommand(env:Env,a:any,prompt:any,now:number){
@@ -95,7 +95,7 @@ export async function handle(request:Request,env:Env):Promise<Response>{
   }
   if(path==='/admin/snapshot'){
    if(frozen?.value!=='frozen')fail(409,'Freeze the season before exporting allocation points.');
-   const rows=await stmt(env,'SELECT * FROM agents ORDER BY wallet ASC').all<any>();return json({chainId:56,season:1,createdAt:now,agents:rows.results.map(a=>({wallet:a.wallet,points:publicPoints(pointBalance(a)),earned:publicPoints(earnedBalance(a)),taps:a.taps}))});
+   const rows=((await stmt(env,'SELECT * FROM agents ORDER BY wallet ASC').all()) as any);return json({chainId:56,season:1,createdAt:now,agents:rows.results.map((a:any)=>({wallet:a.wallet,points:publicPoints(pointBalance(a)),earned:publicPoints(earnedBalance(a)),taps:a.taps}))});
   }
   if(path==='/admin/publish-rewards'){
    const p=b.payload;if(!Number.isSafeInteger(p.epoch)||p.epoch<1||!/^0x[0-9a-fA-F]{64}$/.test(p.root||'')||!isAddress(p.contract)||!isAddress(p.token)||!Array.isArray(p.allocations)||p.allocations.length<1||p.allocations.length>5)fail(400,'Invalid rewards batch. Maximum five allocations per request.');
@@ -118,11 +118,11 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(path==='/bootstrap'&&request.method==='GET'){
  const user=request.headers.get('oai-authenticated-user-id');const a=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;
  const boosted=env._utilityPolicy?.active;
- const leaders=await memo(env,'boot-leaders:'+(boosted?'b':'n'),15000,()=>stmt(env,boosted?"SELECT wallet,name,COALESCE(earned_exact,CAST(earned AS TEXT)) AS earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY LENGTH(COALESCE(earned_exact,CAST(earned AS TEXT))) DESC,COALESCE(earned_exact,CAST(earned AS TEXT)) DESC,created_at ASC LIMIT 50":'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all());
+ const leaders:any=await memo(env,'boot-leaders:'+(boosted?'b':'n'),15000,()=>stmt(env,boosted?"SELECT wallet,name,COALESCE(earned_exact,CAST(earned AS TEXT)) AS earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY LENGTH(COALESCE(earned_exact,CAST(earned AS TEXT))) DESC,COALESCE(earned_exact,CAST(earned AS TEXT)) DESC,created_at ASC LIMIT 50":'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all());
  const access=await gameAccessSnapshot(env,a?.wallet||null);
- const epoch=await memo(env,'boot-epoch',30000,()=>first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1'));
+ const epoch:any=await memo(env,'boot-epoch',30000,()=>first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1'));
  const proof=a&&epoch?await first(env,'SELECT amount,proof,epoch FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;
- return json({authenticated:!!user,gameAccess:access,agent:a?await snapshot(env,a,access):null,leaderboard:leaders.results,season:await currentSeason(env,now),competition:a?await seasonSnapshot(env,a,now):null,chainId:56,registry:AGENT_ID_REGISTRY,serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:{status:'awaiting_token_launch'}});
+ return json({authenticated:!!user,gameAccess:access,agent:a?await snapshot(env,a,access):null,leaderboard:leaders?.results||[],season:await currentSeason(env,now),competition:a?await seasonSnapshot(env,a,now):null,chainId:56,registry:AGENT_ID_REGISTRY,serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:{status:'awaiting_token_launch'}});
  }
  if(path==='/eligibility'&&request.method==='POST'){
  const b=await body(request);const wallet=lower(b.wallet);await eligible(wallet,env);return json({eligible:true,wallet,chainId:56});
