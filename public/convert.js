@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  let status=null,loading=false,busy=false,bonusBusy=false,bonusConvBusy=false,last=0,timer=null,amount='',bonusAmount='';
- const maxPts=u=>u.normalConvertible??u.convertible;
+ const maxPts=u=>u.convertible;
  const bonusOnly=x=>!!x&&x.bonusPoints&&x.bonusPoints!=='0'&&x.bonusPoints===x.points;
  const mixed=x=>!!x&&x.bonusPoints&&x.bonusPoints!=='0'&&x.bonusPoints!==x.points;
  const active=()=>viewName==='convert';
@@ -25,10 +25,10 @@
   $('#convert-pool').innerHTML=open?esc(nib(s.remaining))+' <small>NIB</small>':'—';
   $('#convert-pool-caption').textContent=open?'of '+nib(s.pool)+' NIB · Season '+s.season+' · first come, first served':status.message;
   $('#convert-rate').innerHTML=open?esc(fmt(s.pointsPerNib))+' <small>TAP = 1 NIB</small>':'10 <small>TAP = 1 NIB</small>';
-  $('#convert-mine').innerHTML=u?esc(fmt(u.balance))+' <small>TAP</small>':'—';
-  $('#convert-mine-caption').textContent=u?(open&&u.normalConvertible&&u.normalConvertible!=='0'?'≈ '+nib((BigInt(u.normalConvertible)*10n**18n/BigInt(s.pointsPerNib||10)).toString())+' NIB at the current rate':'Your TAP balance'):'Connect your agent to see your balance';
+  $('#convert-mine').innerHTML=u?esc(fmt((BigInt(u.balance||0)+BigInt(u.bonusBalance||0)).toString()))+' <small>TAP</small>':'—';
+  $('#convert-mine-caption').textContent=u?(open&&u.convertible&&u.convertible!=='0'?'≈ '+nib((BigInt(u.convertible)*10n**18n/BigInt(s.pointsPerNib||10)).toString())+' NIB at the current rate':'Your TAP balance'):'Connect your agent to see your balance';
   if(!u){root.innerHTML=`<p>${esc(status.message)}</p><button class="button primary" id="convert-connect">Connect agent</button>`;renderBonus();return;}
-  const pending=u.pending,normalPending=pending&&!bonusOnly(pending)?pending:null;
+  const pending=u.pending,normalPending=pending;
   let html='';
   if(!open)html+=`<div class="notice" role="status">${esc(status.message)}</div>`;
   else if(!u.canConvert)html+=`<div class="notice error" role="status">${esc(u.access?.status==='nft_required'?'Hold at least one Nib NFT to convert TAP.':u.access?.status==='identity_required'?'This wallet must hold a Binance Agent ID to convert.':u.access?.status==='unavailable'?'Could not verify this wallet on BNB Chain just now. Retrying automatically…':'Conversion is not available for this wallet right now.')}</div>`;
@@ -38,7 +38,7 @@
    html+=`<form id="convert-form" class="convert-form"><label for="convert-amount">TAP to convert</label><div class="convert-row"><input id="convert-amount" inputmode="numeric" autocomplete="off" placeholder="${esc(fmt(maxPts(u)))}" value="${esc(amount)}" aria-describedby="convert-estimate"><button type="button" class="button secondary" id="convert-max">Max</button></div><p id="convert-estimate" class="tiny muted"></p><button class="button primary full" id="convert-submit" ${busy?'disabled':''}>Get claim voucher</button></form>`;
   }
   html+=`<p class="tiny muted">Contracts: ${link(status.airdrop,'Airdrop '+short(status.airdrop))} · ${link(status.token,'NIB '+short(status.token))}. TAP is deducted when the voucher is issued and returned if it expires or the pool runs short.</p>`;
-  const nh=(u.history||[]).filter(h=>!(h.bonusPoints&&h.bonusPoints!=='0'));
+  const nh=u.history||[];
   if(nh.length)html+=`<h3>Recent conversions</h3><div class="table">${nh.map(h=>`<div class="row"><span>Season ${esc(h.season)}</span><span>${esc(fmt(h.points))} TAP</span><span>${esc(h.status)}${h.status==='settled'&&h.refundPoints&&h.refundPoints!=='0'?' · '+esc(fmt(h.refundPoints))+' TAP refunded':''}${h.status==='released'?' · TAP returned':''}</span></div>`).join('')}</div>`;
   root.innerHTML=html;
   estimate();
@@ -96,7 +96,7 @@
  }
  async function submit(e){
   e.preventDefault();if(busy)return;busy=true;$('#convert-submit').disabled=true;
-  try{const body={...(amount?{points:amount}:{}),useBonus:false};await api('airdrop/voucher',body);amount='';toast('Voucher issued. Hand it to your agent.');await refreshConvert(true);try{await window.refresh();}catch{}}
+  try{const body={...(amount?{points:amount}:{})};await api('airdrop/voucher',body);amount='';toast('Voucher issued. Hand it to your agent.');await refreshConvert(true);try{await window.refresh();}catch{}}
   catch(err){toast(err.message);}finally{busy=false;render();}
  }
  async function submitBonus(e){
