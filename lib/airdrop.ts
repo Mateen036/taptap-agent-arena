@@ -167,20 +167,18 @@ const bonusClaimsFor=async(e:AirdropEnv,tokens:number[])=>tokens.length?new Set(
 export async function nftBonusStatus(e:AirdropEnv,a:any|null,chain:Awaited<ReturnType<typeof chainSnapshot>>){
  const credited=await claimedTotal(e),remaining=NFT_BONUS_CAP_POINTS>credited?NFT_BONUS_CAP_POINTS-credited:0n,rate=chain.seasons[0]?.pointsPerNib||10n;
  const open=chain.currentSeason===1&&chain.seasons[0]?.status==='open'&&!chain.paused;
- const out:any={available:false,seasonOpen:open,collection:collectionAddress(e),pointsPerNft:NFT_BONUS_POINTS.toString(),nibPerNft:(NFT_BONUS_POINTS*E18/rate).toString(),capPoints:credited.toString(),capNib:(credited*E18/rate).toString(),creditedPoints:credited.toString(),remainingPoints:'0',remainingNib:'0',
-  message:'The NFT bonus pool is closed. All remaining Season 1 NIB tokens are in the Season 1 conversion pool.',bucket:'bonus_points',convertsInSeasons:[1],forfeitedAfterSeason:1};
+ const out:any={available:open&&remaining>=NFT_BONUS_POINTS,seasonOpen:open,collection:collectionAddress(e),pointsPerNft:NFT_BONUS_POINTS.toString(),nibPerNft:(NFT_BONUS_POINTS*E18/rate).toString(),capPoints:NFT_BONUS_CAP_POINTS.toString(),capNib:(NFT_BONUS_CAP_POINTS*E18/rate).toString(),creditedPoints:credited.toString(),remainingPoints:remaining.toString(),remainingNib:(remaining*E18/rate).toString(),
+  message:open?'NFT holders get a one-time bonus per NFT (token id), once ever. It goes to a separate bonus balance that converts to NIB in airdrop season 1 only and is forfeited afterwards. It is not spendable in-game and does not count toward rankings.':'The NFT bonus can only be claimed while airdrop season 1 is open.',bucket:'bonus_points',convertsInSeasons:[1],forfeitedAfterSeason:1};
  if(a?.connected){
   const {tokens,truncated}=await ownedTokens(e,a.wallet),claimed=await bonusClaimsFor(e,tokens),unclaimed=tokens.filter(t=>!claimed.has(t));
   const mine=await first(e,'SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS n FROM nft_bonus_claims WHERE wallet=?',a.wallet);
-  const claimable=0;
+  const claimable=open?Math.min(unclaimed.length,Number(remaining/NFT_BONUS_POINTS)):0;
   out.user={bonusBalance:bonusBalance(a).toString(),owned:tokens.map(t=>({tokenId:t,claimed:claimed.has(t)})),unclaimedCount:unclaimed.length,claimableNow:claimable,claimablePoints:(NFT_BONUS_POINTS*BigInt(claimable)).toString(),truncated,claimedByWalletPoints:bigSum(mine?.total).toString(),claimedByWalletCount:Number(mine?.n||0)};
  }
  return out;
 }
 /** Claim the bonus for every unclaimed NFT the wallet holds right now. Atomic: points, ledger and per-token rows commit together or not at all. */
 export async function claimNftBonus(e:AirdropEnv,a:any,now:number){
- void e;void a;void now;
- fail(409,'The NFT bonus pool is closed. All remaining Season 1 NIB tokens are in the Season 1 conversion pool.');
  if(!a||!a.connected)fail(409,'Pair a verified agent first.');
  const access=await requireGameAccess(e,a);
  const chain=await chainSnapshot(e,now,true);

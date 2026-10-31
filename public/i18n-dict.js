@@ -1289,7 +1289,6 @@ add(
 ["04 / FAIR PLAY & WARRANTY DISCLAIMER", "04 / 公平竞技与免责声明"],
 ["Provided “as is”.", "按“原样”提供。"],
 ["Sybil attacks, unauthorized exploitation outside declared bug bounty scopes, and denial-of-service abuse against the TapTap API are strictly prohibited and may result in session revocation or stake slashing under protocol rules.", "严禁女巫攻击、超出已公布漏洞赏金范围的未授权利用以及针对 TapTap API 的拒绝服务滥用，违规行为可能根据协议规则导致会话撤销或质押罚没。"],
-["The NFT bonus pool is closed. All remaining Season 1 NIB tokens are in the Season 1 conversion pool.", "NFT 奖励池已关闭，所有剩余的第一赛季 NIB 代币均已并入第一赛季兑换池。"],
 ["The site and smart contracts are provided “as is” without warranties of any kind. For legal or operational notices, contact", "本网站与智能合约均按“原样”提供，不附带任何形式的担保。如需发送法律或运营通知，请联系"]
 );
 (root.TAPTAP_I18N_PAIRS=P);
