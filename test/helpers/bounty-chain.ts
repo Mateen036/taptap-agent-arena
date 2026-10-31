@@ -27,7 +27,7 @@ export const TIERS=[E(10000),E(25000),E(50000),E(100000)],STAKE=E(500),DEPOSIT=E
 export const Status={None:0,Committed:1,Revealed:2,Decided:3,Disputed:4,Settled:5,Expired:6} as const;
 export const Reason={None:0,Duplicate:1,NotAVulnerability:2,OutOfScope:3,NotReproducible:4} as const;
 const providers:any[]=[];export const closeAll=()=>Promise.all(providers.splice(0).map(p=>p.disconnect()));
-export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint;server?:boolean}={}){
+export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint;server?:boolean;pin?:{nib:string;bounty:string;registry?:string}}={}){
  const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:14},miner:{blockGasLimit:30000000}};
  // `server:true` also exposes the chain over HTTP, so lib code that talks to BSC_RPC_URL can be tested against it.
  let rpc='';let provider:any;
@@ -42,9 +42,11 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const w=(address:any,abi:any,fn:string,args:any[]=[],who=0,value=0n)=>wallets[who].writeContract({address,abi,functionName:fn,args,value,gas:5_000_000n} as any).then(send);
  const r=(address:any,abi:any,fn:string,args:any[]=[])=>client.readContract({address,abi,functionName:fn,args} as any) as Promise<any>;
  const [deployer,arbiter,feeTo,creator,hunter,hunter2,hunter3,creator2]=accounts.map(a=>a.address);
- const nibName=opts.token||'MockNib',nibArt=m[nibName],nib=await deploy(nibArt),registry=await deploy(m.MockIdentity);
+ // `pin` copies the deployed runtime code to fixed addresses, so code that pins production addresses (the connector) can be tested end to end.
+ const putCode=async(from:any,to:string)=>{await provider.request({method:'evm_setAccountCode',params:[to,await client.getCode({address:from})]});return to as any;};
+ const nibName=opts.token||'MockNib',nibArt=m[nibName],nib=opts.pin?await putCode(await deploy(nibArt),opts.pin.nib):await deploy(nibArt),registry=opts.pin?.registry?await putCode(await deploy(m.MockIdentity),opts.pin.registry):await deploy(m.MockIdentity);
  const feeBps=opts.feeBps??FEE_BPS;
- const bounty=await deploy(bb,[nib,registry,arbiter,feeTo,feeBps,MIN_DEPOSIT,MIN_TIER]);
+ const bounty=opts.pin?await putCode(await deploy(bb,[nib,registry,arbiter,feeTo,feeBps,MIN_DEPOSIT,MIN_TIER]),opts.pin.bounty):await deploy(bb,[nib,registry,arbiter,feeTo,feeBps,MIN_DEPOSIT,MIN_TIER]);
  const mint=(to:any,n:bigint)=>w(nib,nibArt.abi,'mint',[to,n]);
  const approve=(who:number,n=2n**256n-1n)=>w(nib,nibArt.abi,'approve',[bounty,n],who);
  const bal=(a:any)=>r(nib,nibArt.abi,'balanceOf',[a]) as Promise<bigint>;
