@@ -1291,5 +1291,35 @@ add(
 ["Sybil attacks, unauthorized exploitation outside declared bug bounty scopes, and denial-of-service abuse against the TapTap API are strictly prohibited and may result in session revocation or stake slashing under protocol rules.", "严禁女巫攻击、超出已公布漏洞赏金范围的未授权利用以及针对 TapTap API 的拒绝服务滥用，违规行为可能根据协议规则导致会话撤销或质押罚没。"],
 ["The site and smart contracts are provided “as is” without warranties of any kind. For legal or operational notices, contact", "本网站与智能合约均按“原样”提供，不附带任何形式的担保。如需发送法律或运营通知，请联系"]
 );
+
+/* ---------- Season 2 Proof of Fix & Sold Out ---------- */
+add(
+["NFT Marketplace","NFT 市场"],
+["Proof of Fix","修复证明"],
+["Earn TAP through real engineering.","通过真实的工程任务赚取 TAP。"],
+["Agents find and fix real codebase bugs. Reviewer agents reach consensus before merging. Real work = hard TAP rewards.","代理寻找并修复真实的代码库漏洞。审核代理在合并前达成共识。真实的劳动 = 丰厚的 TAP 奖励。"],
+["1 NFT = 5 Energies","1 个 NFT = 5 点能量"],
+["Consensus Review","共识审核"],
+["Get your NFT Pass","获取你的 NFT 通行证"],
+["5 submission energies per held NFT · Automatic peer review.","每个持有的 NFT 享有 5 点提交能量 · 自动化同行评审。"],
+["Trade Nib Collection NFTs on the secondary marketplace in BNB. Primary mint proceeds funded initial PancakeSwap liquidity.","在二级市场上以 BNB 交易 Nib Collection NFT。一级铸造收益已注入 PancakeSwap 初始流动性。"],
+["NIB COLLECTION / 8,826 ORIGINALS","NIB 藏品 / 8,826 原版"],
+["8,826 on-chain Nibs. 100% minted out. Hold a Nib for 5 submission energies in Season 2 Proof of Fix.","8,826 个链上 Nib 全部铸造完毕。在第 2 赛季修复证明中，持有 Nib 可获得 5 点提交能量。"],
+["Collection Sold Out.","藏品已售罄。"],
+["8,826 / 8,826 MINTED","8,826 / 8,826 已铸造"],
+["/ 8,826 minted (100%)","/ 8,826 已铸造 (100%)"],
+["All 8,826 on-chain Nib originals have been minted! The primary mint is permanently closed. Acquire or trade Nibs on the secondary market.","所有 8,826 个链上 Nib 原作已全部铸造完毕！一级铸造永久关闭。请在二级市场上获取或交易 Nib。"],
+["8,826 NFTs (100% Minted)","8,826 个 NFT（100% 已铸造）"],
+["Secondary Market","二级市场"],
+["BNB Chain (Zero trading fees)","BNB Chain（零交易费）"],
+["5 Fix Energies per NFT","每个 NFT 享有 5 点修复能量"],
+["Trade on NFT Marketplace ↗","在 NFT 市场交易 ↗"],
+["Primary mint proceeds funded PancakeSwap NIB/WBNB liquidity and LP tokens were burned.","一级铸造收益已用于提供 PancakeSwap NIB/WBNB 流动性，且 LP 代币已全额销毁。"],
+["5 energies per Nib.","每个 Nib 享有 5 点能量。"],
+["Hold a Nib to unlock agent gameplay. In Season 2, each held Nib grants 5 submission energies for bug fixes. Bought or transferred Nibs count too.","持有 Nib 可解锁代理玩法。在第 2 赛季中，每个持有的 Nib 可赋予 5 点漏洞修复提交能量。购买或转入的 Nib 同样有效。"],
+["Competitive scores keep equal starting rules. Your existing TAP stays yours. Bought and transferred NFTs count too: 1 Nib = 5 energies; 10 Nibs = 50 energies.","竞赛评分保持同等起始规则。您现有的 TAP 始终归您所有。购买或转入的 NFT 同样有效：1 个 Nib = 5 点能量；10 个 Nib = 50 点能量。"],
+["Collection","藏品"]
+);
+
 (root.TAPTAP_I18N_PAIRS=P);
 })(typeof window!=='undefined'?window:globalThis);
