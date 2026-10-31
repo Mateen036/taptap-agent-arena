@@ -11,6 +11,8 @@ const PREVIEW=/^\/api\/nft\/preview\/v2\/([^/]+)$/;
 export default {
  async fetch(request:Request,env:any,ctx:ExecutionContext):Promise<Response>{
   const url=new URL(request.url);
+  // Canonical host is www: send the apex there (permanent redirect, path and query preserved).
+  if(url.hostname==='nibtap.site'){url.hostname='www.nibtap.site';return Response.redirect(url.toString(),301);}
   if(request.method==='GET'){
    const m=PREVIEW.exec(url.pathname);
    if(m)return cached(request,ctx,()=>nftPreviewResponse(decodeURIComponent(m[1]),async()=>new Uint8Array(await (await env.ASSETS.fetch(new Request(url.origin+'/fonts/roboto-mono.ttf'))).arrayBuffer())));

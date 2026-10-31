@@ -6,6 +6,10 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "www.nibtap.site", "custom_domain": true },
+    { "pattern": "nibtap.site", "custom_domain": true }
+  ],
   "vars": {
     "ALLOW_WALLET_RELINK": "true",
     "ADMIN_WALLET": "0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d",
