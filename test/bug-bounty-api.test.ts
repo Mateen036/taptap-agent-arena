@@ -1,8 +1,8 @@
 import {test,after} from 'node:test';import assert from 'node:assert/strict';
 import {decodeFunctionData,keccak256,toHex} from 'viem';
-import {setup,closeAll,E,DAY,TIERS,STAKE,DEPOSIT,Status} from './helpers/bounty-chain';
+import {setup,closeAll,E,DAY,TIERS,STAKE,DEPOSIT,DUP,Status,Outcome,REV0} from './helpers/bounty-chain';
 import {databaseFixture} from './helpers/database';
-import {bugBountyState,bugBountyAction,bugBountyRoute,bountyTxAction,bountyAbi,createTerms,nibAmount,scopeHash,reportHashOf,sealReport,openReport,bountyPhase,tierLabel,BugBountyError,BUG_BOUNTY_ACTIONS,BOUNTY_FUNCTIONS,MAX_REPORT_BYTES} from '../lib/bug-bounty';
+import {bugBountyState,bugBountyAction,bugBountyRoute,bountySubmissions,reconcileTap,bountyAbi,createTerms,nibAmount,scopeHash,reportHashOf,sealReport,openReport,bountyPhase,tierLabel,minTapStake,quorum,splitPayout,nextStep,ticketDigest,BugBountyError,BUG_BOUNTY_ACTIONS,BOUNTY_FUNCTIONS,MAX_REPORT_BYTES} from '../lib/bug-bounty';
 import {handle} from '../lib/api';
 after(closeAll);
 const KEY='ab'.repeat(32);
@@ -10,16 +10,33 @@ const policy={active:false,version:2 as const,formula:'5*owned' as const,scope:'
 const SCOPE='In scope: the NibSwap router contracts at 0x1234 on BNB Chain. Out of scope: front-end, social engineering, DoS. Report with a PoC and impact.';
 const who=(addr:string)=>({wallet:addr.toLowerCase(),connected:true});
 const status=async(p:Promise<any>)=>{try{await p;return 200;}catch(e:any){return e instanceof BugBountyError?e.status:-1;}};
-async function world(kind:'sqlite'|'postgres'='sqlite'){
+const TAP0=5000n;
+async function world(kind:'sqlite'|'postgres'='sqlite',o:{signer?:boolean}={}){
  const t=await setup({server:true});const DB=await databaseFixture(kind);
- const env:any={DB,BUG_BOUNTY_CONTRACT:t.bounty,BUG_BOUNTY_REPORT_KEY:KEY,NIB_TOKEN:t.nib,BSC_RPC_URL:t.rpc,_utilityPolicy:policy};
+ const env:any={DB,BUG_BOUNTY_CONTRACT:t.bounty,BUG_BOUNTY_REPORT_KEY:KEY,BUG_BOUNTY_SIGNER_PRIVATE_KEY:o.signer===false?undefined:t.keys[1],NIB_TOKEN:t.nib,BSC_RPC_URL:t.rpc,_utilityPolicy:policy};
  const now=async()=>(await t.now())*1000;
- const act=async(wallet:string,action:string,payload:any)=>bugBountyAction(env,who(wallet),action,payload,await now());
- const tx=async(wallet:string,payload:any)=>(await act(wallet,'bounty-tx',payload)).bugBounty;
+ const addr=(i:number)=>t.accounts[i].address.toLowerCase();
+ const fund=async(idx:number[],tap=TAP0)=>{for(const i of idx)await DB.prepare('INSERT INTO agents(wallet,user_id,name,points,earned,updated_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(addr(i),'u'+i,'Agent '+i,Number(tap),Number(tap),1,1).run();};
+ const tap=async(i:number)=>{const r:any=await DB.prepare('SELECT * FROM agents WHERE wallet=?').bind(addr(i)).first();return BigInt(r.points_exact??r.points);};
+ const act=async(i:number,action:string,payload:any)=>bugBountyAction(env,{...who(addr(i)),...(await DB.prepare('SELECT * FROM agents WHERE wallet=?').bind(addr(i)).first<any>())},action,payload,await now());
+ const tx=async(i:number,payload:any)=>(await act(i,'bounty-tx',payload)).bugBounty;
+ // Execute every previewed step on the local chain exactly as baw would, and require success.
+ const run=async(i:number,res:any)=>{let last:any;for(const s of res.steps){const hash=await t.wallets[i].sendTransaction({to:s.transaction.to,data:s.transaction.data,value:BigInt(s.transaction.value),gas:6_000_000n} as any);last=await t.client.waitForTransactionReceipt({hash});assert.equal(last.status,'success',s.name);}return last;};
+ const go=async(i:number,payload:any)=>run(i,await tx(i,payload));
  const decode=(step:any)=>decodeFunctionData({abi:bountyAbi,data:step.transaction.data});
- return {t,DB,env,now,act,tx,decode};
+ const state=async(i?:number)=>(await bugBountyState(env,i===undefined?null:addr(i),await now())) as any;
+ return {t,DB,env,now,act,tx,go,run,decode,fund,tap,addr,state};
 }
-
+type World=Awaited<ReturnType<typeof world>>;
+const TERMS={tiers:['10000','25000','50000','100000'],deposit:'300000',days:30,panelSize:3,scope:SCOPE};
+async function newBounty(w:World,from=4){await w.go(from,{fn:'create',...TERMS});const id=Number(await w.t.br('bountyNonce'));await w.act(from,'bounty-scope-put',{bountyId:id,text:SCOPE});return id;}
+// hunter: commit via the API (locks TAP, returns a signed ticket), store the report, reveal
+async function hunt(w:World,bountyId:number,idx:number,severity=2,body='reentrancy in withdraw(): attacker drains the pool. PoC attached in full text.'){
+ const rh=reportHashOf(body),salt=keccak256(toHex('salt-'+idx+'-'+severity+'-'+body.length)),commitHash=await w.t.br('commitHashFor',[BigInt(bountyId),w.t.accounts[idx].address,severity,rh,salt]);
+ await w.go(idx,{fn:'commit',bountyId,commitHash});const sid=Number(await w.t.br('submissionNonce'));
+ await w.act(idx,'bounty-report-put',{submissionId:sid,body,reportHash:rh});
+ await w.go(idx,{fn:'reveal',id:sid,severity,reportHash:rh,salt});return {sid,body,rh,salt};
+}
 test('hidden by default: no contract env means no data, no RPC, 404 on every action and sub-route',async()=>{
  const env:any={DB:null,_utilityPolicy:policy};
  assert.deepEqual(await bugBountyState(env,null,Date.now()),{enabled:false});
@@ -37,17 +54,6 @@ test('an address with no contract behind it is ignored, not trusted',async()=>{
  const t=await setup({server:true});const env:any={DB:await databaseFixture('sqlite'),BUG_BOUNTY_CONTRACT:'0x'+'4'.repeat(40),BSC_RPC_URL:t.rpc,_utilityPolicy:policy};
  const s:any=await bugBountyState(env,null,Date.now()).catch((e:any)=>({err:e.status}));assert.ok(s.err===503||s.live===false,JSON.stringify(s));
 });
-test('pure helpers: amounts, phases, labels, terms mirror the contract rules',()=>{
- assert.equal(nibAmount('1.5','x'),15n*10n**17n);for(const bad of ['1e3','-1','0','abc','','1.0000000000000000001',null,undefined,'1,000'])assert.throws(()=>nibAmount(bad as any,'x'),(e:any)=>e.status===400,String(bad));
- assert.equal(tierLabel(4,4),'Critical');assert.equal(tierLabel(4,1),'Low');assert.equal(tierLabel(1,1),'Bounty');assert.equal(tierLabel(3,3),'High');
- assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:200,cancelRequestedAt:0},100),'open');assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:150,cancelRequestedAt:50},100),'closing');assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:150,cancelRequestedAt:50},150),'ended');assert.equal(bountyPhase({closed:true,endsAt:200,closesAt:200,cancelRequestedAt:0},100),'withdrawn');
- const params={minDeposit:E(50000),minLowestTier:E(10000)};const ok={tiers:['10000','25000','50000','100000'],deposit:'300000',days:30,reviewDays:7,scope:SCOPE};
- const t=createTerms(ok,params,1000);assert.equal(t.stake,E(200),'default stake is 2% of the lowest tier');assert.equal(t.endsAt,BigInt(1000+30*86400));assert.equal(t.scopeHash,scopeHash(SCOPE));
- const bad:[string,any][]=[['no tiers',{...ok,tiers:[]}],['5 tiers',{...ok,tiers:['10000','20000','30000','40000','50000']}],['not increasing',{...ok,tiers:['10000','10000']}],['lowest too small',{...ok,tiers:['9999','20000']}],['deposit under min',{...ok,deposit:'49999',tiers:['10000']}],['deposit under top tier',{...ok,deposit:'60000',tiers:['10000','70000']}],
-  ['too short',{...ok,days:13}],['too long',{...ok,days:366}],['review too short',{...ok,reviewDays:2}],['review too long',{...ok,reviewDays:31}],['stake <1%',{...ok,stake:'99'}],['stake >10%',{...ok,stake:'1001'}],['no scope',{...ok,scope:undefined}],['tiny scope',{...ok,scope:'short'}],['huge scope',{...ok,scope:'x'.repeat(16385)}]];
- for(const [name,p] of bad)assert.throws(()=>createTerms(p,params,1000),(e:any)=>e instanceof BugBountyError&&e.status===400,name);
- assert.ok(createTerms({...ok,stake:'100'},params,1000));assert.ok(createTerms({...ok,stake:'1000'},params,1000));
-});
 test('reports are sealed with AES-GCM bound to the submission and hash; tampering or a wrong key fails',async()=>{
  const env:any={BUG_BOUNTY_REPORT_KEY:KEY};const body='critical: reentrancy in withdraw() allows draining. PoC: ...';const rh=reportHashOf(body);
  const sealed=await sealReport(env,'7',rh,body);assert.ok(!sealed.ciphertext.includes(btoa(body).slice(0,12)));assert.equal(await openReport(env,'7',rh,sealed),body);
@@ -58,124 +64,164 @@ test('reports are sealed with AES-GCM bound to the submission and hash; tamperin
  const flipped={...sealed,ciphertext:(sealed.ciphertext[0]==='A'?'B':'A')+sealed.ciphertext.slice(1)};await assert.rejects(openReport(env,'7',rh,flipped),(e:any)=>e.status===500,'tampered');
  for(const k of [undefined,'','zz'.repeat(32),'ab'.repeat(31)])await assert.rejects(sealReport({BUG_BOUNTY_REPORT_KEY:k} as any,'1',rh,body),(e:any)=>e.status===503,'bad key: '+k);
 });
-test('state and scope: the public scope text is shown only when it matches the on-chain hash, and is immutable',async()=>{
- const w=await world();const {t}=w;const id=await t.create({scope:'x'});
- // the project committed to SCOPE's hash on-chain
- await t.bw('createBounty',[scopeHash(SCOPE),TIERS,BigInt(await t.now()+30*DAY),BigInt(7*DAY),STAKE,DEPOSIT],3);const id2=await t.br('bountyNonce') as bigint;
- let s:any=await bugBountyState(w.env,null,await w.now());assert.equal(s.enabled,true);assert.equal(s.live,true);assert.equal(s.bounties.length,2);assert.equal(s.bounties[0].id,id2.toString());assert.equal(s.bounties[0].scope.verified,false);assert.equal(s.params.feeBps,200);
- assert.equal(s.bounties[0].tiers.length,4);assert.equal(s.bounties[0].tiers[3].label,'Critical');assert.equal(s.bounties[0].tiers[0].nib,'10000');assert.equal(s.bounties[0].available,'300000');assert.equal(s.bounties[0].phase,'open');
- assert.equal(s.params.arbiter,t.arbiter.toLowerCase());assert.equal(s.totals.escrow,'600000');assert.equal(s.you,undefined);
- // only the creator, only the exact text, only once
- assert.equal(await status(w.act(t.hunter,'bounty-scope-put',{bountyId:id2.toString(),text:SCOPE})),403);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:id2.toString(),text:SCOPE+' tampered'})),409);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:'99',text:SCOPE})),404);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:id2.toString(),text:'x'.repeat(16385)})),400);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:id2.toString()})),400);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:id2.toString(),text:SCOPE})),200);
- assert.equal(await status(w.act(t.creator,'bounty-scope-put',{bountyId:id2.toString(),text:SCOPE})),409,'immutable once published');
- s=await bugBountyState(w.env,t.hunter.toLowerCase(),await w.now());assert.equal(s.bounties[0].scope.verified,true);assert.equal(s.bounties[0].scope.text,SCOPE);assert.equal(s.you.hunter.paid,0);assert.deepEqual(s.you.mySubmissions,[]);
- // a forged DB row (hash mismatch) is never displayed
- await w.DB.prepare('UPDATE bounty_scopes SET text=? WHERE bounty_id=?').bind('forged text that the project never committed to',id2.toString()).run();
- s=await bugBountyState(w.env,null,await w.now());assert.equal(s.bounties[0].scope.verified,false);assert.equal(s.bounties[0].scope.text,null);
- // viewer-specific data: submissions and the creator's own bounties
- const sub=await t.submit(id2,4,2);s=await bugBountyState(w.env,t.hunter.toLowerCase(),await w.now());assert.equal(s.you.mySubmissions.length,1);assert.equal(s.you.mySubmissions[0].status,'Revealed');assert.equal(s.you.mySubmissions[0].claimedLabel,'Medium');assert.equal(s.you.mySubmissions[0].reportHash,sub.reportHash);
- s=await bugBountyState(w.env,t.creator.toLowerCase(),await w.now());assert.deepEqual(s.you.myBounties.sort(),[id.toString(),id2.toString()].sort());
- s=await bugBountyState(w.env,t.arbiter.toLowerCase(),await w.now());assert.equal(s.you.isArbiter,true);
- const res=await bugBountyRoute(new Request('https://x.test/api/bug-bounty/'+id2+'/submissions'),w.env,null,await w.now());assert.equal(res?.status,200);const subs=await res!.json();assert.equal(subs.submissions.length,1);assert.equal(JSON.stringify(subs).includes('body'),false,'no report text in the public list');
- await assert.rejects(bugBountyRoute(new Request('https://x.test/api/bug-bounty/999/submissions'),w.env,null,await w.now()) as any,(e:any)=>e.status===404);
+test('pure helpers: amounts, phases, labels, TAP stake floor, quorum and payout split mirror the contract',async()=>{
+ assert.equal(nibAmount('1.5','x'),15n*10n**17n);for(const bad of ['1e3','-1','0','abc','','1.0000000000000000001',null,undefined,'1,000'])assert.throws(()=>nibAmount(bad as any,'x'),(e:any)=>e.status===400,String(bad));
+ assert.equal(tierLabel(4,4),'Critical');assert.equal(tierLabel(4,1),'Low');assert.equal(tierLabel(1,1),'Bounty');assert.equal(tierLabel(3,3),'High');
+ assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:200,cancelRequestedAt:0},100),'open');assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:200,cancelRequestedAt:50},100),'closing');assert.equal(bountyPhase({closed:false,endsAt:200,closesAt:200,cancelRequestedAt:0},200),'ended');assert.equal(bountyPhase({closed:true,endsAt:200,closesAt:200,cancelRequestedAt:0},100),'withdrawn');
+ assert.equal(scopeHash(SCOPE),keccak256(toHex(SCOPE)));
+ const t=await setup();
+ for(const tier of [E(10000),E(10001),E(4_999_999),E(5_000_000),E(12_345_678),E(1_000_000_000)])assert.equal(minTapStake(tier),await t.br('minTapStake',[tier]),'minTapStake '+tier);
+ assert.equal(minTapStake(E(10000)),1000n);assert.equal(minTapStake(E(1)),500n);
+ for(const n of [3,5,7,9])assert.equal(BigInt(quorum(n)),await t.br('quorum',[BigInt(n)]),'quorum '+n);
+ const s=splitPayout(E(50000),200,2000,2);assert.deepEqual([s.fee,s.reviewers,s.perReviewer,s.hunter],[E(1000),E(10000),E(5000),E(39000)]);
+ const d=splitPayout(E(10000)+1n,200,2000,3);assert.equal(d.fee+d.reviewers+d.hunter,E(10000)+1n,'every wei is accounted for');
+ // the digest the server signs is the digest the contract verifies
+ const dg=await t.br('ticketDigest',[1,t.accounts[5].address,1n,1000n,keccak256(toHex('l')),99n]);assert.equal(ticketDigest(t.bounty,1,t.accounts[5].address,1n,1000n,keccak256(toHex('l')),99n),dg);
+ // next-step hints
+ const sub=(o:any)=>({status:1,deadline:100,revealDeadline:0,seedBlock:0,reveals:0,commits:0,...o});
+ assert.equal(nextStep(sub({}),3,50).step,'reveal');assert.equal(nextStep(sub({}),3,150).step,'expire');assert.equal(nextStep(sub({status:2}),3,50).step,'apply');assert.equal(nextStep(sub({status:2}),3,150).step,'start-selection');assert.equal(nextStep(sub({status:2,seedBlock:5}),3,150,6).step,'select');assert.equal(nextStep(sub({status:2,seedBlock:5}),3,150,300).step,'start-selection');
+ assert.equal(nextStep(sub({status:3,commits:1,revealDeadline:300}),3,50).step,'vote');assert.equal(nextStep(sub({status:3,commits:3,revealDeadline:300}),3,50).step,'open-vote');assert.equal(nextStep(sub({status:3,reveals:3,revealDeadline:300}),3,50).step,'finalize');assert.equal(nextStep(sub({status:4}),3,50).step,null);
 });
-test('bounty previews (project side): validated terms, exact-amount approval only when short, calldata decodes to exactly what was asked',async()=>{
- const w=await world();const {t}=w;const newbie=t.accounts[8].address;await t.mint(newbie,E(400000));await t.idy(newbie);
- const terms={fn:'create',tiers:['10000','25000','50000','100000'],deposit:'300000',days:30,reviewDays:7,stake:'500',scope:SCOPE};
- // no allowance yet: step 1 is an approval of EXACTLY the deposit, never unlimited
- let r=await w.tx(newbie,terms);assert.equal(r.steps.length,2);const ap=decodeFunctionData({abi:[{type:'function',name:'approve',inputs:[{type:'address'},{type:'uint256'}],outputs:[{type:'bool'}],stateMutability:'nonpayable'}],data:r.steps[0].transaction.data});
- assert.equal((ap.args as any)[0].toLowerCase(),t.bounty.toLowerCase());assert.equal((ap.args as any)[1],DEPOSIT);assert.equal(r.steps[0].transaction.to.toLowerCase(),t.nib.toLowerCase());assert.equal(r.steps[1].dependsOn!==null,true);
- const d:any=w.decode(r.steps[1]);assert.equal(d.functionName,'createBounty');assert.equal(d.args[0],scopeHash(SCOPE));assert.deepEqual(d.args[1],TIERS);assert.equal(d.args[4],E(500));assert.equal(d.args[5],DEPOSIT);assert.equal(r.steps[1].transaction.value,'0');assert.equal(r.steps[1].transaction.from.toLowerCase(),newbie.toLowerCase());
- assert.match(r.steps[1].baw,/^baw contract-call preview --binanceChainId 56 /);assert.ok(r.summary.rules.length>=3);
- // after the approval confirms, only the create step remains
- await t.w(t.nib,t.nibArt.abi,'approve',[t.bounty,DEPOSIT],8);r=await w.tx(newbie,terms);assert.equal(r.steps.length,1);
- // insufficient NIB is a clear 409 before anything is previewed
- assert.equal(await status(w.tx(newbie,{...terms,deposit:'500000',tiers:['10000','500000']})),409);
- // the arbiter, an unknown fn and bad terms
- assert.equal(await status(w.tx(t.arbiter,terms)),403);assert.equal(await status(w.tx(newbie,{...terms,fn:'drain'})),400);assert.equal(await status(w.tx(newbie,{...terms,days:3})),400);
- // a wallet that is not on-chain identified is stopped by the contract itself (preview is only a preview)
- const id=await t.create();
- // topup / extend / cancel / withdraw: creator only, state-aware
- const creator=t.creator;
- r=await w.tx(creator,{fn:'topup',id:String(id),amount:'1000'});assert.equal((w.decode(r.steps[r.steps.length-1]) as any).functionName,'topUp');assert.equal(await status(w.tx(t.hunter,{fn:'topup',id:String(id),amount:'1'})),403);
- assert.equal(await status(w.tx(creator,{fn:'extend',id:String(id),days:1})),409,'cannot shorten');r=await w.tx(creator,{fn:'extend',id:String(id),days:90});assert.equal((w.decode(r.steps[0]) as any).functionName,'extend');
- assert.equal(await status(w.tx(creator,{fn:'withdraw',id:String(id)})),409,'still open: no withdrawal');
- r=await w.tx(creator,{fn:'cancel',id:String(id)});assert.match(r.summary.effect,/7-day/);assert.equal(await status(w.tx(t.hunter,{fn:'cancel',id:String(id)})),403);assert.equal(await status(w.tx(creator,{fn:'cancel',id:'99'})),404);
- await t.bw('requestCancel',[id],3);assert.equal(await status(w.tx(creator,{fn:'cancel',id:String(id)})),409,'already closing');
- // a pending submission blocks the withdraw preview even after the end
- const sub=await t.submit(id,4,2);await t.warp(8*DAY);assert.equal(await status(w.tx(creator,{fn:'withdraw',id:String(id)})),409,'pending');
- await t.bw('accept',[sub.id,2],3);r=await w.tx(creator,{fn:'withdraw',id:String(id)});assert.equal((w.decode(r.steps[0]) as any).functionName,'withdraw');
- // every action in the whitelist exists on the contract ABI
- for(const f of BOUNTY_FUNCTIONS)assert.ok(f);
+test('createTerms: minimum bounty 10k NIB, increasing tiers, odd panel of 3-9, TAP stake within [floor, 10x floor]',()=>{
+ const P={minDeposit:E(10000),minLowestTier:E(10000)},now=1_800_000_000,ok={...TERMS};
+ const t=createTerms(ok,P,now);assert.equal(t.tapStake,1000n);assert.equal(t.panelSize,3n);assert.equal(t.tiers.length,4);assert.equal(t.endsAt,BigInt(now+30*DAY));
+ const bad=(o:any,re:RegExp)=>assert.throws(()=>createTerms({...ok,...o},P,now),(e:any)=>e.status===400&&re.test(e.message),JSON.stringify(o).slice(0,60));
+ bad({tiers:['9999']},/at least 10000/);bad({tiers:['10000','10000']},/increasing/);bad({tiers:[]},/1 to 4/);bad({tiers:['10000','20000','30000','40000','50000']},/1 to 4/);bad({tiers:'x'},/payout tiers/);
+ bad({deposit:'9999'},/escrow must be at least/);bad({deposit:'50000'},/cover at least one payout/);bad({days:13},/14 to 365/);bad({days:366},/14 to 365/);
+ bad({panelSize:2},/3, 5, 7 or 9/);bad({panelSize:4},/3, 5, 7 or 9/);bad({panelSize:11},/3, 5, 7 or 9/);
+ bad({tapStake:'999'},/between 1000 and 10000/);bad({tapStake:'10001'},/between 1000 and 10000/);bad({tapStake:'1.5'},/whole number/);
+ assert.equal(createTerms({...ok,tapStake:'10000',panelSize:9},P,now).panelSize,9n);
+ assert.equal(createTerms({...ok,tiers:['5000000'],deposit:'5000000'},P,now).tapStake,500000n);
+ bad({scope:'short'},/too short/);bad({scope:undefined},/Describe the scope/);bad({scope:'x'.repeat(16385)},/too large/);
 });
-test('bounty previews (hunter and review side): prechecks mirror the contract, reveal must match the commit, payouts show the fee',async()=>{
- const w=await world();const {t}=w;const id=await t.create({review:3});const rep=t.report('api');
- const ch=t.commitHash(id,t.hunter,2,rep.reportHash,rep.salt);
- // commit: creator and arbiter blocked; stake approval only if short; stake comes from the bounty
- assert.equal(await status(w.tx(t.creator,{fn:'commit',bountyId:String(id),commitHash:ch})),403);assert.equal(await status(w.tx(t.arbiter,{fn:'commit',bountyId:String(id),commitHash:ch})),403);
- assert.equal(await status(w.tx(t.hunter,{fn:'commit',bountyId:String(id),commitHash:'0x12'})),400);assert.equal(await status(w.tx(t.hunter,{fn:'commit',bountyId:'77',commitHash:ch})),404);
- let r=await w.tx(t.hunter,{fn:'commit',bountyId:String(id),commitHash:ch});assert.equal(r.summary.stakeNib,'500');assert.equal((w.decode(r.steps[0]) as any).functionName,'commit');assert.deepEqual((w.decode(r.steps[0]) as any).args,[id,ch]);assert.ok(r.warnings.length>0);
- const sub=await t.commit(id,4,2,rep);
- // reveal: only the committer, only matching values
- assert.equal(await status(w.tx(t.hunter2,{fn:'reveal',id:String(sub.id),severity:2,reportHash:rep.reportHash,salt:rep.salt})),403);
- assert.equal(await status(w.tx(t.hunter,{fn:'reveal',id:String(sub.id),severity:3,reportHash:rep.reportHash,salt:rep.salt})),409,'different severity than committed');
- assert.equal(await status(w.tx(t.hunter,{fn:'reveal',id:String(sub.id),severity:2,reportHash:rep.reportHash,salt:t.report('other').salt})),409,'wrong salt');
- assert.equal(await status(w.tx(t.hunter,{fn:'reveal',id:String(sub.id),severity:9,reportHash:rep.reportHash,salt:rep.salt})),400);
- r=await w.tx(t.hunter,{fn:'reveal',id:String(sub.id),severity:2,reportHash:rep.reportHash,salt:rep.salt});assert.deepEqual((w.decode(r.steps[0]) as any).args,[sub.id,2,rep.reportHash,rep.salt]);
- assert.equal(await status(w.tx(t.creator,{fn:'accept',id:String(sub.id),severity:2})),409,'not revealed yet');await t.reveal(sub);
- // accept / reject previews
- assert.equal(await status(w.tx(t.hunter,{fn:'accept',id:String(sub.id),severity:2})),403);assert.equal(await status(w.tx(t.creator,{fn:'accept',id:String(sub.id),severity:3})),400,'above the claim');
- r=await w.tx(t.creator,{fn:'accept',id:String(sub.id),severity:2});assert.equal(r.summary.paysNib,'25000');assert.equal(r.summary.hunterReceivesNib,'24500');assert.match(r.summary.effect,/full/i);
- r=await w.tx(t.creator,{fn:'accept',id:String(sub.id),severity:1});assert.match(r.summary.effect,/dispute/i);
- for(const [p,code] of [[{reason:'nope'},400],[{reason:'duplicate'},400],[{reason:'duplicate',duplicateOf:'1'},200],[{reason:'out_of_scope',duplicateOf:'1'},400],[{reason:'out_of_scope'},200]] as const)assert.equal(await status(w.tx(t.creator,{fn:'reject',id:String(sub.id),...p})),code,JSON.stringify(p));
- assert.equal(await status(w.tx(t.hunter,{fn:'reject',id:String(sub.id),reason:'out_of_scope'})),403);
- // time-gated permissionless steps refuse early and succeed on time
- assert.equal(await status(w.tx(t.hunter,{fn:'escalate',id:String(sub.id)})),409,'review window still open');await t.warp(3*DAY+10);
- r=await w.tx(t.hunter,{fn:'escalate',id:String(sub.id)});assert.equal((w.decode(r.steps[0]) as any).functionName,'escalate');assert.equal(await status(w.tx(t.hunter2,{fn:'escalate',id:String(sub.id)})),403);
- await t.bw('escalate',[sub.id],4);assert.equal(await status(w.tx(t.hunter,{fn:'arbiter-timeout',id:String(sub.id)})),409);assert.equal(await status(w.tx(t.hunter,{fn:'resolve',id:String(sub.id),severity:2})),403,'only the arbiter resolves');
- r=await w.tx(t.arbiter,{fn:'resolve',id:String(sub.id),severity:2,returnStake:true});assert.equal((w.decode(r.steps[0]) as any).functionName,'resolveDispute');assert.equal(await status(w.tx(t.arbiter,{fn:'resolve',id:String(sub.id),severity:5})),400);
- await t.warp(14*DAY+10);r=await w.tx(t.hunter2,{fn:'arbiter-timeout',id:String(sub.id)});assert.equal((w.decode(r.steps[0]) as any).functionName,'claimArbiterTimeout');
- // dispute needs a bond approval equal to the stake when short; expire an unrevealed commit
- const id2=await t.create();const c2=await t.commit(id2,5,1);assert.equal(await status(w.tx(t.hunter,{fn:'expire',id:String(c2.id)})),409);await t.warp(DAY+10);r=await w.tx(t.hunter,{fn:'expire',id:String(c2.id)});assert.equal((w.decode(r.steps[0]) as any).functionName,'expireCommit');
- const s3=await t.submit(id2,6,4);await t.bw('accept',[s3.id,2],3);r=await w.tx(t.hunter3,{fn:'dispute',id:String(s3.id)});assert.equal(r.summary.bondNib,'500');assert.equal(await status(w.tx(t.hunter,{fn:'dispute',id:String(s3.id)})),403);
- assert.equal(await status(w.tx(t.hunter3,{fn:'finalize',id:String(s3.id)})),409,'dispute window open');r=await w.tx(t.hunter3,{fn:'accept-decision',id:String(s3.id)});assert.equal((w.decode(r.steps[0]) as any).functionName,'acceptDecision');assert.equal(await status(w.tx(t.hunter,{fn:'accept-decision',id:String(s3.id)})),403);
+test('state shows the rules and the project\'s scope; previews decode to exactly the asked call and carry the 2% / 20% / TAP-only terms',async()=>{
+ const w=await world();await w.fund([4,5]);
+ assert.equal((await w.state()).bounties.length,0);const p=(await w.state()).params;
+ assert.deepEqual([p.feeBps,p.reviewerBps,p.minDeposit,p.minLowestTier],[200,2000,'10000','10000']);assert.equal(p.feeRecipient,w.addr(3));assert.equal(p.ticketSigner,w.addr(1));
+ const r=await w.tx(4,{fn:'create',...TERMS});const create=r.steps.at(-1);assert.equal(r.steps.length,1,'allowance already exact-enough');
+ const d=w.decode(create);assert.equal(d.functionName,'createBounty');assert.equal((d.args as any)[3],3n);assert.equal((d.args as any)[4],1000n);assert.equal((d.args as any)[5],E(300000));
+ assert.equal(r.summary.panelSize,3);assert.equal(r.summary.quorum,2);assert.equal(r.summary.tapStakePerReport,'1000');assert.match(r.summary.rules.join(' '),/2% platform fee/);assert.match(r.summary.rules.join(' '),/20% shared by the reviewers/);assert.match(r.summary.rules.join(' '),/TAP points, never NIB/);
+ assert.ok(r.summary.tiers[2].hunterGetsNibApprox.startsWith('39000'),'50000 - 2% - 20% = 39000');assert.match(create.baw,/^baw contract-call preview --binanceChainId 56 --from 0x/);
+ // an approval is requested only when the allowance is short, and only for exactly the amount
+ await w.t.w(w.t.nib,w.t.nibArt.abi,'approve',[w.t.bounty,0n],4);const r2=await w.tx(4,{fn:'create',...TERMS});assert.equal(r2.steps.length,2);assert.equal(w.decode({transaction:r2.steps[1].transaction}).functionName,'createBounty');
+ const ap=decodeFunctionData({abi:[{type:'function',name:'approve',inputs:[{type:'address'},{type:'uint256'}],outputs:[{type:'bool'}],stateMutability:'nonpayable'}],data:r2.steps[0].transaction.data});assert.deepEqual([String(ap.args[0]).toLowerCase(),ap.args[1]],[w.t.bounty.toLowerCase(),E(300000)]);
+ await w.t.approve(4);await w.go(4,{fn:'create',...TERMS});
+ let s=await w.state(4);assert.equal(s.bounties[0].scope.verified,false,'no text published yet');
+ await assert.rejects(w.act(5,'bounty-scope-put',{bountyId:1,text:SCOPE}),(e:any)=>e.status===403,'only the creator');
+ await assert.rejects(w.act(4,'bounty-scope-put',{bountyId:1,text:SCOPE+' tampered'}),(e:any)=>e.status===409,'must match the on-chain hash');
+ await w.act(4,'bounty-scope-put',{bountyId:1,text:SCOPE});await assert.rejects(w.act(4,'bounty-scope-put',{bountyId:1,text:SCOPE}),(e:any)=>e.status===409,'immutable');
+ s=await w.state(4);const b=s.bounties[0];assert.equal(b.scope.text,SCOPE);assert.equal(b.scope.verified,true);assert.equal(b.panelSize,3);assert.equal(b.quorum,2);assert.equal(b.tapStake,'1000');assert.equal(b.phase,'open');assert.deepEqual(b.tiers.map((t:any)=>t.label),['Low','Medium','High','Critical']);assert.equal(s.you.myBounties[0],'1');
+ for(const [bad,re,code] of [[{fn:'nope'},/Unknown bounty step/,400],[{fn:'create',...TERMS,tiers:['9000']},/at least 10000/,400],[{fn:'topup',id:1,amount:'1'},/./,200],[{fn:'topup',id:99,amount:'1'},/does not exist/,404]] as any[]){
+  const out=await w.act(4,'bounty-tx',bad).then(()=>200,(e:any)=>{assert.match(e.message,re);return e.status;});assert.equal(out,code,JSON.stringify(bad));
+ }
+ await assert.rejects(w.tx(5,{fn:'topup',id:1,amount:'5'}),(e:any)=>e.status===403,'only the creator tops up');
+ await assert.rejects(w.tx(5,{fn:'withdraw',id:1}),(e:any)=>e.status===403);await assert.rejects(w.tx(4,{fn:'withdraw',id:1}),(e:any)=>e.status===409,'not before the end');
 });
-for(const kind of ['sqlite','postgres'] as const)test(`private reports (${kind}): encrypted at rest, only the right party can read at the right time`,async()=>{
- const w=await world(kind);const {t}=w;const id=await t.create({review:3});const rep=t.report('private');const body='HIGH: unchecked return value in Vault.sweep(). PoC attached below.\n'+'A'.repeat(200);const rh=reportHashOf(body);
- const sub=await t.commit(id,4,3,{reportHash:rh,salt:rep.salt});const sid=String(sub.id);
- // before anything is stored
- assert.equal(await status(w.act(t.hunter,'bounty-report-get',{submissionId:sid})),404);
- // upload rules: hash must match, only the committer, size limit, existing submission
- assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:sid,body,reportHash:keccak256(toHex('else'))})),400);
- assert.equal(await status(w.act(t.hunter2,'bounty-report-put',{submissionId:sid,body,reportHash:rh})),403);assert.equal(await status(w.act(t.creator,'bounty-report-put',{submissionId:sid,body,reportHash:rh})),403);
- assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:'999',body,reportHash:rh})),404);assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:sid,body:'',reportHash:rh})),400);
- const big='x'.repeat(MAX_REPORT_BYTES+1);assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:sid,body:big,reportHash:reportHashOf(big)})),400);
- assert.equal(await status(bugBountyAction({...w.env,BUG_BOUNTY_REPORT_KEY:undefined},who(t.hunter),'bounty-report-put',{submissionId:sid,body,reportHash:rh},await w.now())),503,'no key: refuse rather than store plaintext');
- assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:sid,body,reportHash:rh})),200);
- // encrypted at rest: the plaintext (and any recognisable fragment) is nowhere in the row
- const row:any=await w.DB.prepare('SELECT * FROM bounty_reports WHERE submission_id=?').bind(sid).first();assert.ok(row);assert.equal(JSON.stringify(row).includes('Vault.sweep'),false);assert.equal(Buffer.from(row.ciphertext,'base64').includes('Vault.sweep'),false);assert.equal(row.hunter,t.hunter.toLowerCase());
- // read access over time
- const got=(await w.act(t.hunter,'bounty-report-get',{submissionId:sid})).bugBounty;assert.equal(got.body,body);assert.equal(got.hashMatchesOnChain,false,'not revealed yet');
- assert.equal(await status(w.act(t.creator,'bounty-report-get',{submissionId:sid})),403,'the project cannot read before the reveal');
- assert.equal(await status(w.act(t.hunter2,'bounty-report-get',{submissionId:sid})),403);assert.equal(await status(w.act(t.arbiter,'bounty-report-get',{submissionId:sid})),403);
- // a different report cannot be substituted at reveal time: the stored hash must equal the revealed hash
- await t.reveal({...sub,reportHash:rh} as any);
- assert.equal(await status(w.act(t.hunter,'bounty-report-put',{submissionId:sid,body:body+'!',reportHash:reportHashOf(body+'!')})),409,'cannot swap the report after reveal');
- const seen=(await w.act(t.creator,'bounty-report-get',{submissionId:sid})).bugBounty;assert.equal(seen.body,body);assert.equal(seen.hashMatchesOnChain,true);assert.equal(seen.claimedSeverity,3);
- assert.equal(await status(w.act(t.hunter2,'bounty-report-get',{submissionId:sid})),403);assert.equal(await status(w.act(t.arbiter,'bounty-report-get',{submissionId:sid})),403,'the arbiter reads only disputed reports');
- // dispute: the arbiter may read it
-await t.bw('reject',[sub.id,2,0n],3);await t.bw('dispute',[sub.id],4);assert.equal((await w.act(t.arbiter,'bounty-report-get',{submissionId:sid})).bugBounty.body,body);
- // a tampered row (hash column edited) is refused for the project
- await w.DB.prepare('UPDATE bounty_reports SET report_hash=? WHERE submission_id=?').bind(keccak256(toHex('x')),sid).run();assert.equal(await status(w.act(t.creator,'bounty-report-get',{submissionId:sid})),409);
- // an unrevealed commit may replace its report (typo fix) before reveal, and the 20/day cap bounds spam
- const rep2=t.report('second');const b2='first draft';const c2=await t.commit(id,5,1,{reportHash:reportHashOf(b2),salt:rep2.salt});
- assert.equal(await status(w.act(t.hunter2,'bounty-report-put',{submissionId:String(c2.id),body:b2,reportHash:reportHashOf(b2)})),200);const b3='second draft';
- assert.equal(await status(w.act(t.hunter2,'bounty-report-put',{submissionId:String(c2.id),body:b3,reportHash:reportHashOf(b3)})),200);
- assert.equal((await w.act(t.hunter2,'bounty-report-get',{submissionId:String(c2.id)})).bugBounty.body,b3);
- await w.DB.close?.();
+test('valid report end to end: TAP locked by ticket, drawn panel, sealed votes, 2% / 20% / remainder, TAP returned, burned and rewarded from the chain',async()=>{
+ const w=await world();const {t}=w;const reviewers=[9,10,11,12,13,14];await w.fund([4,5,...reviewers]);
+ const id=await newBounty(w);const nibBefore=await t.bal(t.accounts[5].address),feeBefore=await t.bal(t.feeTo);
+ const h=await hunt(w,id,5,3);
+ assert.equal(await w.tap(5),TAP0-1000n,'the hunter\'s TAP is locked, no NIB was taken');assert.equal(await t.bal(t.accounts[5].address),nibBefore);
+ let s=await w.state(5);assert.equal(s.you.tap.locked,'1000');assert.equal(s.you.tap.locks[0].status,'open');assert.equal(s.you.mySubmissions[0].status,'Applying');assert.equal(s.you.mySubmissions[0].claimed,3);assert.equal(s.you.mySubmissions[0].next.step,'apply');
+ // reports: only the hunter and (once revealed) the project may read; other agents cannot until they are drawn
+ const read=(i:number,sid=h.sid)=>w.act(i,'bounty-report-get',{submissionId:sid});
+ assert.equal((await read(5)).bugBounty.body,h.body);assert.equal((await read(4)).bugBounty.role,'creator');
+ for(const i of [6,9])await assert.rejects(read(i),(e:any)=>e.status===403,'applicant/stranger '+i);
+ // review applications lock TAP too; the creator, the hunter and strangers without an Agent ID cannot apply
+ for(const i of reviewers)await w.go(i,{fn:'apply',submissionId:h.sid});
+ for(const i of reviewers)assert.equal(await w.tap(i),TAP0-1000n);
+ for(const i of [4,5])await assert.rejects(w.tx(i,{fn:'apply',submissionId:h.sid}),(e:any)=>e.status===403,'excluded '+i);
+ await assert.rejects(w.tx(9,{fn:'apply',submissionId:h.sid}),(e:any)=>e.status===409,'only once');
+ await assert.rejects(w.tx(0,{fn:'start-selection',submissionId:h.sid}),(e:any)=>e.status===409&&/open until/.test(e.message),'apply window still open');
+ await t.warp(48*3600+5);await assert.rejects(w.tx(15,{fn:'apply',submissionId:h.sid}),(e:any)=>e.status===409,'window closed');
+ await w.go(0,{fn:'start-selection',submissionId:h.sid});await assert.rejects(w.tx(0,{fn:'select',submissionId:h.sid}),(e:any)=>e.status===409&&/seed block/.test(e.message));
+ await t.mine(2);await w.go(0,{fn:'select',submissionId:h.sid});
+ const panel=(await t.br('panelOf',[BigInt(h.sid)]) as string[]).map(a=>t.accounts.findIndex(x=>x.address===a)),rest=reviewers.filter(i=>!panel.includes(i));assert.equal(panel.length,3);assert.equal(rest.length,3);
+ // drawn panelists can read the report; applicants who were not drawn cannot
+ for(const i of panel)assert.equal((await read(i)).bugBounty.role,'panelist');for(const i of rest)await assert.rejects(read(i),(e:any)=>e.status===403);
+ // sealed votes: two for High (3), one dissenter says not valid (0)
+ const votes=[3,3,0];const bid=BigInt(h.sid);
+ await assert.rejects(w.tx(rest[0],{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,panel[0],3)}),(e:any)=>e.status===403,'not on the panel');
+ for(let i=0;i<3;i++)await w.go(panel[i],{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,panel[i],votes[i])});
+ await assert.rejects(w.tx(panel[0],{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,panel[0],3)}),(e:any)=>e.status===409,'sealed once');
+ await assert.rejects(w.tx(panel[0],{fn:'open-vote',submissionId:h.sid,verdict:0,salt:t.voteSalt(bid,panel[0])}),(e:any)=>e.status===409&&/do not match/.test(e.message),'cannot open a different verdict');
+ await assert.rejects(w.tx(0,{fn:'finalize',submissionId:h.sid}),(e:any)=>e.status===409);
+ for(let i=0;i<3;i++)await w.go(panel[i],{fn:'open-vote',submissionId:h.sid,verdict:votes[i],salt:t.voteSalt(bid,panel[i])});
+ await w.go(0,{fn:'finalize',submissionId:h.sid});await t.solvent();
+ // NIB: 50,000 High = 1,000 fee + 10,000 reviewer pool (2 aligned x 5,000) + 39,000 hunter
+ assert.equal(await t.bal(t.accounts[5].address)-nibBefore,E(39000));assert.equal(await t.bal(t.feeTo)-feeBefore,E(1000));
+ const aligned=panel.filter((_,i)=>votes[i]===3),dissent=panel.filter((_,i)=>votes[i]===0);
+ for(const i of aligned)assert.equal(await t.br('rewardOf',[t.accounts[i].address]),E(5000));assert.equal(await t.br('rewardOf',[t.accounts[dissent[0]].address]),0n);
+ // TAP is only moved when the server reads the settled state: returned to the hunter, aligned reviewers and unseated applicants; the dissenter's stake is burned
+ for(const i of [5,...reviewers])await w.state(i);
+ assert.equal(await w.tap(5),TAP0,'hunter stake returned');for(const i of aligned)assert.equal(await w.tap(i),TAP0,'aligned reviewer stake returned');for(const i of rest)assert.equal(await w.tap(i),TAP0,'unseated applicant returned');assert.equal(await w.tap(dissent[0]),TAP0-1000n,'dissenting reviewer stake burned');
+ const before=await w.tap(5);await reconcileTap(w.env,await w.now());await reconcileTap(w.env,await w.now(),w.addr(5));await w.state(5);assert.equal(await w.tap(5),before,'settlement is idempotent');
+ s=await w.state(dissent[0]);assert.equal(s.you.reputation.strikes,1);assert.ok(s.you.reputation.cooldownUntil>0);assert.equal(s.you.myReviews[0].reviewer.state,'seated');
+ s=await w.state(5);assert.equal(s.you.mySubmissions[0].status,'Settled');assert.equal(s.you.mySubmissions[0].outcome,'valid');assert.equal(s.you.mySubmissions[0].awarded,3);assert.equal(s.you.tap.locked,'0');
+ // reviewers pull their NIB reward
+ s=await w.state(aligned[0]);assert.equal(s.you.rewardNib,'5000');const nb=await t.bal(t.accounts[aligned[0]].address);await w.go(aligned[0],{fn:'claim'});assert.equal(await t.bal(t.accounts[aligned[0]].address)-nb,E(5000));
+ await assert.rejects(w.tx(aligned[0],{fn:'claim'}),(e:any)=>e.status===409);await t.solvent();
+ s=await w.state();assert.equal(s.totals.fees,'1000');assert.equal(s.totals.paidToHunters,'39000');assert.equal((await bountySubmissions(w.env,String(id),await w.now())).submissions[0].outcome,'valid');
+ assert.equal(s.bounties[0].tiers.length,4);
+});
+test('invalid report: the hunter\'s TAP is burned and shared with the reviewers who judged it invalid; nobody is paid NIB',async()=>{
+ const w=await world();const {t}=w;const reviewers=[9,10,11,12,13,14];await w.fund([4,5,...reviewers]);
+ const id=await newBounty(w);const h=await hunt(w,id,5,4,'Spam report with no real finding, only a long made-up story about critical bugs.');
+ for(const i of reviewers)await w.go(i,{fn:'apply',submissionId:h.sid});await t.warp(48*3600+5);await w.go(0,{fn:'start-selection',submissionId:h.sid});await t.mine(2);await w.go(0,{fn:'select',submissionId:h.sid});
+ const panel=(await t.br('panelOf',[BigInt(h.sid)]) as string[]).map(a=>t.accounts.findIndex(x=>x.address===a)),bid=BigInt(h.sid);
+ for(const i of panel)await w.go(i,{fn:'vote',submissionId:h.sid,voteHash:t.voteHash(bid,i,0)});for(const i of panel)await w.go(i,{fn:'open-vote',submissionId:h.sid,verdict:0,salt:t.voteSalt(bid,i)});
+ const nib=await t.bal(t.accounts[5].address);await w.go(0,{fn:'finalize',submissionId:h.sid});await t.solvent();assert.equal(await t.bal(t.accounts[5].address),nib);
+ for(const i of [5,...reviewers])await w.state(i);
+ assert.equal(await w.tap(5),TAP0-1000n,'forfeited');for(const i of panel)assert.equal(await w.tap(i),TAP0+333n,'stake back + 1000/3 of the forfeited stake');
+ const s=await w.state(5);assert.equal(s.you.mySubmissions[0].outcome,'invalid');assert.equal(s.you.tap.locks[0].burned,'1000');
+ assert.equal((await w.state(panel[0])).you.tap.locks.find((l:any)=>l.role==='reviewer').reward,'333');
+});
+test('TAP tickets: unused tickets are refunded, a live ticket is reused (never locked twice), and nothing is deducted when it cannot be issued',async()=>{
+ const w=await world();const {t}=w;await w.fund([4,5]);const id=await newBounty(w);
+ const rh=reportHashOf('x'),salt=keccak256(toHex('s')),commitHash=await t.br('commitHashFor',[BigInt(id),t.accounts[5].address,2,rh,salt]);
+ const r1=await w.tx(5,{fn:'commit',bountyId:id,commitHash});assert.equal(await w.tap(5),TAP0-1000n,'locked at preview');assert.match(r1.summary.stakeNote,/returned automatically/);
+ const r2=await w.tx(5,{fn:'commit',bountyId:id,commitHash});assert.equal(await w.tap(5),TAP0-1000n,'same ticket, no second lock');assert.deepEqual(r2.steps[0].transaction,r1.steps[0].transaction,'deterministic re-signing');
+ assert.equal((await w.state(5)).you.tap.locks.length,1);
+ await t.warp(1000);const s=await w.state(5);assert.equal(await w.tap(5),TAP0,'refunded after the ticket expired unused');assert.equal(s.you.tap.locks[0].status,'unused');assert.equal(s.you.tap.locks[0].returned,'1000');
+ await w.state(5);assert.equal(await w.tap(5),TAP0,'refund happens once');
+ // an expired ticket is useless on-chain
+ await assert.rejects(w.run(5,r1),/./);
+ // a fresh preview after the refund works and is accepted by the contract
+ await w.go(5,{fn:'commit',bountyId:id,commitHash});assert.equal(await t.br('submissionNonce'),1n);assert.equal(await w.tap(5),TAP0-1000n);
+ // not enough TAP: refused, nothing locked
+ await w.fund([6],900n);const before=await w.tap(6);await assert.rejects(w.tx(6,{fn:'commit',bountyId:id,commitHash:keccak256(toHex('c6'))}),(e:any)=>e.status===409&&/1000 TAP/.test(e.message));assert.equal(await w.tap(6),before);
+ assert.equal((await w.DB.prepare('SELECT COUNT(*) AS n FROM bounty_tap_locks WHERE wallet=?').bind(w.addr(6)).first<any>()).n,0);
+ // below the bounty's stake: refused
+ await assert.rejects(w.tx(5,{fn:'commit',bountyId:id,commitHash:keccak256(toHex('c5')),stake:'999'}),(e:any)=>e.status===400);
+ // a cap on in-flight locks, so a wallet cannot park TAP on endless tickets
+ await w.fund([7]);for(let i=0;i<5;i++)await w.DB.prepare("INSERT INTO bounty_tap_locks(lock_id,wallet,kind,scope_id,amount,deadline,status,created_at) VALUES(?,?,?,?,?,?,?,?)").bind(keccak256(toHex('seed'+i)),w.addr(7),'hunter','9'+i,'1000',9e12,'open',1).run();
+ await assert.rejects(w.tx(7,{fn:'commit',bountyId:id,commitHash:keccak256(toHex('c7'))}),(e:any)=>e.status===429);
+ // signer problems: no key, or a key that is not the contract's ticketSigner
+ const noKey=await world('sqlite',{signer:false});await noKey.fund([4,5]);await newBounty(noKey);const b0=await noKey.tap(5);await assert.rejects(noKey.tx(5,{fn:'commit',bountyId:1,commitHash:keccak256(toHex('k'))}),(e:any)=>e.status===503);assert.equal(await noKey.tap(5),b0);
+ const wrong=await world();await wrong.fund([4,5]);await newBounty(wrong);wrong.env.BUG_BOUNTY_SIGNER_PRIVATE_KEY=wrong.t.keys[2];const b1=await wrong.tap(5);await assert.rejects(wrong.tx(5,{fn:'commit',bountyId:1,commitHash:keccak256(toHex('k'))}),(e:any)=>e.status===503&&/does not match/.test(e.message));assert.equal(await wrong.tap(5),b1);
+});
+test('prechecks mirror the contract: self-dealing, limits, mismatched reveals and unsealed votes are refused before anything is prepared',async()=>{
+ const w=await world();const {t}=w;await w.fund([4,5,6,9,10,11]);const id=await newBounty(w);
+ const ch=(n:string)=>keccak256(toHex(n));
+ await assert.rejects(w.tx(4,{fn:'commit',bountyId:id,commitHash:ch('a')}),(e:any)=>e.status===403&&/own bounty/.test(e.message));
+ await assert.rejects(w.tx(5,{fn:'commit',bountyId:99,commitHash:ch('a')}),(e:any)=>e.status===404);await assert.rejects(w.tx(5,{fn:'commit',bountyId:id,commitHash:'0x12'}),(e:any)=>e.status===400);
+ const body='real finding with a long enough description to be reviewed by the panel',rh=reportHashOf(body),salt=ch('salt'),commitHash=await t.br('commitHashFor',[BigInt(id),t.accounts[5].address,2,rh,salt]);
+ await w.go(5,{fn:'commit',bountyId:id,commitHash});await assert.rejects(w.tx(5,{fn:'commit',bountyId:id,commitHash}),(e:any)=>e.status===409,'a commit hash cannot repeat');
+ await assert.rejects(w.tx(6,{fn:'reveal',id:1,severity:2,reportHash:rh,salt}),(e:any)=>e.status===403,'only the hunter reveals');await assert.rejects(w.tx(5,{fn:'reveal',id:1,severity:3,reportHash:rh,salt}),(e:any)=>e.status===409&&/do not match/.test(e.message));
+ await assert.rejects(w.tx(5,{fn:'reveal',id:1,severity:2,reportHash:rh,salt:ch('wrong')}),(e:any)=>e.status===409);await assert.rejects(w.tx(9,{fn:'expire',id:1}),(e:any)=>e.status===409&&/still open/.test(e.message));
+ await assert.rejects(w.tx(9,{fn:'apply',submissionId:1}),(e:any)=>e.status===409&&/revealed/.test(e.message),'cannot review before reveal');await assert.rejects(w.act(5,'bounty-report-put',{submissionId:1,body:'other text',reportHash:rh}),(e:any)=>e.status===400,'hash must match the body');
+ await assert.rejects(w.act(6,'bounty-report-put',{submissionId:1,body,reportHash:rh}),(e:any)=>e.status===403,'only the hunter stores');await w.act(5,'bounty-report-put',{submissionId:1,body,reportHash:rh});await assert.rejects(w.act(4,'bounty-report-get',{submissionId:1}),(e:any)=>e.status===403,'the project cannot read before reveal');
+ // an unrevealed commit expires: TAP burned, escrow reservation released
+ await t.warp(24*3600+5);const r=await w.tx(11,{fn:'expire',id:1});await w.run(11,r);const s=await w.state(5);assert.equal(s.you.mySubmissions[0].outcome,'unrevealed');assert.equal(await w.tap(5),TAP0-1000n);assert.equal((await w.state(5)).you.tap.locks[0].burned,'1000');
+ // a hunter of this bounty can never review its reports; limits per hunter are enforced before a ticket is issued
+ await w.fund([7,8]);const h2=await hunt(w,id,6,2,'second report, long enough to count as a real submission text');
+ await assert.rejects(w.tx(5,{fn:'apply',submissionId:h2.sid}),(e:any)=>e.status===403&&/Hunters/.test(e.message));
+});
+test('the same flow on Postgres: TAP locked on preview, refunded when unused, exact points ledger',async()=>{
+ const w=await world('postgres');const {t}=w;await w.fund([4,5]);const id=await newBounty(w);
+ const rh=reportHashOf('x'),salt=keccak256(toHex('s')),commitHash=await t.br('commitHashFor',[BigInt(id),t.accounts[5].address,2,rh,salt]);
+ await w.tx(5,{fn:'commit',bountyId:id,commitHash});assert.equal(await w.tap(5),TAP0-1000n);
+ const ledger=await w.DB.prepare('SELECT kind,delta FROM ledger WHERE wallet=? ORDER BY created_at').bind(w.addr(5)).all<any>();assert.equal(ledger.results[0].kind,'bounty-stake');assert.equal(Number(ledger.results[0].delta),-1000);
+ await t.warp(1000);await w.state(5);assert.equal(await w.tap(5),TAP0);assert.equal((await w.DB.prepare("SELECT status FROM bounty_tap_locks WHERE wallet=?").bind(w.addr(5)).first<any>()).status,'unused');
+ await w.go(5,{fn:'commit',bountyId:id,commitHash});assert.equal(Number(await t.br('submissionNonce')),1);
 });
