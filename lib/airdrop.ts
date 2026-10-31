@@ -59,11 +59,11 @@ export async function chainSnapshot(e:AirdropEnv,now:number,fresh=false){
  cache.set(key,{at:now,value});return value;
 }
 type Row={id:string;wallet:string;season:number;delta_points:string;bonus_points?:string;cumulative_points:string;base_converted:string;deadline:number;status:string;paid_points:string|null;refund_points:string|null;signature:string;created_at:number;settled_at:number|null};
-const exactOn=async(e:AirdropEnv)=>(await utilityPolicy(e)).active;
+export const exactOn=async(e:AirdropEnv)=>(await utilityPolicy(e)).active;
 /** Atomic agent balance change. All statements are guarded by the agent's new last_event, so they apply together or not at all. */
 const bonusBalance=(a:any)=>{try{return BigInt(a?.bonus_points??'0');}catch{return 0n;}};
 /** Bonus points live in their own column: never spendable in-game, never earned. bonusDelta moves only that bucket. */
-async function applyPoints(e:AirdropEnv,a:any,exact:boolean,delta:bigint,kind:string,detail:string,extra:any[],now:number,guard?:{sql:string;args:any[]},bonusDelta:bigint=0n){
+export async function applyPoints(e:AirdropEnv,a:any,exact:boolean,delta:bigint,kind:string,detail:string,extra:any[],now:number,guard?:{sql:string;args:any[]},bonusDelta:bigint=0n){
  const next=pointBalance(a)+delta,nextBonus=bonusBalance(a)+bonusDelta;if(next<0n||nextBonus<0n)fail(409,'Not enough TAP points.');
  const fields:Record<string,any>={...pointFields(next,earnedBalance(a),exact),bonus_points:nextBonus.toString()},entries=Object.entries(fields),event=crypto.randomUUID();
  const res=await e.DB.batch([

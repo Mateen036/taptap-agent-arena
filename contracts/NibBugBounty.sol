@@ -165,7 +165,7 @@ contract NibBugBounty is ReentrancyGuard {
     mapping(uint256 => address[]) private _applicants;
     mapping(uint256 => address[]) private _panel;
     mapping(uint256 => mapping(address => Reviewer)) private _rev;
-    mapping(bytes32 => Lock) private _locks;
+    mapping(bytes32 => Lock) public locks;
     mapping(uint256 => mapping(bytes32 => bool)) public commitUsed;
     mapping(uint256 => mapping(address => uint256)) public hunterActive;
     mapping(uint256 => mapping(address => bool)) public hunterInBounty;
@@ -243,7 +243,7 @@ contract NibBugBounty is ReentrancyGuard {
     /// @notice What the TAP server must do with a lock. `final` turns true exactly once; `returned + burned` equals the staked amount and
     /// `reward` is extra TAP to credit (the forfeited hunter stake of an invalid report, shared by the reviewers who voted with the outcome).
     function tapResult(bytes32 lockId) external view returns (bool final_, uint256 returned, uint256 reward, uint256 burned) {
-        Lock storage l = _locks[lockId];
+        Lock storage l = locks[lockId];
         if (l.role == Role.None) return (false, 0, 0, 0);
         Submission storage s = _subs[l.submissionId];
         if (l.role == Role.Hunter) {
@@ -346,7 +346,7 @@ contract NibBugBounty is ReentrancyGuard {
         Submission storage s = _subs[id];
         s.bountyId = bountyId; s.hunter = msg.sender; s.status = Status.Committed; s.commitHash = commitHash;
         s.committedAt = uint64(block.timestamp); s.deadline = uint64(block.timestamp + REVEAL_WINDOW); s.tapStake = tapStake; s.hunterLock = lockId;
-        _locks[lockId] = Lock(msg.sender, Role.Hunter, id, tapStake);
+        locks[lockId] = Lock(msg.sender, Role.Hunter, id, tapStake);
         _bountySubs[bountyId].push(id); _hunterSubs[msg.sender].push(id);
         emit Committed(id, bountyId, msg.sender, commitHash, lockId, tapStake, s.deadline);
     }
@@ -388,7 +388,7 @@ contract NibBugBounty is ReentrancyGuard {
         require(tapStake >= b.tapStake, TAPStakeBelowTheBounty());
         _ticket(2, msg.sender, submissionId, tapStake, lockId, deadline, signature);
         _rev[submissionId][msg.sender] = Reviewer(RState.Applied, false, false, false, 0, lockId, bytes32(0), tapStake);
-        _locks[lockId] = Lock(msg.sender, Role.Reviewer, submissionId, tapStake);
+        locks[lockId] = Lock(msg.sender, Role.Reviewer, submissionId, tapStake);
         _applicants[submissionId].push(msg.sender); s.applicants++; reviewerActive[msg.sender]++; _reviewerSubs[msg.sender].push(submissionId);
         emit Applied(submissionId, msg.sender, lockId, tapStake, s.applicants);
     }
@@ -520,7 +520,7 @@ contract NibBugBounty is ReentrancyGuard {
 
     // ------------------------------------------------------------------ internals
     function _ticket(uint8 kind, address wallet, uint256 scopeId, uint256 tap, bytes32 lockId, uint256 deadline, bytes calldata signature) private view {
-        require(lockId != bytes32(0) && _locks[lockId].role == Role.None, LockAlreadyUsed());
+        require(lockId != bytes32(0) && locks[lockId].role == Role.None, LockAlreadyUsed());
         require(block.timestamp <= deadline, TicketExpired());
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(ticketDigest(kind, wallet, scopeId, tap, lockId, deadline));
         (address signer, ECDSA.RecoverError err, ) = ECDSA.tryRecover(digest, signature);
