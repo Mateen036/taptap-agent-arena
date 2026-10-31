@@ -436,6 +436,7 @@ add(
 ["Hold at least one Nib NFT to convert TAP.","至少持有一枚 Nib NFT 才能兑换 TAP。"],
 ["This wallet must hold a Binance Agent ID to convert.","该钱包必须持有 Binance Agent ID 才能兑换。"],
 ["Conversion is not available for this wallet right now.","该钱包目前无法兑换。"],
+["Could not verify this wallet on BNB Chain just now. Retrying automatically…","暂时无法在 BNB Chain 上验证该钱包，正在自动重试…"],
 ["TAP to convert","要兑换的 TAP"],["Get claim voucher","获取领取凭证"],
 ["Contracts: {airdrop} · {token}. TAP is deducted when the voucher is issued and returned if it expires or the pool runs short.","合约：{airdrop} · {token}。凭证签发时即扣除 TAP；若凭证过期或池内额度不足，TAP 会退还。"],
 ["Airdrop {addr}","空投 {addr}"],

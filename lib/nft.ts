@@ -1,5 +1,6 @@
 import {createPublicClient,http,isAddress,formatUnits,keccak256,toHex} from 'viem';
 import {bsc} from 'viem/chains';
+import {bscTransport} from './rpc';
 import {AGENT_ID_REGISTRY} from './protocol';
 import {canonical} from './game';
 import {nftTraits,nftMetadata,nftSvg} from './nft-art';
@@ -16,7 +17,7 @@ const first=(e:NftEnv,sql:string,...args:any[])=>q(e,sql,...args).first<any>();
 const rows=async(e:NftEnv,sql:string,...args:any[])=>(await q(e,sql,...args).all<any>()).results;
 const json=(d:any,status=200)=>new Response(JSON.stringify(d,(_,v)=>typeof v==='bigint'?v.toString():v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
 const identityAbi=[{type:'function',name:'balanceOf',stateMutability:'view',inputs:[{type:'address'}],outputs:[{type:'uint256'}]}] as const;
-const client=(e:NftEnv)=>createPublicClient({chain:bsc,transport:http(e.NFT_RPC_URL||e.BSC_RPC_URL||'https://bsc-dataseed.bnbchain.org',{timeout:10000,retryCount:1})});
+const client=(e:NftEnv)=>createPublicClient({chain:bsc,transport:bscTransport(e.NFT_RPC_URL||e.BSC_RPC_URL,10000)});
 const digest=(tx:NftTransaction)=>keccak256(toHex(canonical(tx)));
 const read=async(c:any,address:string,abi:any,name:string,args:any[]=[])=>c.readContract({address,abi,functionName:name,args});
 function configured(e:NftEnv):NftAddresses{try{const config=nftConfig(e);if(!config)throw new NftError(409,'Collection contracts are awaiting mainnet deployment. No mint or trade can be submitted yet.');return {...config,collectionBids:nftCollectionBidsAddress(e)};}catch(error){if(error instanceof NftError)throw error;throw new NftError(503,'NFT contract configuration is incomplete.');}}

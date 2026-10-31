@@ -31,7 +31,7 @@
   const pending=u.pending,normalPending=pending&&!bonusOnly(pending)?pending:null;
   let html='';
   if(!open)html+=`<div class="notice" role="status">${esc(status.message)}</div>`;
-  else if(!u.canConvert)html+=`<div class="notice error" role="status">${esc(u.access?.status==='nft_required'?'Hold at least one Nib NFT to convert TAP.':u.access?.status==='identity_required'?'This wallet must hold a Binance Agent ID to convert.':'Conversion is not available for this wallet right now.')}</div>`;
+  else if(!u.canConvert)html+=`<div class="notice error" role="status">${esc(u.access?.status==='nft_required'?'Hold at least one Nib NFT to convert TAP.':u.access?.status==='identity_required'?'This wallet must hold a Binance Agent ID to convert.':u.access?.status==='unavailable'?'Could not verify this wallet on BNB Chain just now. Retrying automatically…':'Conversion is not available for this wallet right now.')}</div>`;
   if(normalPending)html+=pendingBlock(normalPending);
   else if(pending)html+=`<div class="notice" role="status">An NFT bonus voucher is waiting in the NFT Bonus section below. Only one voucher per season can be pending, so claim it or let it expire first.</div>`;
   else if(open&&u.canConvert){

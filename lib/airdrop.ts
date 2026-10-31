@@ -1,5 +1,6 @@
 import {createPublicClient,http,fallback,parseAbi,encodeFunctionData,isAddress,keccak256,toHex} from 'viem';
 import {bsc} from 'viem/chains';
+import {bscTransport,mapLimit} from './rpc';
 import {privateKeyToAccount} from 'viem/accounts';
 import {requireGameAccess,gameAccessSnapshot,utilityPolicy,type UtilityEnv} from './utility';
 import {resolveNftEnv} from './nft-protocol';
@@ -32,7 +33,7 @@ export const airdropAbi=parseAbi([
 ]);
 const voucherTypes={Voucher:[{name:'wallet',type:'address'},{name:'season',type:'uint256'},{name:'cumulativePoints',type:'uint256'},{name:'deadline',type:'uint256'},{name:'voucherId',type:'bytes32'}]} as const;
 const addresses=(e:AirdropEnv)=>({airdrop:(e.NIB_AIRDROP&&isAddress(e.NIB_AIRDROP)?e.NIB_AIRDROP:NIB_AIRDROP) as `0x${string}`,token:(e.NIB_TOKEN&&isAddress(e.NIB_TOKEN)?e.NIB_TOKEN:NIB_TOKEN) as `0x${string}`});
-const client=(e:AirdropEnv,url:string|undefined=e.BSC_RPC_URL)=>createPublicClient({chain:bsc,transport:url?http(url,{timeout:8000,retryCount:1}):fallback([http('https://bsc-dataseed.bnbchain.org',{timeout:8000,retryCount:0}),http('https://bsc-dataseed-public.bnbchain.org',{timeout:8000,retryCount:0})])});
+const client=(e:AirdropEnv,url:string|undefined=e.BSC_RPC_URL)=>createPublicClient({chain:bsc,transport:bscTransport(url)});
 const q=(e:AirdropEnv,sql:string,...args:any[])=>e.DB.prepare(sql).bind(...args);
 const first=(e:AirdropEnv,sql:string,...args:any[])=>q(e,sql,...args).first<any>();
 const rows=async(e:AirdropEnv,sql:string,...args:any[])=>(await q(e,sql,...args).all<any>()).results;
@@ -155,8 +156,8 @@ async function ownedTokens(e:AirdropEnv,wallet:string):Promise<{tokens:number[];
  const c=client(e,e.NFT_RPC_URL||e.BSC_RPC_URL),address=collectionAddress(e);
  try{
   const balance=Number(await c.readContract({address,abi:nftEnumAbi,functionName:'balanceOf',args:[wallet as `0x${string}`]}));
-  const count=Math.min(balance,NFT_ENUM_LIMIT),ids=await Promise.all(Array.from({length:count},(_,i)=>c.readContract({address,abi:nftEnumAbi,functionName:'tokenOfOwnerByIndex',args:[wallet as `0x${string}`,BigInt(i)]})));
-  const owners=await Promise.all(ids.map(id=>c.readContract({address,abi:nftEnumAbi,functionName:'ownerOf',args:[id]})));
+  const count=Math.min(balance,NFT_ENUM_LIMIT),ids=await mapLimit(Array.from({length:count},(_,i)=>i),16,i=>c.readContract({address,abi:nftEnumAbi,functionName:'tokenOfOwnerByIndex',args:[wallet as `0x${string}`,BigInt(i)]}));
+  const owners=await mapLimit(ids,16,id=>c.readContract({address,abi:nftEnumAbi,functionName:'ownerOf',args:[id]}));
   const tokens=[...new Set(ids.filter((_,i)=>String(owners[i]).toLowerCase()===wallet.toLowerCase()).map(Number))].sort((x,y)=>x-y);
   return {tokens,truncated:balance>NFT_ENUM_LIMIT};
  }catch{return fail(503,'The Nib NFT collection could not be read. Nothing was changed.');}

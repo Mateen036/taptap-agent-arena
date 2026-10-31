@@ -1,3 +1,4 @@
+import {errorSummary} from './rpc';
 import {createPublicClient,http,fallback,parseAbi,isAddress,verifyTypedData,keccak256,toHex,encodeAbiParameters,concat} from 'viem';
 import {bsc} from 'viem/chains';
 import {utilityPolicy,gameAccessSnapshot,requireGameAccess,type UtilityPolicy} from './utility';
@@ -230,5 +231,5 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  stmt(env,"UPDATE commands SET status='cancelled',finished_at=? WHERE wallet=? AND status IN ('queued','running','paused') AND EXISTS(SELECT 1 FROM agents WHERE wallet=? AND last_event=?)",now,a.wallet,...guard(a))]);return json({ok:true});
  }
  fail(404,'Endpoint not found.');
- }catch(e){if(e instanceof HttpError||e instanceof SeasonError||e instanceof NftError||e instanceof AirdropError||e instanceof NibMarketError)return json({error:e.message},e.status);console.error('TapTap API error',e instanceof Error?e.name:'unknown');return json({error:'The request could not be completed. Please retry.'},500);}
+ }catch(e){if(e instanceof HttpError||e instanceof SeasonError||e instanceof NftError||e instanceof AirdropError||e instanceof NibMarketError)return json({error:e.message},e.status);console.error('TapTap API error',errorSummary(e));return json({error:'The request could not be completed. Please retry.'},500);}
 }
