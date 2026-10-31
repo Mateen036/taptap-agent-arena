@@ -20,7 +20,8 @@ fs.writeFileSync(T+'/public/_headers',[
  '/*.css',`  Cache-Control: ${immutable}`,
  ''].join('\n'));
 let sha='';try{sha=execSync('git rev-parse HEAD').toString().trim();}catch{}
-fs.writeFileSync(T+'/app/generated/version.ts','export const ASSET_VERSION='+JSON.stringify(sha.slice(0,12)||String(Date.now()))+';\n');
+// Unique per build (commit + build time): several deploys can be made from the same commit, and the edge HTML cache and the immutable ?v= asset URLs are keyed by this value, so a commit-only key let stale HTML/assets survive a redeploy.
+fs.writeFileSync(T+'/app/generated/version.ts','export const ASSET_VERSION='+JSON.stringify((sha.slice(0,7)||'dev')+'-'+Date.now().toString(36))+';\n');
 // Migrations (same schema.sql the Vercel build generates).
 fs.mkdirSync(T+'/migrations',{recursive:true});
 const sql=fs.readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort().map(n=>fs.readFileSync('drizzle/'+n,'utf8')).join('\n').replace(/`/g,'"').replace(/\binteger\b/g,'bigint').replaceAll('--> statement-breakpoint','');

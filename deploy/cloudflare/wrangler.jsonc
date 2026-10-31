@@ -8,6 +8,8 @@
   "observability": { "enabled": true },
   // Workers Paid: raise the per-request CPU cap (default 30s on Paid is already generous; card images and cold NFT reads need more than the Free 10ms).
   "limits": { "cpu_ms": 30000 },
+  // Smart Placement: run the Worker near its backends (Neon, BSC RPC) instead of next to each visitor; the game API makes many sequential backend round trips.
+  "placement": { "mode": "smart" },
   "routes": [
     { "pattern": "www.nibtap.site", "custom_domain": true },
     { "pattern": "nibtap.site", "custom_domain": true }
