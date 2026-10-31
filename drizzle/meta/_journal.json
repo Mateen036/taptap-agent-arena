@@ -78,6 +78,13 @@
       "when": 1793377011361,
       "tag": "0010_nft_bonus_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793409878611,
+      "tag": "0011_bug_bounty",
+      "breakpoints": true
     }
   ]
 }

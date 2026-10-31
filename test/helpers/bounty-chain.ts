@@ -27,16 +27,19 @@ export const TIERS=[E(10000),E(25000),E(50000),E(100000)],STAKE=E(500),DEPOSIT=E
 export const Status={None:0,Committed:1,Revealed:2,Decided:3,Disputed:4,Settled:5,Expired:6} as const;
 export const Reason={None:0,Duplicate:1,NotAVulnerability:2,OutOfScope:3,NotReproducible:4} as const;
 const providers:any[]=[];export const closeAll=()=>Promise.all(providers.splice(0).map(p=>p.disconnect()));
-export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint}={}){
- const provider=ganache.provider({logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:14},miner:{blockGasLimit:30000000}});
-providers.push(provider);
+export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint;server?:boolean}={}){
+ const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:14},miner:{blockGasLimit:30000000}};
+ // `server:true` also exposes the chain over HTTP, so lib code that talks to BSC_RPC_URL can be tested against it.
+ let rpc='';let provider:any;
+ if(opts.server){const server=ganache.server(cfg);await server.listen(0,'127.0.0.1');provider=server.provider;rpc='http://127.0.0.1:'+server.address().port;providers.push({disconnect:()=>server.close()});}
+ else{provider=ganache.provider(cfg);providers.push(provider);}
  const accounts=Object.values(provider.getInitialAccounts()).map((a:any)=>privateKeyToAccount(a.secretKey));
  const chain:any={id:56,name:'Local BNB',nativeCurrency:{name:'BNB',symbol:'BNB',decimals:18},rpcUrls:{default:{http:['http://localhost']}}};
  const wallets=accounts.map(account=>createWalletClient({account,chain,transport:custom(provider as any,{retryCount:0})}));const client=createPublicClient({chain,transport:custom(provider as any,{retryCount:0}),pollingInterval:20});
  const m=mockArtifacts(),bb=bountyArtifact();
  const send=async(hash:any)=>{const r=await client.waitForTransactionReceipt({hash});if(r.status!=='success')throw Error('reverted');return r;};
  const deploy=async(a:any,args:any[]=[],who=0)=>(await send(await wallets[who].deployContract({abi:a.abi,bytecode:a.bytecode||'0x'+a.evm.bytecode.object,args} as any))).contractAddress!;
- const w=(address:any,abi:any,fn:string,args:any[]=[],who=0,value=0n)=>wallets[who].writeContract({address,abi,functionName:fn,args,value} as any).then(send);
+ const w=(address:any,abi:any,fn:string,args:any[]=[],who=0,value=0n)=>wallets[who].writeContract({address,abi,functionName:fn,args,value,gas:5_000_000n} as any).then(send);
  const r=(address:any,abi:any,fn:string,args:any[]=[])=>client.readContract({address,abi,functionName:fn,args} as any) as Promise<any>;
  const [deployer,arbiter,feeTo,creator,hunter,hunter2,hunter3,creator2]=accounts.map(a=>a.address);
  const nibName=opts.token||'MockNib',nibArt=m[nibName],nib=await deploy(nibArt),registry=await deploy(m.MockIdentity);
@@ -48,7 +51,7 @@ providers.push(provider);
  const idy=(a:any,n=1n)=>w(registry,m.MockIdentity.abi,'set',[a,n]);
  // wallet indexes: 0 deployer, 1 arbiter, 2 feeTo, 3 creator, 4 hunter, 5 hunter2, 6 hunter3, 7 creator2
  await idy(accounts[1].address);for(const i of [3,4,5,6,7]){await idy(accounts[i].address);await mint(accounts[i].address,E(10_000_000));await approve(i);}
-const bw=(fn:string,args:any[]=[],who=0)=>w(bounty,bb.abi,fn,args,who).catch((e:any)=>{if(e.message==='reverted')e.message='reverted: '+fn+' by account '+who;throw e;}),br=(fn:string,args:any[]=[])=>r(bounty,bb.abi,fn,args);
+const bw=(fn:string,args:any[]=[],who=0)=>w(bounty,bb.abi,fn,args,who).catch((e:any)=>{if(e.message==='reverted')e.message='reverted: '+fn+' by account '+who;if(e.details)e.message+=' / '+String(e.details).slice(0,200);throw e;}),br=(fn:string,args:any[]=[])=>r(bounty,bb.abi,fn,args);
  const now=async()=>Number((await client.getBlock()).timestamp);
  const warp=async(s:number)=>{await provider.request({method:'evm_increaseTime',params:[s]});await provider.request({method:'evm_mine',params:[]});};
  const scopeHash=(s='scope-1')=>keccak256(toHex(s));
@@ -64,5 +67,5 @@ const bw=(fn:string,args:any[]=[],who=0)=>w(bounty,bb.abi,fn,args,who).catch((e:
  const sub=(id:bigint)=>br('getSubmission',[id]),bnty=(id:bigint)=>br('getBounty',[id]);
  const solvent=async(label='')=>{const [held,escrow,stakes]=await Promise.all([bal(bounty),br('totalEscrow'),br('totalStakes')]);if(held!==escrow+stakes)throw Error(`INSOLVENT ${label}: balance ${held} != escrow ${escrow} + stakes ${stakes}`);};
  const rejects=async(p:Promise<any>,re?:RegExp)=>{try{await p;}catch(e:any){if(re&&!re.test(String(e?.shortMessage||'')+String(e?.details||'')+String(e?.message||'')))throw Error('Reverted with a different reason than expected '+re+': '+String(e?.details||e?.shortMessage||e?.message).slice(0,300));return;}throw Error('Expected a revert'+(re?' matching '+re:''));};
- return {provider,client,accounts,wallets,m,bb,deployer,arbiter,feeTo,creator,hunter,hunter2,hunter3,creator2,nib,nibArt,registry,bounty,deploy,w,r,bw,br,mint,approve,bal,idy,now,warp,scopeHash,create,commitHash,report,commit,reveal,submit,sub,bnty,solvent,rejects,zeroAddress,bountyArt:bb};
+ return {provider,rpc,client,accounts,wallets,m,bb,deployer,arbiter,feeTo,creator,hunter,hunter2,hunter3,creator2,nib,nibArt,registry,bounty,deploy,w,r,bw,br,mint,approve,bal,idy,now,warp,scopeHash,create,commitHash,report,commit,reveal,submit,sub,bnty,solvent,rejects,zeroAddress,bountyArt:bb};
 }
