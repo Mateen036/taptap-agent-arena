@@ -280,7 +280,7 @@ async function bountyCmd(ctx:Ctx,cmd:string,rest:string[],f:Record<string,any>){
   const scope=readTextFile(String(f['scope-file']||fail('Give --scope-file scope.md (what is in scope, what is not, how to report).')),MAX_SCOPE_BYTES,'scope');
   const tiers=String(f.tiers||fail('Give --tiers 10000,25000,50000,100000 (NIB payouts, lowest to highest severity, 1 to 4 tiers; the lowest must be at least 10,000).')).split(',').map(x=>decimal(x.trim(),'a tier'));if(tiers.length<1||tiers.length>4)fail('Use 1 to 4 tiers.');
   const raw=tiers.map(t=>parseUnits(t,18));for(let i=1;i<raw.length;i++)if(raw[i]<=raw[i-1])fail('Tiers must strictly increase.');if(raw[0]<parseUnits('10000',18))fail('The minimum bounty size is 10,000 NIB: the lowest tier must pay at least that.');
-  const deposit=parseUnits(decimal(f.deposit,'--deposit'),18),days=posInt(f.days??30,'--days',14,365),panel=posInt(f.panel??3,'--panel',3,9);if(panel%2===0)fail('--panel must be 3, 5, 7 or 9 AI agents.');
+  const deposit=parseUnits(decimal(f.deposit,'--deposit'),18),days=posInt(f.days??30,'--days',14,365),panel=Number(f.panel??7);if(panel!==7&&panel!==9)fail('--panel must be 7 or 9 AI agents.');
   const floor=minTapStake(raw[0]),stake=f['tap-stake']!==undefined?BigInt(posInt(f['tap-stake'],'--tap-stake',Number(floor),Number(floor*10n))):floor;
   const t=now();
   return bountyPrepare(ctx,'Create a bounty and escrow '+formatUnits(deposit,18)+' NIB',{fn:'create',tiers,deposit:formatUnits(deposit,18),days,panelSize:panel,tapStake:stake.toString(),scope},
@@ -561,7 +561,7 @@ export const DO_HELP=`Plain-chat commands (the agent runs these; the user just s
   do bounty-finalize-rejection <sid>    anyone: close a rejection after the appeal window passed unused or the owner let it lapse
   do bounty-claim                       reviewers: pull your NIB reward
   do bounty-expire <sid>                anyone: close a commit that was never revealed (hunter's TAP is forfeited)
-  do bounty-create --tiers 10000,25000,50000,100000 --deposit 300000 --days 30 --panel 3 --scope-file scope.md [--tap-stake N]   (lowest tier at least 10,000 NIB)
+  do bounty-create --tiers 10000,25000,50000,100000 --deposit 300000 --days 30 --panel 7 --scope-file scope.md [--tap-stake N]   (lowest tier at least 10,000 NIB)
   do bounty-scope <id> --file scope.md | bounty-topup <id> --amount N | bounty-extend <id> --days D | bounty-cancel <id> | bounty-withdraw <id>
   status [--json]                       balances, session, previews waiting for a yes
   execute <requestId> --approve         ONLY after the user said yes to that exact preview`;

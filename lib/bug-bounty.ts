@@ -65,7 +65,7 @@ export function tierLabel(count:number,severity:number){return (TIER_NAMES[count
 /** Least TAP a bounty with this lowest tier may demand per report: 1% of the tier at 10 TAP per NIB, never below 500 TAP. Mirrors the contract. */
 export function minTapStake(lowestTier:bigint){const t=lowestTier/(10n**19n);return t<MIN_TAP_STAKE?MIN_TAP_STAKE:t;}
 /** Votes needed for a verdict to count: two thirds of the panel, rounded up. Mirrors the contract. */
-export const quorum=(panel:number)=>Math.floor((2*panel+2)/3);
+export const MIN_AGREE=6;export const quorum=(panel:number)=>Math.max(MIN_AGREE,Math.floor((2*panel+2)/3));
 /** A bounty's lifecycle label for the UI. */
 export function bountyPhase(b:{closed:boolean;endsAt:number;closesAt:number;cancelRequestedAt:number},nowSec:number){
  if(b.closed)return 'withdrawn';if(nowSec>=b.closesAt)return 'ended';if(b.cancelRequestedAt>0)return 'closing';return 'open';
@@ -94,7 +94,7 @@ export function createTerms(p:any,params:{minDeposit:bigint;minLowestTier:bigint
  if(deposit<params.minDeposit)fail(400,`The escrow must be at least ${nibText(params.minDeposit)} NIB.`);
  if(deposit<top)fail(400,'The escrow must cover at least one payout of the top tier.');
  const days=Number(p?.days);if(!Number.isFinite(days)||days<14||days>365)fail(400,'The bounty must run for 14 to 365 days.');
- const panel=Number(p?.panelSize??3);if(!Number.isInteger(panel)||panel<3||panel>9||panel%2===0)fail(400,'The review panel must have 3, 5, 7 or 9 AI agents.');
+ const panel=Number(p?.panelSize??7);if(!Number.isInteger(panel)||panel<7||panel>9||panel%2===0)fail(400,'The review panel must have 7 or 9 AI agents (at least 6 must agree).');
  const floor=minTapStake(tiers[0]);let tapStake=floor;
  if(p?.tapStake!==undefined&&p.tapStake!==null&&p.tapStake!==''){
   if(!/^\d{1,12}$/.test(String(p.tapStake)))fail(400,'tapStake must be a whole number of TAP points.');tapStake=BigInt(String(p.tapStake));
@@ -228,7 +228,7 @@ export async function bugBountyState(e:BugBountyEnv,wallet:string|null,now:numbe
    // The scope text is only shown when it matches the hash the project committed on-chain.
    return {...v,scope:t&&scopeHash(t)===b.scopeHash?{text:t,verified:true}:{text:null,verified:false}};});
   const out:any={enabled:true,live:true,chainId:56,contract:address,token:tokenAddress(e),params:{ticketSigner:p.signer,guardian:p.guardian,owner:p.owner,appealWindowDays:3,ownerDecisionWindowDays:14,feeBps:p.feeBps,reviewerBps:p.reviewerBps,feeRecipient:p.feeRecipient,minDeposit:nibText(p.minDeposit),minLowestTier:nibText(p.minLowestTier),
-   tapStakeRule:'1% of the lowest tier at 10 TAP per NIB, at least 500 TAP, up to 10x that (set by the project). TAP only, never NIB.',panelSizes:[3,5,7,9],minDurationDays:14,maxDurationDays:365,revealWindowHours:24,applyWindowHours:48,voteWindowHours:72,voteRevealWindowHours:48,cancelCooldownDays:7,
+   tapStakeRule:'1% of the lowest tier at 10 TAP per NIB, at least 500 TAP, up to 10x that (set by the project). TAP only, never NIB.',panelSizes:[7,9],minAgree:MIN_AGREE,minDurationDays:14,maxDurationDays:365,revealWindowHours:24,applyWindowHours:48,voteWindowHours:72,voteRevealWindowHours:48,cancelCooldownDays:7,
    maxOpenSubmissionsPerBounty:20,maxActivePerHunterPerBounty:3,maxActivePerHunter:5,maxActiveReviewsPerAgent:5,
    signerChange:ps!==ZERO?{proposed:lc(ps),effectiveAt:Number(psAt)}:null},
    totals:{escrow:nibText(escrow),owedToReviewers:nibText(owed),paidToHunters:nibText(paid),fees:nibText(fees),paidToReviewers:nibText(revPaid),bounties:Number(nonce)},bounties,reportsEnabled:/^[0-9a-fA-F]{64}$/.test(e.BUG_BOUNTY_REPORT_KEY||''),ticketsEnabled:/^0x[0-9a-fA-F]{64}$/.test((e.BUG_BOUNTY_SIGNER_PRIVATE_KEY||'').trim())};
@@ -288,8 +288,8 @@ export async function bountyTxAction(e:BugBountyEnv,a:any,payload:any,now:number
   const t=createTerms(payload,p,nowSec);roleHolder();
   need=t.deposit;call={name:'createBounty',args:[t.scopeHash,t.tiers,t.endsAt,t.panelSize,t.tapStake,t.deposit]};
   summary={fn,escrowedNib:nibText(t.deposit),tiers:t.tiers.map((x:bigint,i:number)=>({label:tierLabel(t.tiers.length,i+1),nib:nibText(x),hunterGetsNibApprox:nibText(splitPayout(x,p.feeBps,p.reviewerBps,Number(t.panelSize)).hunter)})),endsAt:iso(t.endsAt),days:t.days,panelSize:Number(t.panelSize),quorum:quorum(Number(t.panelSize)),tapStakePerReport:t.tapStake.toString(),scopeHash:t.scopeHash,
-   rules:['The NIB is escrowed now and cannot be withdrawn before the end date, nor while any submission is pending, nor during the 7-day cancel cooldown.','You do not judge reports: a random panel of '+Number(t.panelSize)+' other TapTap AI agents does, by sealed vote. A hunter can appeal a rejected report once, and then only the owner (the treasury) can overrule the panel on that one report (3 days to appeal, 14 days for the owner to decide, and the payout stays reserved meanwhile). You pay only for reports that are judged valid.',
-    'On a valid report the payout is split: '+(p.feeBps/100)+'% platform fee to the vault, '+(p.reviewerBps/100)+'% shared by the reviewers who voted with the outcome, the rest to the hunter. You fund the bounty in NIB only; hunters and reviewers stake TAP points, never NIB.','Next: publish the scope text with `do bounty-scope <id> --file scope.md` once this confirms.']};
+   rules:['The NIB is escrowed now and cannot be withdrawn before the end date, nor while any submission is pending, nor during the 7-day cancel cooldown.','You do not judge reports: a random panel of '+Number(t.panelSize)+' other TapTap AI agents does, by sealed vote (at least 6 must agree for a verdict). A hunter can appeal a rejected report once, and then only the owner (the treasury) can overrule the panel on that one report (3 days to appeal, 14 days for the owner to decide, and the payout stays reserved meanwhile). You pay only for reports that are judged valid.',
+    'On a valid report the payout is split: '+(p.feeBps/100)+'% platform fee to the vault, '+(p.reviewerBps/100)+'% shared by the reviewers who voted with the outcome (only those >= 6 agreeing reviewers split the 20%), the rest to the hunter. You fund the bounty in NIB only; hunters and reviewers stake TAP points, never NIB.','Next: publish the scope text with `do bounty-scope <id> --file scope.md` once this confirms.']};
  }else if(fn==='topup'){
   const id=id256(payload.id),b=await bountyOf(id);creatorOnly(b);const amount=nibAmount(payload.amount,'amount');need=amount;call={name:'topUp',args:[id,amount]};summary={fn,bountyId:id.toString(),addNib:nibText(amount)};
  }else if(fn==='extend'){

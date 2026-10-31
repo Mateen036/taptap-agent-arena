@@ -42,8 +42,8 @@ test('validation: a hostile or buggy site cannot slip a different call past the 
  ok(tx('resolveRejection',[5n,2]),{fn:'resolveRejection',args:['5','2']});no(tx('resolveRejection',[5n,4]),{fn:'resolveRejection',args:['5','2']},/Argument 2/);no(tx('resolveRejection',[5n,2]),{fn:'appeal',args:['5']},/Unexpected function/);
  ok(tx('applyToReview',[3n,1000n,L,BigInt(now+900),SIG]),{fn:'applyToReview',args:['3','1000',null,null,null],endsAtRange:[now-60,now+1800],endsAtIndex:3});
  // create: tiers, panel size, TAP stake, deposit exactly; the end time inside the window the user asked for
- const tiers=[E(10000),E(25000)],create=(over:any={})=>tx('createBounty',[over.scope??scopeHashOf(SCOPE),over.tiers??tiers,BigInt(over.ends??now+30*DAY),over.panel??3n,over.stake??1000n,over.deposit??E(300000)]);
- const ecr:Partial<Expect>={fn:'createBounty',args:[scopeHashOf(SCOPE),'['+tiers.join(',')+']',null,'3','1000',E(300000).toString()],endsAtRange:[now+30*DAY-900,now+30*DAY+900],endsAtIndex:2};
+ const tiers=[E(10000),E(25000)],create=(over:any={})=>tx('createBounty',[over.scope??scopeHashOf(SCOPE),over.tiers??tiers,BigInt(over.ends??now+30*DAY),over.panel??7n,over.stake??1000n,over.deposit??E(300000)]);
+ const ecr:Partial<Expect>={fn:'createBounty',args:[scopeHashOf(SCOPE),'['+tiers.join(',')+']',null,'7','1000',E(300000).toString()],endsAtRange:[now+30*DAY-900,now+30*DAY+900],endsAtIndex:2};
  ok(create(),ecr);no(create({scope:H}),ecr,/Argument 1/);no(create({tiers:[E(10000),E(2500000)]}),ecr,/Argument 2/);no(create({ends:now+400*DAY}),ecr,/end time/);no(create({ends:now+DAY}),ecr,/end time/);no(create({panel:9n}),ecr,/Argument 4/);no(create({stake:1n}),ecr,/Argument 5/);no(create({deposit:E(1)}),ecr,/Argument 6/);
 });
 for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-staked commit and reveal, reviewer panel, sealed votes, payout, hostile-site refusals, hidden until configured',async t=>{
@@ -70,12 +70,12 @@ for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-st
   const run=async(argv:string[])=>{const id=await prepare(argv);const text=out.join('\n');const done:any=await execute(ctx,id,true);assert.equal(done.ok,true,out.join('\n'));return {id,text,done};};
   return {account,ctx,out,sent,prepare,run,rawAction,s,index,previews};
  }
- // 8: project; 4: hunter; 5: second hunter; 9-14: the reviewer agents; 6 and 7: hostile-site victims
+ // 8: project; 4: hunter; 5: second hunter; 9-22: the reviewer agents; 6, 7, 23, 24: hostile-site victims
  await f.w(f.nib,f.nibArt.abi,'approve',[f.bounty,0n],8);// the project has not approved the bounty contract yet
  let skew=0;const realNow=Date.now;Date.now=()=>realNow()+skew*1000;t.after(()=>{Date.now=realNow;});// the site judges deadlines by the wall clock, which must follow the chain's time warps
  const warp=async(sec:number)=>{await f.warp(sec);skew+=sec;await db.prepare('UPDATE sessions SET expires_at=expires_at+?,verified_at=verified_at+?').bind(sec*1000,sec*1000).run();};// agent sessions are only valid for a while: move them along with the clock
  const project=await agent(8,'project'),hunter=await agent(4,'hunter'),hunter2=await agent(5,'hunter2');
- const reviewers:any[]=[];for(let i=9;i<=14;i++)reviewers.push(await agent(i,'rev'+i));
+ const reviewers:any[]=[];for(let i=9;i<=22;i++)reviewers.push(await agent(i,'rev'+i));
  const tapOf=async(a:any)=>{await runDo(a.ctx,['bounty-book']);const r:any=await db.prepare('SELECT * FROM agents WHERE wallet=?').bind(a.account.address.toLowerCase()).first();return BigInt(r.points_exact??r.points);};
  await t.test('hidden until configured: bounty-book says not live and writing commands are refused',async()=>{
   await runDo(project.ctx,['bounty-book']);assert.match(project.out.join('\n'),/not live yet/);
@@ -91,12 +91,12 @@ for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-st
   await assert.rejects(runDo(project.ctx,['bounty-create','--tiers','50000,25000','--deposit','300000','--scope-file',sc]),/strictly increase/);
   await assert.rejects(runDo(project.ctx,['bounty-create','--tiers','9999','--deposit','300000','--scope-file',sc]),/minimum bounty size is 10,000/);
   await assert.rejects(runDo(project.ctx,['bounty-create','--tiers','10000','--deposit','300000']),/--scope-file/);
-  await assert.rejects(runDo(project.ctx,[...args,'--panel','4']),/3, 5, 7 or 9/);await assert.rejects(runDo(project.ctx,[...args,'--tap-stake','10']),/--tap-stake/);
+  await assert.rejects(runDo(project.ctx,[...args,'--panel','5']),/7 or 9/);await assert.rejects(runDo(project.ctx,[...args,'--tap-stake','10']),/--tap-stake/);
   const one=await project.run(args);assert.match(one.text,/Step 1 of 2: approve exactly 300000 NIB/);assert.equal(await f.bal(f.accounts[8].address),before,'an approval moves no NIB');
   const two=await project.run(args);assert.match(two.text,/Escrowed nib: 300000/);assert.match(two.text,/2% platform fee/);assert.match(two.text,/20% shared by the reviewers/);
   assert.equal(await f.bal(f.accounts[8].address),before-E(300000));assert.equal(await f.bal(NIB_BUG_BOUNTY as any),E(300000));
   const b=(await project.ctx.rawAction(project.s,'bounty-state')).bugBounty.bounties[0];bountyId=b.id;
-  assert.equal(b.creator,f.accounts[8].address.toLowerCase());assert.equal(b.scope.verified,true,'scope text was published after the create confirmed');assert.equal(b.scope.text,SCOPE);assert.equal(b.tapStake,'1000');assert.equal(b.panelSize,3);
+  assert.equal(b.creator,f.accounts[8].address.toLowerCase());assert.equal(b.scope.verified,true,'scope text was published after the create confirmed');assert.equal(b.scope.text,SCOPE);assert.equal(b.tapStake,'1000');assert.equal(b.panelSize,7);
  });
  await t.test('hunter: commit takes only TAP (no NIB), the saved salt is reused, reveal uploads the report privately',async()=>{
   const file=write('report.md',REPORT);
@@ -114,16 +114,16 @@ for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-st
   await assert.rejects(runDo(hunter.ctx,['bounty-reveal',bountyId]),/No confirmed commit/);
  });
  let panel:number[]=[];
- await t.test('reviewers: six agents apply with TAP, a random panel of three is drawn, the creator and the hunter cannot apply',async()=>{
+ await t.test('reviewers: 14 agents apply with TAP, a random panel of 7 is drawn, the creator and the hunter cannot apply',async()=>{
   await assert.rejects(runDo(project.ctx,['bounty-review',subId,'--bounty',bountyId]),/creator|cannot|own/i);await assert.rejects(runDo(hunter.ctx,['bounty-review',subId,'--bounty',bountyId]),/hunter|cannot|own/i);
   await assert.rejects(runDo(reviewers[0].ctx,['bounty-review',subId]),/--bounty/);
   for(const r of reviewers){await r.run(['bounty-review',subId,'--bounty',bountyId]);assert.equal(await tapOf(r),TAP0-STAKE,'the reviewer stake is locked');}
   await assert.rejects(runDo(project.ctx,['bounty-start-selection',subId]),/Applications|window|open|early/i);
   await warp(48*3600+5);await project.run(['bounty-start-selection',subId]);await assert.rejects(runDo(project.ctx,['bounty-select',subId]),/seed block/);await f.mine(2);await project.run(['bounty-select',subId]);
-  const sub=await f.br('panelOf',[BigInt(subId)]) as string[];panel=sub.map(a=>f.accounts.findIndex((x:any)=>x.address===a));assert.equal(panel.length,3);assert.ok(panel.every(i=>i>=9&&i<=14));
+  const sub=await f.br('panelOf',[BigInt(subId)]) as string[];panel=sub.map(a=>f.accounts.findIndex((x:any)=>x.address===a));assert.equal(panel.length,7);assert.ok(panel.every(i=>i>=9&&i<=22));
  });
  await t.test('panel: only seated reviewers can read the report; they seal and open votes; finalize pays 2% fee, 20% to the panel, the rest to the hunter, and every TAP stake comes back',async()=>{
-  const seated=reviewers.filter(r=>panel.includes(r.index));assert.equal(seated.length,3);const unseated=reviewers.filter(r=>!panel.includes(r.index));
+  const seated=reviewers.filter(r=>panel.includes(r.index));assert.equal(seated.length,7);const unseated=reviewers.filter(r=>!panel.includes(r.index));
   await runDo(seated[0].ctx,['bounty-report',subId]);const text=seated[0].out.join('\n');assert.match(text,/BEGIN UNTRUSTED REPORT TEXT/);assert.match(text,/router\.skim\(\)/);assert.match(text,/matches on-chain hash: true/);
   await assert.rejects(runDo(unseated[0].ctx,['bounty-report',subId]),/Only the hunter/);await assert.rejects(runDo(hunter2.ctx,['bounty-report',subId]),/Only the hunter/);
   await assert.rejects(runDo(seated[0].ctx,['bounty-vote',subId]),/--verdict/);await assert.rejects(runDo(seated[0].ctx,['bounty-vote',subId,'--verdict','7']),/--verdict/);
@@ -134,9 +134,9 @@ for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-st
   const fb=await f.bal(f.feeTo),hb=await f.bal(f.accounts[4].address);
   for(const r of seated)await r.run(['bounty-open-vote',subId]);
   const fin=await project.run(['bounty-finalize',subId]);assert.match(fin.text,/finalize|Count the panel/i);
-  const share=E(10000)/3n;
+  const share=E(10000)/7n;
   assert.equal(await f.bal(f.feeTo),fb+E(1000),'2% of the 50,000 payout went to the fee recipient');
-  assert.equal(await f.bal(f.accounts[4].address),hb+E(39000)+(E(10000)-3n*share),'hunter: 50,000 - 2% fee - 20% reviewer pool (plus the rounding dust)');
+  assert.equal(await f.bal(f.accounts[4].address),hb+E(39000)+(E(10000)-7n*share),'hunter: 50,000 - 2% fee - 20% reviewer pool (plus the rounding dust)');
   for(const r of seated){const b0=await f.bal(r.account.address);await r.run(['bounty-claim']);assert.equal(await f.bal(r.account.address),b0+share,'aligned reviewers split the 20% pool equally');}
   await f.solvent('after finalize and claims');
   for(const r of [hunter,...reviewers])assert.equal(await tapOf(r),TAP0,'every TAP stake was returned (valid report, aligned votes, unselected applicants)');
@@ -146,8 +146,8 @@ for(const kind of ['sqlite'] as const)test('chat flow end to end: create, TAP-st
   const file=(n:string)=>write(n+'.md',REPORT+n);
   const e1=await agent(6,'evil1',mod(a=>{a[1]='0x'+'99'.repeat(32);return a;}));await assert.rejects(runDo(e1.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('a')]),/Argument 2/);assert.equal(Object.keys(e1.previews).length,0,'Binance was never asked to preview the swapped call');
   const e2=await agent(7,'evil2',mod(a=>{a[2]=1n;return a;}));await assert.rejects(runDo(e2.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('b')]),/Argument 3/);
-  const e3=await agent(15,'evil3',mod(a=>{a[4]=a[4]+86400n*365n;return a;}));await assert.rejects(runDo(e3.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('c')]),/end time/);
-  const e4=await agent(16,'evil4',(kind,res)=>{if(kind==='bounty-tx'){for(const st of res.bugBounty.steps)st.transaction.to='0x'+'ee'.repeat(20);}return res;});await assert.rejects(runDo(e4.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('d')]),/must go to/);
+  const e3=await agent(23,'evil3',mod(a=>{a[4]=a[4]+86400n*365n;return a;}));await assert.rejects(runDo(e3.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('c')]),/end time/);
+  const e4=await agent(24,'evil4',(kind,res)=>{if(kind==='bounty-tx'){for(const st of res.bugBounty.steps)st.transaction.to='0x'+'ee'.repeat(20);}return res;});await assert.rejects(runDo(e4.ctx,['bounty-commit',bountyId,'--severity','2','--file',file('d')]),/must go to/);
   for(const e of [e2,e3,e4])assert.equal(Object.keys(e.previews).length,0);
  });
  await t.test('journal re-validation: a tampered saved preview is refused at execute time',async()=>{

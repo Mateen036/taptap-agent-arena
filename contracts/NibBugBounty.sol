@@ -8,8 +8,8 @@ interface INibBugBountyIdentity { function balanceOf(address) external view retu
 /// @title NibBugBounty
 /// @notice Escrowed NIB bug bounties judged by a panel of other TapTap agents. Projects fund a bounty up front with fixed severity payouts.
 /// Hunters commit a hash of their report (the report stays off-chain), stake TAP points (off-chain game points, never NIB), and reveal.
-/// A panel of 3-9 other agents, drawn at random from volunteers who also stake TAP, votes with commit-reveal. The panel's verdict decides
-/// the payout, with ONE exception: a hunter whose report was judged invalid or duplicate may APPEAL it, and then the `owner` (the treasury)
+/// A panel of 7 or 9 other agents, drawn at random from volunteers who also stake TAP, votes with commit-reveal. At least 6 reviewers must
+/// agree for a verdict to count; the panel's verdict decides the payout, with ONE exception: a hunter whose report was judged invalid or duplicate may APPEAL it, and then the `owner` (the treasury)
 /// decides that single report for good (approve at a severity up to the claim, or reject). The owner can decide nothing else: it cannot touch
 /// the escrow, a bounty, fees, the panel draw, or any report that was not appealed.
 ///
@@ -46,7 +46,7 @@ contract NibBugBounty is ReentrancyGuard {
     error DepositBelowMinimumOrTop(); // Deposit below minimum or top tier
     error DepositTooLarge(); // Deposit too large
     error TAPStakeMustBe1(); // TAP stake must be 1%-10% of the lowest tier
-    error PanelMustBe35(); // Panel must be 3, 5, 7 or 9
+    error PanelMustBe7Or9(); // Panel must be 7 or 9
     error DurationOutOfRange(); // Duration out of range
     error OnlyTheCreator(); // Only the creator
     error BountyNotOpen(); // Bounty not open
@@ -115,8 +115,9 @@ contract NibBugBounty is ReentrancyGuard {
     uint256 internal constant CANCEL_COOLDOWN = 7 days;
     uint256 internal constant SIGNER_CHANGE_DELAY = 7 days;
     uint256 internal constant SELECTION_BLOCKS = 200;         // the seed block hash must still be available
-    uint256 internal constant MIN_PANEL = 3;
+    uint256 internal constant MIN_PANEL = 7;
     uint256 internal constant MAX_PANEL = 9;
+    uint256 internal constant MIN_AGREE = 6;                  // at least 6 reviewers must agree for a verdict to count
     uint256 internal constant MAX_APPLICANTS = 40;
     uint256 internal constant MAX_OPEN_SUBMISSIONS = 20;      // unresolved submissions per bounty
     uint256 internal constant MAX_ACTIVE_PER_HUNTER = 3;      // unresolved submissions per hunter per bounty
@@ -229,7 +230,7 @@ contract NibBugBounty is ReentrancyGuard {
     function hunterSubmissions(address hunter) external view returns (uint256[] memory) { return _hunterSubs[hunter]; }
     function reviewerSubmissions(address who) external view returns (uint256[] memory) { return _reviewerSubs[who]; }
     function panelOf(uint256 id) external view returns (address[] memory) { return _panel[id]; }
-    function quorum(uint256 panelSize) public pure returns (uint256) { return (2 * panelSize + 2) / 3; }
+    function quorum(uint256 panelSize) public pure returns (uint256) { uint256 q = (2 * panelSize + 2) / 3; return q < MIN_AGREE ? MIN_AGREE : q; }
     /// @return the least TAP stake a bounty with this lowest tier may demand: 1% of the tier at 10 TAP per NIB, never below MIN_TAP_STAKE.
     function minTapStake(uint256 lowestTier) public pure returns (uint256) { uint256 t = lowestTier / 1e19; return t < MIN_TAP_STAKE ? MIN_TAP_STAKE : t; }
     function closesAt(uint256 id) public view returns (uint256) {
@@ -282,7 +283,7 @@ contract NibBugBounty is ReentrancyGuard {
         require(deposit <= type(uint128).max, DepositTooLarge());
         uint256 floor_ = minTapStake(tiers[0]);
         require(tapStake >= floor_ && tapStake <= floor_ * 10, TAPStakeMustBe1());
-        require(panelSize >= MIN_PANEL && panelSize <= MAX_PANEL && panelSize % 2 == 1, PanelMustBe35());
+        require(panelSize >= MIN_PANEL && panelSize <= MAX_PANEL && panelSize % 2 == 1, PanelMustBe7Or9());
         require(endsAt >= block.timestamp + MIN_DURATION && endsAt <= block.timestamp + MAX_DURATION, DurationOutOfRange());
         id = ++bountyNonce;
         Bounty storage b = _bounties[id];
@@ -475,11 +476,13 @@ contract NibBugBounty is ReentrancyGuard {
         }
         Outcome out; uint8 award;
         if (R < quorum(b.panelSize)) out = Outcome.NoQuorum;
-        else if (valid * 2 > R) {
+        else if (valid >= MIN_AGREE) {
             for (uint256 i = 1; i < valid; i++) { uint8 x = sev[i]; uint256 j = i; while (j > 0 && sev[j - 1] > x) { sev[j] = sev[j - 1]; j--; } sev[j] = x; }
-            out = Outcome.Valid; award = sev[(valid - 1) / 2];
-        } else if (dup * 2 > R) out = Outcome.Duplicate;
-        else if (invalid * 2 > R) out = Outcome.Invalid;
+            uint8 m = sev[(valid - 1) / 2]; uint256 a;
+            for (uint256 i = 0; i < valid; i++) if (sev[i] + 1 >= m && m + 1 >= sev[i]) a++;
+            if (a >= MIN_AGREE) { out = Outcome.Valid; award = m; } else out = Outcome.Inconclusive;
+        } else if (dup >= MIN_AGREE) out = Outcome.Duplicate;
+        else if (invalid >= MIN_AGREE) out = Outcome.Invalid;
         else out = Outcome.Inconclusive;
         if (out == Outcome.Invalid || out == Outcome.Duplicate) {
             // A rejection is provisional: the payout stays reserved while the hunter may appeal. Scoring the reviewers waits for the final word.

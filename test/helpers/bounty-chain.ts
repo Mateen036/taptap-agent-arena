@@ -31,7 +31,7 @@ const providers:any[]=[];export const closeAll=()=>Promise.all(providers.splice(
 // wallet indexes: 30 owner (the treasury: decides appeals only), 0 deployer, 1 ticket signer, 2 guardian, 3 fee recipient (the vault), 4 creator, 5 hunter, 6 hunter2, 7 hunter3, 8 creator2, 9..28 reviewers
 export const REV0=9,OWNER=30;
 export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps?:bigint;reviewerBps?:bigint;server?:boolean;pin?:{nib:string;bounty:string;registry?:string}}={}){
- const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:31},miner:{blockGasLimit:30000000}};
+ const cfg:any={logging:{quiet:true},chain:{chainId:56,hardfork:'shanghai'},wallet:{totalAccounts:65},miner:{blockGasLimit:30000000}};
  // `server:true` also exposes the chain over HTTP, so lib code that talks to BSC_RPC_URL can be tested against it.
  let rpc='';let provider:any;
  if(opts.server){const server=ganache.server(cfg);await server.listen(0,'127.0.0.1');provider=server.provider;rpc='http://127.0.0.1:'+server.address().port;providers.push({disconnect:()=>server.close()});}
@@ -63,7 +63,7 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const bal=(a:any)=>r(nib,nibArt.abi,'balanceOf',[a]) as Promise<bigint>;
  const idy=(a:any,n=1n)=>w(registry,m.MockIdentity.abi,'set',[a,n]);
  for(const i of [4,5,6,7,8]){await idy(accounts[i].address);await mint(accounts[i].address,E(10_000_000));await approve(i);}
- for(let i=REV0;i<OWNER;i++)await idy(accounts[i].address);
+ for(let i=REV0;i<accounts.length;i++)if(i!==OWNER)await idy(accounts[i].address);
  const bw=(fn:string,args:any[]=[],who=0)=>w(bounty,bb.abi,fn,args,who).catch((e:any)=>{if(e.message==='reverted')e.message='reverted: '+fn+' by account '+who;if(e.details)e.message+=' / '+String(e.details).slice(0,200);throw e;}),br=(fn:string,args:any[]=[])=>r(bounty,bb.abi,fn,args);
  const now=async()=>Number((await client.getBlock()).timestamp);
  const warp=async(s:number)=>{await provider.request({method:'evm_increaseTime',params:[s]});await provider.request({method:'evm_mine',params:[]});};
@@ -71,7 +71,7 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const scopeHash=(s='scope-1')=>keccak256(toHex(s));
  const create=async(o:{who?:number;tiers?:bigint[];days?:number;panel?:number;stake?:bigint;deposit?:bigint;scope?:string}={})=>{
   const endsAt=BigInt(await now()+(o.days??30)*DAY+60);
-  await bw('createBounty',[scopeHash(o.scope),o.tiers??TIERS,endsAt,BigInt(o.panel??3),o.stake??STAKE,o.deposit??DEPOSIT],o.who??4);return await br('bountyNonce') as bigint;
+  await bw('createBounty',[scopeHash(o.scope),o.tiers??TIERS,endsAt,BigInt(o.panel??7),o.stake??STAKE,o.deposit??DEPOSIT],o.who??4);return await br('bountyNonce') as bigint;
  };
  // ---- TAP tickets (what the TapTap server signs once it has locked the points)
  let lockSeq=0;const newLock=()=>keccak256(toHex('lock-'+(++lockSeq)));
@@ -90,8 +90,8 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const sub=(id:bigint)=>br('getSubmission',[id]),bnty=(id:bigint)=>br('getBounty',[id]);
  // Apply `n` reviewers (default: twice the panel), close the window, run the draw. Returns the seated and unseated account indexes.
  const seat=async(submissionId:bigint,o:{n?:number;from?:number;panel?:number}={})=>{
-  const n=o.n??2*(o.panel??3),from=o.from??REV0,locks:Record<number,string>={};
-  for(let i=0;i<n;i++)locks[from+i]=await apply(submissionId,from+i);
+  const n=o.n??2*(o.panel??7),from=o.from??REV0,locks:Record<number,string>={};
+  for(let i=0,k=from;i<n;k++){if(k===OWNER)continue;locks[k]=await apply(submissionId,k);i++;}
   await warp(48*3600+5);await bw('startSelection',[submissionId],0);await mine(2);await bw('selectPanel',[submissionId],0);
   const panel=(await br('panelOf',[submissionId]) as string[]).map(a=>accounts.findIndex(x=>x.address===a));
   const rest=Object.keys(locks).map(Number).filter(i=>!panel.includes(i));

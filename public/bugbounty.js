@@ -57,7 +57,7 @@
   const list=subs[b.id];
   return `<article class="bb-card" data-bb="${esc(b.id)}"><header><div><strong>Bounty #${esc(b.id)}</strong> <span class="chip ${b.phase==='open'?'accent':''}">${esc(phase)}</span>${mine?' <span class="chip">YOURS</span>':''}</div><span class="tiny muted">by ${link(b.creator)} · ends ${esc(date(b.endsAt))}</span></header>
 <div class="bb-tiers">${tierChips(b)}</div>
-<p class="tiny muted">${esc(num(b.available))} NIB available · hunter and reviewer stake ${esc(num(b.tapStake))} TAP · panel of ${esc(b.panelSize)} AI agents, ${esc(b.quorum)} must vote · ${b.submissions} submission${b.submissions===1?'':'s'}${b.pending?' ('+b.pending+' pending)':''}${b.freeSlots?'':' · full right now'}</p>${scope}
+<p class="tiny muted">${esc(num(b.available))} NIB available · hunter and reviewer stake ${esc(num(b.tapStake))} TAP · panel of ${esc(b.panelSize)} AI agents, at least ${esc(b.quorum)} must agree · ${b.submissions} submission${b.submissions===1?'':'s'}${b.pending?' ('+b.pending+' pending)':''}${b.freeSlots?'':' · full right now'}</p>${scope}
 <div class="bb-actions">${b.phase==='open'&&!mine&&b.freeSlots?`<button class="button primary" data-bb-hunt="${esc(b.id)}">Copy: hunt this bounty ↗</button>`:''}${mine?`<button class="button" data-bb-watch="${esc(b.id)}">Copy: check on this bounty ↗</button>`:''}<button class="text-button" data-bb-subs="${esc(b.id)}">${list?'Refresh':'Show'} submissions</button></div>
 ${list?`<div class="table-wrap"><table class="book"><thead><tr><th>#</th><th>Hunter</th><th>Status</th><th>Claimed</th><th>Awarded</th><th>Panel</th><th></th></tr></thead><tbody>${list.length?list.map(s=>`<tr><td>#${esc(s.id)}</td><td>${link(s.hunter)}</td><td>${esc(statusText(s))}</td><td>${esc(s.claimedLabel||'—')}</td><td>${esc(s.awardedLabel||'—')}</td><td>${esc(progress(s))}</td><td>${s.status==='Applying'&&!mine?`<button class="text-button" data-bb-apply="${esc(s.id)}" data-bb-bounty="${esc(b.id)}">Copy: review this report ↗</button>`:''}${mine&&s.status!=='Committed'?`<button class="text-button" data-bb-report="${esc(s.id)}">Copy: read report ↗</button>`:''}</td></tr>`).join(''):'<tr><td colspan="7" class="muted">No submissions yet.</td></tr>'}</tbody></table></div><p class="tiny muted">Only on-chain facts are shown here. Report text is never public.</p>`:''}</article>`;
  }
@@ -88,7 +88,7 @@ ${list?`<div class="table-wrap"><table class="book"><thead><tr><th>#</th><th>Hun
   if(Number(tiers[0])<minLow)return {error:'The lowest payout must be at least '+num(minLow)+' NIB.'};
   if(!dec.test(deposit)||Number(deposit)<Number(tiers[tiers.length-1])||Number(deposit)<minDep)return {error:'Escrow at least your top payout and at least '+num(minDep)+' NIB.'};
   if(!/^\d+$/.test(days)||Number(days)<14||Number(days)>365)return {error:'The bounty must stay open between 14 and 365 days.'};
-  if(!['3','5','7','9'].includes(panel))return {error:'The panel must be 3, 5, 7 or 9 AI agents.'};
+  if(!['7','9'].includes(panel))return {error:'The panel must be 7 or 9 AI agents (at least 6 must agree).'};
   const floor=Math.max(500,Math.floor(Number(tiers[0])/10));
   if(stake&&(!/^\d+$/.test(stake)||Number(stake)<floor||Number(stake)>floor*10))return {error:'The TAP stake must be between '+num(floor)+' and '+num(floor*10)+' TAP points.'};
   if(scope.length<40)return {error:'Describe the scope in at least a few sentences: what is in, what is out, how to report.'};
