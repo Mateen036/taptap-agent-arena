@@ -23,9 +23,9 @@ The browser queues agent requests. The connector validates each exact call, gets
 
 Read [collection rules](public/nft-guide.md), [art provenance](docs/nft/ART.md), [deployment instructions](docs/nft/README.md) and [verification evidence](docs/nft/VERIFICATION.md). Mainnet minting/trading stays disabled until contracts are deployed and configured. BNB network gas applies even to free mints. The contracts are tested but have not received an independent security audit.
 
-## Current token status
+## Token
 
-Token name, symbol, contract, total supply, launch date and points-to-token conversion ratio: **TBA**. These will be decided and announced later. The current release is the points game; token conversion remains closed. See the website’s Docs section.
+NIB (BEP-20, BNB Smart Chain) `0x1F11d9feAF354aD31861B4fa26759349e2860cFb`, 1,000,000,000 total supply: 800M airdrop over 5 seasons (Season 1: 400M at 10 TAP = 1 NIB, plus a one-time 10,000 NIB bonus per NFT id), 200M liquidity, no team allocation. PancakeSwap V2 NIB/WBNB pair `0xD98132535fA350c23a26b22C6a77678F99094BB9` launched 2026-10-31 with 50M NIB; its LP tokens are burned. Live facts are on the website's NIB Token page (`GET /api/nib-token`). The bug bounty use case is upcoming and not live. The token is experimental with thin liquidity.
 
 ## Deploy to Vercel
 

@@ -39,3 +39,30 @@
 .table-wrap{overflow-x:auto}.book{width:100%;border-collapse:collapse;font-size:13px}.book th{font:500 10px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}.book td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}.book .num{text-align:right;font-variant-numeric:tabular-nums}.book th.num{text-align:right}
 .depth-cell{position:relative;min-width:120px}.depth-bar{position:absolute;left:0;top:50%;height:60%;transform:translateY(-50%);background:var(--lime);opacity:.18;border-radius:4px}.depth-cell .tiny{position:relative;padding-left:6px}
 .nibm-fill .sale-price>strong{color:var(--lime)}.nibm-fill{grid-template-columns:minmax(0,1fr) auto}
+/* NIB Token page */
+#nibtoken-view .segmented{margin:0 0 22px}
+.nibt-facts dd{min-width:0;overflow-wrap:anywhere}
+.nibt-addr,.nibt-contracts dd{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap}
+.nibt-addr .text-button,.nibt-contracts .text-button{padding:0;min-height:30px}
+.nibt-contracts .text-button+.text-button{color:var(--sage)}
+.nibt-risk{align-items:flex-start;line-height:1.7}
+.nibt-split{display:grid;gap:14px;margin:6px 0 14px}
+.nibt-split-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:12px;flex-wrap:wrap}
+.nibt-split-row strong{font:500 14px var(--display)}
+.nibt-split-row span{color:var(--muted)}
+.nibt-split .progress-track{margin:6px 0 0}
+.nibt-pool{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 10px}
+.nibt-pool>div{background:#141a12;border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+.nibt-pool strong{display:block;font:500 22px var(--display);letter-spacing:-.5px;margin-top:6px;overflow-wrap:anywhere}
+.nibt-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 8px}
+.nibt-list{margin:14px 0 0;padding-left:20px;font-size:12px;line-height:1.9;color:#b2baa7}
+.nibt-list li{margin-bottom:6px}
+.nibt-list strong{color:var(--text);font-weight:500}
+.nibt-bounty{border-style:dashed}
+.nibt-sub{margin:26px 0 18px}
+.nibt-sub h2{font:500 clamp(26px,3.2vw,38px)/1.1 var(--display);letter-spacing:-1.5px;margin:14px 0}
+.three-grid .panel h3{font-size:19px;margin:12px 0 8px}
+@media(max-width:720px){.nibt-pool{grid-template-columns:1fr}.nibt-actions .button{flex:1 1 100%}.nibt-addr,.nibt-contracts dd{justify-content:flex-end}#nibtoken-view .segmented{width:100%}#nibtoken-view .segmented button{flex:1}}
+#nibt-price{font-size:clamp(19px,5.2vw,33px);letter-spacing:-.5px;white-space:nowrap}
+.nibt-facts>div{align-items:center}
+@media(max-width:700px){#nibt-price{font-size:19px}#nibt-liq{font-size:23px}}

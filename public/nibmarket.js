@@ -1,8 +1,8 @@
 'use strict';
 (()=>{
- // NIB pre-market (bids only). Reads GET /api/nib-market; every action is handed to the user's agent as an instruction (signed agent actions return baw previews).
+ // NIB pre-market (bids only), shown as the "Pre-market bids" tab of the NIB Token page. Reads GET /api/nib-market; every action is handed to the user's agent as an instruction (signed agent actions return baw previews).
  let data=null,loading=false,last=0,timer=null;
- const active=()=>viewName==='nibmarket';
+ const active=()=>viewName==='nibtoken'&&!$('#nibt-pane-market')?.hidden;
  const trim=v=>{const [w,f='']=String(v??'0').split('.');const t=f.replace(/0+$/,'');return w+(t?'.'+t:'');};
  const num=v=>{const [w,f='']=trim(v).split('.');try{return BigInt(w).toLocaleString('en-US')+(f?'.'+f:'');}catch{return '0';}};
  const price=v=>{const s=trim(v);const [w,f='']=s.split('.');return w+(f?'.'+f.slice(0,12).replace(/0+$/,''):'');};
@@ -74,7 +74,53 @@
   const a=e.target.closest('[data-nibm-accept]');if(a)copy(prompts.accept(a.dataset.nibmAccept),'Instruction copied. Paste it to your agent.');
   const c=e.target.closest('[data-nibm-cancel]');if(c)copy(prompts.cancel(c.dataset.nibmCancel),'Instruction copied. Paste it to your agent.');
  });
- window.addEventListener('taptap:view',()=>{if(active()){refresh(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},15000);}});
+ // 'nibt:tab' fires whenever the NIB Token page or one of its tabs is shown (see the NIB Token script below).
+ window.addEventListener('nibt:tab',()=>{if(active()){refresh(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},15000);}});
  window.addEventListener('taptap:state',()=>{if(active())refresh(false);});
  if(active())refresh(true);
+})();
+
+(()=>{
+ // NIB Token page: static facts live in the HTML; only the pool numbers are fetched (GET /api/nib-token, CDN-cached ~20 s), and only while the Token info tab is open.
+ let data=null,loading=false,last=0,timer=null,tab='token';
+ const active=()=>viewName==='nibtoken'&&tab==='token';
+ const grp=(v,d=0)=>{const n=Number(v);return Number.isFinite(n)?n.toLocaleString('en-US',{maximumFractionDigits:d}):'—';};
+ // Tiny prices need leading zeros kept (0.000000243), not exponent notation.
+ const small=(n,digits=3)=>{if(!(n>0))return '—';if(n>=1)return n.toLocaleString('en-US',{maximumFractionDigits:2});const dp=Math.min(20,Math.max(2,digits-1-Math.floor(Math.log10(n))));return n.toFixed(dp).replace(/0+$/,'');};
+ const money=n=>n==null?'—':n>=1000?'$'+grp(n):'$'+(n>=1?n.toFixed(2):small(n));
+ function show(which){
+  tab=which==='market'?'market':'token';
+  $$('[data-nibt-tab]').forEach(b=>b.classList.toggle('active',b.dataset.nibtTab===tab));
+  $('#nibt-pane-token').hidden=tab!=='token';$('#nibt-pane-market').hidden=tab!=='market';
+ }
+ function render(){
+  if(!data)return;const t=data.token||{},p=data.pool;
+  if(t.name)$('#nibt-name').textContent=t.name;if(t.symbol)$('#nibt-symbol').textContent=t.symbol;if(t.decimals!=null)$('#nibt-decimals').textContent=String(t.decimals);
+  if(!p){$('#nibt-pool-note').textContent='Pool data is temporarily unavailable.';return;}
+  $('#nibt-price').innerHTML=p.priceUsd!=null?esc('$'+small(p.priceUsd)):esc(small(p.priceBnb))+' <small>BNB</small>';
+  $('#nibt-price-caption').textContent=(p.priceBnb?small(p.priceBnb)+' BNB per NIB':'')+(p.bnbUsd?' · BNB ≈ $'+grp(p.bnbUsd,2):'');
+  $('#nibt-liq').textContent=p.liquidityUsd!=null?money(p.liquidityUsd):grp(p.liquidityBnb,4)+' BNB';
+  $('#nibt-liq-caption').textContent='Both sides of the pool'+(p.liquidityUsd!=null?' · '+grp(p.liquidityBnb,4)+' BNB':'');
+  $('#nibt-res-nib').textContent=grp(p.reserveNib);$('#nibt-res-bnb').textContent=grp(p.reserveBnb,6);
+  $('#nibt-lp').textContent=p.lpBurnedPct!=null?(p.lpBurnedPct>=99.995?'100%':(Math.floor(p.lpBurnedPct*100)/100)+'%'):'—';
+  $('#nibt-updated').textContent='Updated '+new Date(data.updatedAt||Date.now()).toLocaleTimeString();
+  $('#nibt-pool-note').textContent='Price and reserves are read from the pair contract and refresh about every 20 seconds. Prices are in BNB; the dollar figures use the Chainlink BNB/USD feed and are estimates.';
+ }
+ async function refresh(force=false){
+  if(loading||(!force&&Date.now()-last<20000))return;loading=true;
+  try{data=await api('nib-token');last=Date.now();render();}catch{if(!data)$('#nibt-pool-note').textContent='Live pool data is temporarily unavailable. The pool is still readable on BscScan and DexScreener.';}finally{loading=false;}
+ }
+ function enter(){
+  if(viewName!=='nibtoken')return;
+  if(location.hash==='#nibmarket')show('market');else if(location.hash==='#nibtoken')show('token');
+  if(active()){refresh(false);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},30000);}
+  window.dispatchEvent(new CustomEvent('nibt:tab'));
+ }
+ document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-nibt-tab]');
+  if(b){show(b.dataset.nibtTab);history.replaceState({},'','/#'+(tab==='market'?'nibmarket':'nibtoken'));enter();return;}
+  const c=e.target.closest('[data-nibt-copy]');if(c)copy(c.dataset.nibtCopy,'Address copied.');
+ });
+ window.addEventListener('taptap:view',enter);
+ if(viewName==='nibtoken')enter();
 })();

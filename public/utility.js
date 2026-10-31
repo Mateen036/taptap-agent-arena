@@ -30,6 +30,6 @@
  document.addEventListener('click',e=>{const preset=e.target.closest('[data-utility-count]');if(preset){$('#utility-count').value=preset.dataset.utilityCount;calculate();}if(e.target.closest('[data-utility-retry]'))refresh();});
  $('#utility-count')?.addEventListener('input',calculate);
  $('#utility-exact')?.addEventListener('click',()=>{const n=Number($('#utility-count').value);if(Number.isSafeInteger(n)&&n>=0&&n<=10000)exactDialog('Your multiplier, exactly.',(5n*BigInt(n)).toString(),n+' NFTs held. Multiplier applies to new earned TAP only.');});
- $('#view-exact-points')?.addEventListener('click',()=>exactDialog('Your exact TAP balance.',agent?.points??0,'Compact numbers are rounded for display. This is the complete current balance; token conversion remains TBA.'));
+ $('#view-exact-points')?.addEventListener('click',()=>exactDialog('Your exact TAP balance.',agent?.points??0,'Compact numbers are rounded for display. This is the complete current balance. Convert TAP to NIB in the Convert tab.'));
  calculate();renderAccess();
 })();

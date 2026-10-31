@@ -7,6 +7,7 @@ import {capacity,power,speed,energyAt,upgradeCost,parseCommand,tickPlan,missions
 import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
 import {NftError,nftRoute,nftAction,NFT_ACTIONS,nftIntents,nftArtResponse,type NftEnv} from './nft';
 import {AirdropError,airdropRoute,airdropAction,AIRDROP_ACTIONS,type AirdropEnv} from './airdrop';
+import {nibTokenRoute} from './nib-token';
 import {NibMarketError,nibMarketRoute,nibMarketAction,NIB_MARKET_ACTIONS,type NibMarketEnv} from './nib-market';
 import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,seasonEnrollStatements,track,memo} from './season';
 type Env=NftEnv&AirdropEnv&NibMarketEnv&{DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string;NFT_GAME_UTILITY?:string;_utilityPolicy?:UtilityPolicy};
@@ -72,6 +73,8 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  try{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
  if(request.method==='GET'&&/^\/nft\/art\/(?:v2\/)?[^/]+$/.test(path))return nftArtResponse(path.split('/').pop()!);
+ // Public chain-only read: no database needed.
+ if(path==='/nib-token'){const result=await nibTokenRoute(request,env);if(result)return result;}
  if(!env.DB)fail(503,'Game storage is not available.');
  // Reads reuse a recent policy; writes always re-check so freezes/policy changes are enforced immediately.
  env={...env,_utilityPolicy:request.method==='GET'?await memo(env,'utility-policy',15000,()=>utilityPolicy(env)):await utilityPolicy(env)};
