@@ -1,0 +1,9 @@
+node_modules
+.next
+.open-next
+.wrangler
+.dev.vars*
+app/generated/
+public/
+migrations/
+next-env.d.ts

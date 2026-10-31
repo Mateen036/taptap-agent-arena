@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nibtap",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  "vars": {
+    "ALLOW_WALLET_RELINK": "true",
+    "ADMIN_WALLET": "0x0D96e8Aa89c196D3b1b0100cDAe3b931e8a0eC0d",
+    "NFT_COLLECTION": "0x7374f0379F5b2689B906D47Da708B394F1910B23",
+    "NFT_COLLECTION_BIDS": "0xdCd8FB9d7fE9680D247CF14E2BEEd04D714a1b67",
+    "NFT_COLLECTION_BIDS_V2": "0x6Fa70911C8eCF6F869789f114Cc2bed445933a6B",
+    "NFT_COLLECTION_V2": "0xdA35ed11057Cd85Eb338a637f5509080F617a810",
+    "NFT_FEE_RECIPIENT": "0x65397BF634E817539024EFd32a0E2c5e51fB81bd",
+    "NFT_GAME_UTILITY": "true",
+    "NFT_LP_VAULT": "0x45dB592E5F5D2a591b8FE9bdCfb75e6b1fC84D8B",
+    "NFT_MARKETPLACE": "0x8B1434193028A88d2a501a88eFc66F4678EF6F02",
+    "NFT_MARKETPLACE_V2": "0x0233900626a04a79f1E3f1A58b989dCa67c1C392",
+    "NIB_AIRDROP": "0x3F5C83b4a24f0D12A278E995F21c0DEb9a8524d5",
+    "NIB_BID_MARKET": "0x775377BAdf400F070024b2C806A2573461b5dCb7",
+    "NIB_MARKET_FROM_BLOCK": "130698370",
+    "NIB_TOKEN": "0x1F11d9feAF354aD31861B4fa26759349e2860cFb",
+    "NIB_VAULT_V2": "0x65397BF634E817539024EFd32a0E2c5e51fB81bd"
+  }
+}
