@@ -13,7 +13,7 @@
  const isEligible=()=>connected()&&collection?.wallet?.eligible;
  async function refreshCollection(force=false){
   $('#nft-transaction-desk').hidden=!active();
-  if(!active()||loading||(!force&&Date.now()-last<5000))return;loading=true;
+  if(!active()||loading||(!force&&Date.now()-last<((collection?.intents||[]).some(i=>['queued','preparing','agent_preparing','awaiting_approval','approved','executing','app_confirmation','broadcast','needs_receipt'].includes(i.status))?10000:30000)))return;loading=true;
   try{collection=await api(`nft?page=${galleryPage}&marketPage=${marketPage}&ownedPage=${ownedPage}&bidView=${bidView}&bidPage=${bidPage}&cbView=${cbView}&cbPage=${cbPage}&sort=${encodeURIComponent(marketSort)}`);last=Date.now();$('#nft-error').hidden=true;renderCollection();}
   catch(error){$('#nft-error').hidden=false;$('#nft-error').textContent=error.message;if(viewName==='marketplace')$('#nft-listings').innerHTML=`<div class="notice error">${esc(error.message)}</div>`;}
   finally{loading=false;}
@@ -158,5 +158,5 @@ const cbLive=()=>collection?.collectionBids?.configured&&collection.collectionBi
  $('#nft-make-bid').onclick=()=>newBid();$('#nft-make-cbid').onclick=newCollectionBid;$('#nft-cbid-prev').onclick=()=>{cbPage=Math.max(0,cbPage-1);refreshCollection(true);};$('#nft-cbid-next').onclick=()=>{cbPage++;refreshCollection(true);};$('#nft-withdraw-refund').onclick=withdrawRefund;$('#nft-bid-prev').onclick=()=>{bidPage=Math.max(0,bidPage-1);refreshCollection(true);};$('#nft-bid-next').onclick=()=>{bidPage++;refreshCollection(true);};
  $('#nft-quantity').addEventListener('input',renderMint);$('#nft-payment').addEventListener('change',renderMint);$('#nft-mint').onclick=()=>task('mint',{quantity:Number($('#nft-quantity').value),currency:currency()});$('#nft-approve-payment').onclick=()=>task('mint-approval',{quantity:Number($('#nft-quantity').value),currency:'USDT'});
  $('#nft-prev').onclick=()=>{if(tab==='owned')ownedPage=Math.max(0,ownedPage-1);else galleryPage=Math.max(0,galleryPage-1);refreshCollection(true);};$('#nft-next').onclick=()=>{if(tab==='owned')ownedPage++;else galleryPage++;refreshCollection(true);};$('#nft-market-prev').onclick=()=>{marketPage=Math.max(0,marketPage-1);refreshCollection(true);};$('#nft-market-next').onclick=()=>{marketPage++;refreshCollection(true);};
- window.addEventListener('taptap:view',()=>refreshCollection(true));window.addEventListener('taptap:state',()=>refreshCollection());setInterval(()=>{if(!document.hidden)refreshCollection();},5000);refreshCollection(true);
+ window.addEventListener('taptap:view',()=>refreshCollection(true));window.addEventListener('taptap:state',()=>refreshCollection());setInterval(()=>{if(!document.hidden)refreshCollection();},10000);refreshCollection(true);
 })();

@@ -10,7 +10,7 @@
  const countdown=ms=>{const s=Math.max(0,Math.floor((ms-Date.now())/1000));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
  const agentPrompt=p=>`Claim my NIB airdrop conversion. Use my Binance Agentic Wallet (baw) on BNB Chain. Run exactly this preview, show me the parsed transaction and risks, and execute it only after I approve. It must finish before ${new Date(p.expiresAt).toISOString()}:\n\n${p.baw}\n\nThe call goes to the NIB airdrop contract ${p.transaction.to} with 0 BNB. Do not retry an uncertain execution; check the transaction hash first.`;
  async function refreshConvert(force=false){
-  if(loading||(!force&&Date.now()-last<8000))return;loading=true;
+  if(loading||(!force&&Date.now()-last<(status?.user?.pending?10000:30000)))return;loading=true;
   try{status=await api('airdrop');last=Date.now();render();}catch(e){const el=$('#convert-body');if(el&&!status)el.innerHTML=empty(e.message);}finally{loading=false;}
  }
  function pendingBlock(p){

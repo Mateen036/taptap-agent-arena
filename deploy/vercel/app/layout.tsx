@@ -24,6 +24,7 @@ const jsonLd = {
   email: "contact@nibtap.site",
   sameAs: ["https://x.com/TapTapArena", "https://t.me/taptaparena"],
 };
+const V=(process.env.VERCEL_GIT_COMMIT_SHA||process.env.VERCEL_DEPLOYMENT_ID||"dev").slice(0,12);
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -31,20 +32,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#11120f" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-        <link rel="stylesheet" href="/style.css" />
-        <link rel="stylesheet" href="/motion.css" />
-        <link rel="stylesheet" href="/i18n.css" />
+        <link rel="stylesheet" href={"/style.css?v="+V} />
+        <link rel="stylesheet" href={"/motion.css?v="+V} />
+        <link rel="stylesheet" href={"/i18n.css?v="+V} />
       </head>
       <body>
         {children}
-        <script src="/i18n-dict.js" defer />
-        <script src="/i18n.js" defer />
-        <script src="/app.js" defer />
-        <script src="/nft.js" defer />
-        <script src="/utility.js" defer />
-        <script src="/convert.js" defer />
-        <script src="/nibmarket.js" defer />
-        <script src="/motion.js" defer />
+        <script src={"/i18n-dict.js?v="+V} defer />
+        <script src={"/i18n.js?v="+V} defer />
+        <script src={"/app.js?v="+V} defer />
+        <script src={"/nft.js?v="+V} defer />
+        <script src={"/utility.js?v="+V} defer />
+        <script src={"/convert.js?v="+V} defer />
+        <script src={"/nibmarket.js?v="+V} defer />
+        <script src={"/motion.js?v="+V} defer />
       </body>
     </html>
   );

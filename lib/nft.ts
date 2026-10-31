@@ -270,7 +270,7 @@ export async function nftRoute(request:Request,e:NftEnv,a:any,body:()=>Promise<a
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');
  if(path==='/nft'&&request.method==='GET'){const key=[e.NFT_RPC_URL||e.BSC_RPC_URL,e.NFT_COLLECTION,e.NFT_MARKETPLACE,e.NFT_LP_VAULT,e.NFT_COLLECTION_BIDS,e.NIB_VAULT_V2,e.NFT_FEE_RECIPIENT,a?.wallet||'public',url.search].join(':');let entry=snapshotCache.get(key);if(!entry||entry.until<=now){if(snapshotCache.size>=64)snapshotCache.clear();entry={until:now+5000,result:nftSnapshot(e,a?.wallet||null,url,now)};snapshotCache.set(key,entry);}try{return json(await entry.result);}catch(error){snapshotCache.delete(key);throw error;}}
  if(request.method==='POST')snapshotCache.clear();
- if(path.startsWith('/nft/metadata/')&&request.method==='GET')return json(nftMetadata(nftTokenId(path.split('/').pop())));
+ if(path.startsWith('/nft/metadata/')&&request.method==='GET'){const r=json(nftMetadata(nftTokenId(path.split('/').pop())));r.headers.set('Cache-Control','public, max-age=300, s-maxage=3600, stale-while-revalidate=86400');return r;}
  if(path==='/nft/intents'&&request.method==='POST'){if(!a?.connected)fail(409,'Pair an eligible agent wallet before requesting NFT actions.');return json(await queue(e,a,await body(),now),201);}
  const match=path.match(/^\/nft\/intents\/([a-zA-Z0-9-]{1,80})\/(approve|cancel|receipt)$/);
  if(match&&request.method==='POST'){

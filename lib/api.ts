@@ -8,7 +8,7 @@ import {sessionData,actionData,AGENT_ID_REGISTRY,domain} from './protocol';
 import {NftError,nftRoute,nftAction,NFT_ACTIONS,nftIntents,nftArtResponse,type NftEnv} from './nft';
 import {AirdropError,airdropRoute,airdropAction,AIRDROP_ACTIONS,type AirdropEnv} from './airdrop';
 import {NibMarketError,nibMarketRoute,nibMarketAction,NIB_MARKET_ACTIONS,type NibMarketEnv} from './nib-market';
-import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,seasonEnrollStatements,track} from './season';
+import {SeasonError,currentSeason,seasonRoute,seasonSnapshot,seasonAction,SEASON_ACTIONS,seasonTapStatement,seasonEnrollStatements,track,memo} from './season';
 type Env=NftEnv&AirdropEnv&NibMarketEnv&{DB:D1Database;BSC_RPC_URL?:string;ADMIN_WALLET?:string;ALLOW_WALLET_RELINK?:boolean;STORAGE_NAME?:string;NFT_GAME_UTILITY?:string;_utilityPolicy?:UtilityPolicy};
 class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
 function fail(status:number,message:string):never{throw new HttpError(status,message)}
@@ -73,10 +73,11 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');const now=Date.now();
  if(request.method==='GET'&&/^\/nft\/art\/(?:v2\/)?[^/]+$/.test(path))return nftArtResponse(path.split('/').pop()!);
  if(!env.DB)fail(503,'Game storage is not available.');
- env={...env,_utilityPolicy:await utilityPolicy(env)};
+ // Reads reuse a recent policy; writes always re-check so freezes/policy changes are enforced immediately.
+ env={...env,_utilityPolicy:request.method==='GET'?await memo(env,'utility-policy',15000,()=>utilityPolicy(env)):await utilityPolicy(env)};
  if(request.method==='POST'){const origin=request.headers.get('origin');if(origin&&origin!==url.origin)fail(403,'Cross-origin writes are not allowed.');}
  
- const frozen=await first(env,"SELECT value FROM game_settings WHERE key='season_phase_v3'");
+ const frozen=request.method==='POST'?await first(env,"SELECT value FROM game_settings WHERE key='season_phase_v3'"):null;
  if(frozen?.value==='frozen'&&request.method==='POST'&&['/commands','/upgrades','/missions/claim'].includes(path))fail(409,'Season is frozen for token allocation.');
  if(path.startsWith('/admin/')&&request.method==='POST'){
   if(!env.ADMIN_WALLET||!isAddress(env.ADMIN_WALLET))fail(503,'Launch operator wallet has not been configured.');
@@ -112,11 +113,10 @@ export async function handle(request:Request,env:Env):Promise<Response>{
  if(path==='/health'&&request.method==='GET'){await first(env,'SELECT 1');return json({ok:true,chainId:56,storage:env.STORAGE_NAME||'D1',time:now});}
  if(path==='/bootstrap'&&request.method==='GET'){
  const user=request.headers.get('oai-authenticated-user-id');const a=user?await first(env,'SELECT * FROM agents WHERE user_id=?',user):null;
- await currentSeason(env,now);
  const boosted=env._utilityPolicy?.active;
- const leaders=await stmt(env,boosted?"SELECT wallet,name,COALESCE(earned_exact,CAST(earned AS TEXT)) AS earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY LENGTH(COALESCE(earned_exact,CAST(earned AS TEXT))) DESC,COALESCE(earned_exact,CAST(earned AS TEXT)) DESC,created_at ASC LIMIT 50":'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all();
+ const leaders=await memo(env,'boot-leaders:'+(boosted?'b':'n'),15000,()=>stmt(env,boosted?"SELECT wallet,name,COALESCE(earned_exact,CAST(earned AS TEXT)) AS earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY LENGTH(COALESCE(earned_exact,CAST(earned AS TEXT))) DESC,COALESCE(earned_exact,CAST(earned AS TEXT)) DESC,created_at ASC LIMIT 50":'SELECT wallet,name,earned,taps FROM agents WHERE connected=1 AND earned>0 ORDER BY earned DESC,created_at ASC LIMIT 50').all());
  const access=await gameAccessSnapshot(env,a?.wallet||null);
- const epoch=await first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1');
+ const epoch=await memo(env,'boot-epoch',30000,()=>first(env,'SELECT * FROM reward_epochs ORDER BY id DESC LIMIT 1'));
  const proof=a&&epoch?await first(env,'SELECT amount,proof,epoch FROM reward_proofs WHERE wallet=? AND epoch=?',a.wallet,epoch.id):null;
  return json({authenticated:!!user,gameAccess:access,agent:a?await snapshot(env,a,access):null,leaderboard:leaders.results,season:await currentSeason(env,now),competition:a?await seasonSnapshot(env,a,now):null,chainId:56,registry:AGENT_ID_REGISTRY,serverTime:now,rewards:epoch?{...epoch,proof:proof?{...proof,proof:JSON.parse(proof.proof)}:null}:{status:'awaiting_token_launch'}});
  }

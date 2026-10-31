@@ -14,6 +14,11 @@ const uuid=(value:any)=>typeof value==='string'&&/^[a-zA-Z0-9:_-]{1,100}$/.test(
 const strategy=(value:any)=>STRATEGIES.includes(value)?value:fail(400,'Choose balanced, sprinter, or hoarder.');
 const wallet=(value:any)=>typeof value==='string'&&isAddress(value)?value.toLowerCase():fail(400,'Enter a valid BNB Chain wallet address.');
 const response=(data:any,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+// Per-instance TTL memo (with in-flight de-duplication) so hot public reads don't query Postgres on every poll.
+const memoStore=new Map<string,{until:number,value:Promise<any>}>();
+export function memo<T>(e:any,key:string,ttl:number,fn:()=>Promise<T>):Promise<T>{if(!e?.PUBLIC_READ_CACHE)return fn();const t=Date.now(),hit=memoStore.get(key);if(hit&&hit.until>t)return hit.value;if(memoStore.size>200)memoStore.clear();const value=fn();memoStore.set(key,{until:t+ttl,value});value.catch(()=>{if(memoStore.get(key)?.value===value)memoStore.delete(key);});return value;}
+// Public read-only data (identical for every visitor): let the CDN absorb repeat reads for a few seconds.
+const cached=(data:any,s:number)=>Response.json(data,{status:200,headers:{'Cache-Control':`public, max-age=0, s-maxage=${s}, stale-while-revalidate=${s*4}`,'X-Content-Type-Options':'nosniff'}});
 export async function currentSeason(e:Env,now:number){
  let s=await first(e,"SELECT * FROM seasons WHERE id='season-0'");
  if(!s){await q(e,"INSERT INTO seasons(id,name,starts_at,ends_at,capacity) VALUES('season-0','Season 0 · First Contact',?,?,100) ON CONFLICT(id) DO NOTHING",now,now+7*86_400_000).run();s=await first(e,"SELECT * FROM seasons WHERE id='season-0'");}
@@ -104,6 +109,7 @@ async function queue(e:Env,a:any,b:any,now:number){
 export async function seasonRoute(request:Request,e:Env,user:string|undefined,a:any,readBody:()=>Promise<any>,now:number):Promise<Response|null>{
  const url=new URL(request.url),path=url.pathname.replace(/^\/api/,'');
  if(path==='/season'&&request.method==='GET'){
+  return cached(await memo(e,'season',15000,async()=>{const now=Date.now();
   const s=await currentSeason(e,now);
   const leaders=await rows(e,'SELECT a.wallet,a.name,p.display_name,p.avatar,s.score,s.taps FROM season_scores s JOIN agents a ON a.wallet=s.wallet LEFT JOIN agent_profiles p ON p.wallet=a.wallet WHERE s.season_id=? ORDER BY s.score DESC,s.taps DESC,a.wallet LIMIT 50',s.id);
   const daily=await rows(e,"SELECT a.wallet,a.name,p.display_name,p.avatar,e.score,e.taps,e.id FROM arena_entries e JOIN agents a ON a.wallet=e.wallet LEFT JOIN agent_profiles p ON p.wallet=e.wallet WHERE e.daily_day=? AND e.ends_at<=? ORDER BY e.score DESC,e.taps DESC,e.wallet LIMIT 50",utcDay(now),now);
@@ -111,17 +117,17 @@ export async function seasonRoute(request:Request,e:Env,user:string|undefined,a:
   const matches=await rows(e,"SELECT * FROM arena_matches WHERE (status='open' AND expires_at>?) OR status='accepted' ORDER BY created_at DESC LIMIT 20",now);
   const count=await first(e,'SELECT COUNT(*) AS agents,COALESCE(SUM(runs),0) AS runs,COALESCE(SUM(taps),0) AS taps FROM agents');
   const events=await rows(e,'SELECT event,SUM(count) AS count FROM analytics_events WHERE day=? GROUP BY event',utcDay(now));
-  return response({season:s,rule:dailyRule(utcDay(now)),day:utcDay(now),serverTime:now,leaderboard:leaders.map(l=>({...publicIdentity(l),score:l.score,taps:l.taps})),daily:daily.map(l=>({...publicIdentity(l),score:l.score,taps:l.taps,entryId:l.id})),wars:wars.map(l=>({...publicIdentity(l),score:Number(l.score),taps:Number(l.taps),rounds:Number(l.rounds)})),matches:await publicMatches(e,matches,now),metrics:{agents:count.agents,completedRuns:count.runs,lifetimeTaps:Number(count.taps),foundingAgents:s.enrolled,events:events.map(v=>({...v,count:Number(v.count)}))}});
+  return {season:s,rule:dailyRule(utcDay(now)),day:utcDay(now),serverTime:now,leaderboard:leaders.map(l=>({...publicIdentity(l),score:l.score,taps:l.taps})),daily:daily.map(l=>({...publicIdentity(l),score:l.score,taps:l.taps,entryId:l.id})),wars:wars.map(l=>({...publicIdentity(l),score:Number(l.score),taps:Number(l.taps),rounds:Number(l.rounds)})),matches:await publicMatches(e,matches,now),metrics:{agents:count.agents,completedRuns:count.runs,lifetimeTaps:Number(count.taps),foundingAgents:s.enrolled,events:events.map(v=>({...v,count:Number(v.count)}))}};}),20);
  }
- if(path.startsWith('/public/agents/')&&request.method==='GET')return response(await publicProfile(e,wallet(path.split('/').pop()),now));
- if(path.startsWith('/public/matches/')&&request.method==='GET')return response(await publicMatch(e,uuid(path.split('/').pop()),now));
+ if(path.startsWith('/public/agents/')&&request.method==='GET')return cached(await publicProfile(e,wallet(path.split('/').pop()),now),30);
+ if(path.startsWith('/public/matches/')&&request.method==='GET')return cached(await publicMatch(e,uuid(path.split('/').pop()),now),15);
  if(path.startsWith('/public/runs/')&&request.method==='GET'){
   const id=uuid(path.split('/').pop()),c=await first(e,`SELECT id,wallet,target,done,earned,status,created_at,finished_at${(await utilityPolicy(e)).active?',earned_exact':''} FROM commands WHERE id=? AND status='completed'`,id);
-  if(!c)fail(404,'Completed run not found.');return response({...c,earned:(await utilityPolicy(e)).active?publicPoints(c.earned_exact??c.earned):c.earned,agent:await publicProfile(e,c.wallet,now)});
+  if(!c)fail(404,'Completed run not found.');return cached({...c,earned:(await utilityPolicy(e)).active?publicPoints(c.earned_exact??c.earned):c.earned,agent:await publicProfile(e,c.wallet,now)},300);
  }
  if(path.startsWith('/public/rounds/')&&request.method==='GET'){
   const id=uuid(path.split('/').pop()),entry=await first(e,'SELECT id,wallet,room_id,mode,rule_day,score,gross,taps,started_at,ends_at FROM arena_entries WHERE id=? AND ends_at<=?',id,now);
-  if(!entry)fail(404,'Completed round not found.');return response({...entry,rule:dailyRule(entry.rule_day),agent:await publicProfile(e,entry.wallet,now)});
+  if(!entry)fail(404,'Completed round not found.');return cached({...entry,rule:dailyRule(entry.rule_day),agent:await publicProfile(e,entry.wallet,now)},300);
  }
  if(path==='/analytics'&&request.method==='POST'){
   if(!user)fail(401,'A browser session is required.');const b=await readBody();if(!['visit','connect_open','share','challenge_open','first_run_view'].includes(b.event))fail(400,'Unsupported diagnostic event.');await track(e,user,b.event,now);return response({ok:true});

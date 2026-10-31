@@ -20,7 +20,7 @@
   cancel:(id)=>`${read()}Cancel my NIB bid #${id} with the signed action nib-bid-cancel and payload ${JSON.stringify({id:String(id)})}. It refunds the full unfilled BNB.${tail}`
  };
  async function refresh(force=false){
-  if(loading||(!force&&Date.now()-last<8000))return;loading=true;
+  if(loading||(!force&&Date.now()-last<30000))return;loading=true;
   try{data=await api('nib-market');last=Date.now();render();}catch(e){const el=$('#nibm-book');if(el&&!data)el.innerHTML=empty(e.message);}finally{loading=false;}
  }
  function bookRow(l,max){
@@ -74,7 +74,7 @@
   const a=e.target.closest('[data-nibm-accept]');if(a)copy(prompts.accept(a.dataset.nibmAccept),'Instruction copied. Paste it to your agent.');
   const c=e.target.closest('[data-nibm-cancel]');if(c)copy(prompts.cancel(c.dataset.nibmCancel),'Instruction copied. Paste it to your agent.');
  });
- window.addEventListener('taptap:view',()=>{if(active()){refresh(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},10000);}});
+ window.addEventListener('taptap:view',()=>{if(active()){refresh(true);if(!timer)timer=setInterval(()=>{if(active()&&!document.hidden)refresh();},15000);}});
  window.addEventListener('taptap:state',()=>{if(active())refresh(false);});
  if(active())refresh(true);
 })();
