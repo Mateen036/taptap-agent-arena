@@ -53,7 +53,11 @@ export async function setup(opts:{token?:'MockNib'|'TaxToken'|'HookToken';feeBps
  const nibName=opts.token||'MockNib',nibArt=m[nibName],nib=opts.pin?await putCode(await deploy(nibArt),opts.pin.nib):await deploy(nibArt),registry=opts.pin?.registry?await putCode(await deploy(m.MockIdentity),opts.pin.registry):await deploy(m.MockIdentity);
  const feeBps=opts.feeBps??FEE_BPS,reviewerBps=opts.reviewerBps??REVIEWER_BPS;
  const cargs=[nib,registry,signer,guardian,feeTo,feeBps,reviewerBps,MIN_DEPOSIT,MIN_TIER];
- const bounty=opts.pin?await putCode(await deploy(bb,cargs),opts.pin.bounty):await deploy(bb,cargs);
+ const bounty=opts.pin?await (async()=>{
+  // storage written by the constructor (the rotatable ticket signer) is not part of the code, so it is copied slot by slot
+  const real=await deploy(bb,cargs),at=await putCode(real,opts.pin!.bounty);
+  for(let slot=0;slot<16;slot++){const v=await provider.request({method:'eth_getStorageAt',params:[real,toHex(slot),'latest']});if(/[1-9a-f]/i.test(String(v).slice(2)))await provider.request({method:'evm_setAccountStorageAt',params:[at,toHex(slot,{size:32}),v]});}
+  return at;})():await deploy(bb,cargs);
  const mint=(to:any,n:bigint)=>w(nib,nibArt.abi,'mint',[to,n]);
  const approve=(who:number,n=2n**256n-1n)=>w(nib,nibArt.abi,'approve',[bounty,n],who);
  const bal=(a:any)=>r(nib,nibArt.abi,'balanceOf',[a]) as Promise<bigint>;

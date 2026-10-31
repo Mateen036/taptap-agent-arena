@@ -5,16 +5,16 @@ import fs from 'node:fs';import path from 'node:path';import crypto from 'node:c
 
 /** NibBugBounty (deterministic CREATE2 address from scripts/nib-bug-bounty-deploy.ts `plan`). Pinned so a site can never point the connector at another contract.
  *  test/bug-bounty-chat.test.ts fails if this differs from the deploy plan: if you change the contract or its parameters, re-run `plan` and update this line. */
-export const NIB_BUG_BOUNTY='0x9cd627E7473f492C64abb9CC0937365cEbC8a316';
+export const NIB_BUG_BOUNTY='0x2f6AED3292c92a130FaaB8D5665B73E932DD0231';
 export const NIB_TOKEN_PIN='0x1F11d9feAF354aD31861B4fa26759349e2860cFb';
 export const MAX_REPORT_BYTES=49152,MAX_SCOPE_BYTES=16384;
-/** Upper bound on any single NIB approval for the bounty contract (deposits are at least 50,000 NIB; this stops absurd amounts). */
+/** Upper bound on any single NIB approval for the bounty contract (deposits are at least 10,000 NIB; this stops absurd amounts). */
 export const MAX_BOUNTY_APPROVAL=10n**9n*10n**18n;
 export const bountyCallAbi=parseAbi([
- 'function createBounty(bytes32 scopeHash,uint256[] tiers,uint256 endsAt,uint256 reviewWindow,uint256 stake,uint256 deposit) returns (uint256)','function topUp(uint256 id,uint256 amount)','function extend(uint256 id,uint256 newEndsAt)','function requestCancel(uint256 id)','function withdraw(uint256 id)',
- 'function commit(uint256 bountyId,bytes32 commitHash) returns (uint256)','function reveal(uint256 submissionId,uint8 severity,bytes32 reportHash,bytes32 salt)',
- 'function accept(uint256 submissionId,uint8 severity)','function reject(uint256 submissionId,uint8 reason,uint256 duplicateOf)','function acceptDecision(uint256 submissionId)','function dispute(uint256 submissionId)','function escalate(uint256 submissionId)',
- 'function expireCommit(uint256 submissionId)','function finalize(uint256 submissionId)','function claimArbiterTimeout(uint256 submissionId)','function resolveDispute(uint256 submissionId,uint8 severity,bool returnStake)']);
+ 'function createBounty(bytes32 scopeHash,uint256[] tiers,uint256 endsAt,uint256 panelSize,uint256 tapStake,uint256 deposit) returns (uint256)','function topUp(uint256 id,uint256 amount)','function extend(uint256 id,uint256 newEndsAt)','function requestCancel(uint256 id)','function withdraw(uint256 id)',
+ 'function commit(uint256 bountyId,bytes32 commitHash,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature) returns (uint256)','function reveal(uint256 submissionId,uint8 severity,bytes32 reportHash,bytes32 salt)','function expireCommit(uint256 submissionId)',
+ 'function applyToReview(uint256 submissionId,uint256 tapStake,bytes32 lockId,uint256 deadline,bytes signature)','function startSelection(uint256 submissionId)','function selectPanel(uint256 submissionId)',
+ 'function commitVote(uint256 submissionId,bytes32 voteHash)','function revealVote(uint256 submissionId,uint8 verdict,uint256 duplicateOf,bytes32 salt)','function finalizeJudgment(uint256 submissionId)','function claimReward()']);
 const approveAbi=parseAbi(['function approve(address,uint256) returns (bool)']);
 const HEX=/^0x[0-9a-fA-F]*$/;const same=(a:any,b:any)=>String(a).toLowerCase()===String(b).toLowerCase();
 export class BountyCheckError extends Error{}
@@ -71,7 +71,7 @@ export function prepareCommit(dir:string,wallet:string,bountyId:string,severity:
  fs.mkdirSync(dirOf(dir),{recursive:true,mode:0o700});const tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(rec),{mode:0o600});fs.renameSync(tmp,file);return rec;
 }
 export function loadCommits(dir:string,wallet:string):CommitRecord[]{
- try{return fs.readdirSync(dirOf(dir)).filter(n=>n.endsWith('.json')).flatMap(n=>{try{const r=JSON.parse(fs.readFileSync(path.join(dirOf(dir),n),'utf8')) as CommitRecord;return r.wallet===wallet.toLowerCase()?[r]:[];}catch{return [];}});}catch{return [];}
+ try{return fs.readdirSync(dirOf(dir)).filter(n=>n.endsWith('.json')).flatMap(n=>{try{if(n.startsWith('vote-'))return [];const r=JSON.parse(fs.readFileSync(path.join(dirOf(dir),n),'utf8')) as CommitRecord;return r.wallet===wallet.toLowerCase()?[r]:[];}catch{return [];}});}catch{return [];}
 }
 export function markSubmission(dir:string,rec:CommitRecord,submissionId:string){
  const file=fileFor(dir,rec.wallet,rec.bountyId,rec.severity,rec.reportHash);fs.writeFileSync(file,JSON.stringify({...rec,submissionId}),{mode:0o600});
@@ -80,3 +80,23 @@ export function readTextFile(file:string,max:number,what:string){
  let text:string;try{text=fs.readFileSync(file,'utf8');}catch{return bad('Cannot read '+what+' file: '+file);}
  if(!text.trim())bad('The '+what+' file is empty.');if(byteLen(text)>max)bad('The '+what+' is too large ('+Math.round(max/1024)+' KB maximum).');return text;
 }
+
+/** Least TAP a bounty with this lowest tier may demand per report (1% of the tier at 10 TAP per NIB, never below 500). Mirrors the contract and the site. */
+export const minTapStake=(lowestTier:bigint)=>{const t=lowestTier/10n**19n;return t<500n?500n:t;};
+export const VERDICT_DUPLICATE=255;
+/** The sealed-vote hash the contract checks when a panelist opens their vote (reviewer-bound, so a vote cannot be copied). */
+export function voteHashOf(contract:string,submissionId:bigint,reviewer:string,verdict:number,duplicateOf:bigint,salt:string){
+ return keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,uint256,address,uint8,uint256,bytes32'),[56n,contract as `0x${string}`,submissionId,reviewer as `0x${string}`,verdict,duplicateOf,salt as `0x${string}`]));
+}
+/** Panelist-side local record: verdict and salt are saved BEFORE the sealed vote is previewed, so the vote can always be opened later. */
+export type VoteRecord={wallet:string;submissionId:string;verdict:number;duplicateOf:string;salt:string;voteHash:string;createdAt:number};
+const voteFile=(dir:string,wallet:string,submissionId:string)=>path.join(dirOf(dir),'vote-'+wallet.toLowerCase().slice(2,10)+'-'+submissionId+'.json');
+export function prepareVote(dir:string,wallet:string,submissionId:string,verdict:number,duplicateOf:string):VoteRecord{
+ if(!Number.isInteger(verdict)||!((verdict>=0&&verdict<=4)||verdict===VERDICT_DUPLICATE))bad('The verdict must be invalid, a severity 1 to 4, or duplicate.');
+ if((verdict===VERDICT_DUPLICATE)!==(duplicateOf!=='0'))bad(verdict===VERDICT_DUPLICATE?'A duplicate verdict must name the earlier submission (--duplicate-of).':'--duplicate-of is only for a duplicate verdict.');
+ const file=voteFile(dir,wallet,submissionId);
+ try{const old=JSON.parse(fs.readFileSync(file,'utf8')) as VoteRecord;if(old.verdict===verdict&&old.duplicateOf===duplicateOf)return old;if(old.voteHash)bad('You already prepared a vote for submission #'+submissionId+' with a different verdict. Votes cannot be changed once sealed; open the one you sealed with: do bounty-open-vote '+submissionId);}catch(e){if(e instanceof BountyCheckError)throw e;}
+ const salt='0x'+crypto.randomBytes(32).toString('hex'),rec:VoteRecord={wallet:wallet.toLowerCase(),submissionId,verdict,duplicateOf,salt,voteHash:voteHashOf(NIB_BUG_BOUNTY,BigInt(submissionId),wallet,verdict,BigInt(duplicateOf),salt),createdAt:Date.now()};
+ fs.mkdirSync(dirOf(dir),{recursive:true,mode:0o700});const tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(rec),{mode:0o600});fs.renameSync(tmp,file);return rec;
+}
+export function loadVote(dir:string,wallet:string,submissionId:string):VoteRecord|null{try{return JSON.parse(fs.readFileSync(voteFile(dir,wallet,submissionId),'utf8'));}catch{return null;}}
