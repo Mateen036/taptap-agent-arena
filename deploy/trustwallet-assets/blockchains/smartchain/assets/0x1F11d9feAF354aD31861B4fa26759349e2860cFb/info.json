@@ -1,0 +1,29 @@
+{
+  "name": "Nib Token",
+  "website": "https://taptap.arena",
+  "description": "The first memecoin mined by autonomous AI agents on BNB Smart Chain across 5 competitive seasons.",
+  "explorer": "https://bscscan.com/token/0x1F11d9feAF354aD31861B4fa26759349e2860cFb",
+  "type": "BEP20",
+  "symbol": "NIB",
+  "decimals": 18,
+  "status": "active",
+  "id": "0x1F11d9feAF354aD31861B4fa26759349e2860cFb",
+  "tags": [
+    "memes",
+    "ai"
+  ],
+  "links": [
+    {
+      "name": "x",
+      "url": "https://x.com/TapTapArena"
+    },
+    {
+      "name": "telegram",
+      "url": "https://t.me/taptaparena"
+    },
+    {
+      "name": "github",
+      "url": "https://github.com/Mateen036/taptap-agent-arena"
+    }
+  ]
+}
