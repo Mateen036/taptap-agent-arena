@@ -27,7 +27,7 @@ const erc20Abi = parseAbi([
 
 const client = createPublicClient({chain: bsc, transport: bscTransport()});
 
-function bawCall(to: string, inputData: string, value = '0') {
+async function bawCall(to: string, inputData: string, value = '0') {
   const pCmd = `baw contract-call preview --binanceChainId 56 --from ${TREASURY} --to ${to} --inputData ${inputData} --value ${value} --json`;
   const pRes = JSON.parse(execSync(pCmd, {encoding: 'utf8'}));
   if (!pRes.success || !pRes.data?.requestId) {
@@ -38,8 +38,28 @@ function bawCall(to: string, inputData: string, value = '0') {
   if (!eRes.success) {
     throw new Error(`Execute failed: ${JSON.stringify(eRes)}`);
   }
-  console.log(`[Tx Success] Hash: ${eRes.data.txHash}`);
-  return eRes.data.txHash;
+  
+  let txHash = eRes.data?.txHash || eRes.data?.transactionHash;
+  for (let i = 0; i < 15 && !txHash; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const hCmd = `baw wallet tx-history --binanceChainId 56 --size 1 --json`;
+      const hRes = JSON.parse(execSync(hCmd, {encoding: 'utf8'}));
+      const latest = hRes.data?.transactions?.[0];
+      if (latest?.txHash) {
+        txHash = latest.txHash;
+      }
+    } catch {}
+  }
+
+  console.log(`[Tx Broadcast] Hash: ${txHash}. Waiting for on-chain receipt...`);
+  if (txHash) {
+    const receipt = await client.waitForTransactionReceipt({hash: txHash as `0x${string}`});
+    console.log(`[Tx Confirmed] In block ${receipt.blockNumber} (Status: ${receipt.status})`);
+  } else {
+    await new Promise(r => setTimeout(r, 8000));
+  }
+  return txHash;
 }
 
 export async function checkStatus() {
@@ -89,7 +109,7 @@ export async function executeRecovery() {
       functionName: 'transfer',
       args: [V1_VAULT, testNeeded - currentTest]
     });
-    bawCall(TEST_TOKEN, transferData);
+    await bawCall(TEST_TOKEN, transferData);
   }
 
   // 2. Activate token
@@ -97,7 +117,7 @@ export async function executeRecovery() {
   if (lToken.toLowerCase() !== TEST_TOKEN.toLowerCase()) {
     console.log('[Step 2] Activating TEST token on V1 Vault...');
     const activateData = encodeFunctionData({abi: vaultAbi, functionName: 'activateToken'});
-    bawCall(V1_VAULT, activateData);
+    await bawCall(V1_VAULT, activateData);
   }
 
   // 3. Add Liquidity BNB
@@ -109,7 +129,7 @@ export async function executeRecovery() {
       functionName: 'addLiquidityBNB',
       args: [1_000_000n * 10n ** 18n, wbnbBal, 1n, 1n, deadline]
     });
-    bawCall(V1_VAULT, addBnbData);
+    await bawCall(V1_VAULT, addBnbData);
   }
 
   // 4. Add Liquidity USDT
@@ -121,7 +141,7 @@ export async function executeRecovery() {
       functionName: 'addLiquidity',
       args: [1_000_000n * 10n ** 18n, usdtBal, 1n, 1n, deadline]
     });
-    bawCall(V1_VAULT, addUsdtData);
+    await bawCall(V1_VAULT, addUsdtData);
   }
 
   // 5. Approve PancakeSwap Router to spend TEST from Treasury
@@ -131,7 +151,7 @@ export async function executeRecovery() {
     functionName: 'approve',
     args: [PANCAKE_ROUTER, 100_000_000_000n * 10n ** 18n]
   });
-  bawCall(TEST_TOKEN, approveData);
+  await bawCall(TEST_TOKEN, approveData);
 
   // 6. Swap TEST for BNB & USDT to extract the liquidity to Treasury
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
@@ -143,7 +163,7 @@ export async function executeRecovery() {
     functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
     args: [swapDumpAmount, 0n, [TEST_TOKEN, WBNB], TREASURY, deadline]
   });
-  bawCall(PANCAKE_ROUTER, swapBnbData);
+  await bawCall(PANCAKE_ROUTER, swapBnbData);
 
   console.log('[Step 6b] Swapping TEST -> USDT to recover USDT to Treasury...');
   const swapUsdtData = encodeFunctionData({
@@ -151,9 +171,13 @@ export async function executeRecovery() {
     functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
     args: [swapDumpAmount, 0n, [TEST_TOKEN, USDT], TREASURY, deadline]
   });
-  bawCall(PANCAKE_ROUTER, swapUsdtData);
+  await bawCall(PANCAKE_ROUTER, swapUsdtData);
 
   console.log('[Success] Recovery sequence finished! Checking Treasury balances...');
+  const finalBnb = await client.getBalance({address: TREASURY});
+  const finalUsdt = await client.readContract({address: USDT, abi: erc20Abi, functionName: 'balanceOf', args: [TREASURY]});
+  console.log('Final Treasury BNB:', formatEther(finalBnb));
+  console.log('Final Treasury USDT:', (Number(finalUsdt) / 1e18).toString());
 }
 
 if (process.argv[1]?.includes('recover-v1-funds')) {
